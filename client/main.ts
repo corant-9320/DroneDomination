@@ -7,58 +7,69 @@ import { loadWorld, WorldData, applyNewWorld } from './worldData.js';
 import { GlobeView } from './globe.js';
 import { LocalMapView } from './localMap.js';
 import { showNewWorldModal } from './newWorldModal.js';
+import { dbg } from './debug.js';
 
 async function main() {
+  dbg.init.log('main() starting');
   const loadingEl = document.getElementById('loading')!;
 
   try {
+    dbg.init.time('loadWorld');
     const world = await loadWorld();
+    dbg.init.timeEnd('loadWorld');
     loadingEl.style.display = 'none';
 
-    console.log(
-      `World loaded: ${world.tileCount} tiles, ${world.pentagonCount} pentagons, ${world.cities.length} cities`
+    dbg.init.log(
+      `World loaded: ${world.tileCount} tiles, ${world.pentagonCount} pentagons, ${world.cities.length} cities, ${world.units.length} units`
     );
+    dbg.init.log('Seed:', world.seed, '| playerColor:', world.playerColor);
 
     const globeCanvas = document.getElementById('globe-canvas') as HTMLCanvasElement;
     const localCanvas = document.getElementById('local-canvas') as HTMLCanvasElement;
-    const tileInfoEl = document.getElementById('tile-info')!;
 
     // Shared tile selection handler
     function showTileInfo(tileIndex: number) {
-      const tile = world.tiles[tileIndex];
-      const city = world.cities.find((c) => c.tileIndex === tileIndex);
-
-      let html = `<strong>Tile #${tile.idx}</strong><br>`;
-      html += `Sides: ${tile.s} (${tile.s === 5 ? 'Pentagon' : 'Hexagon'})<br>`;
-      html += `Terrain: ${tile.terrain}<br>`;
-      html += `Elevation: ${(tile.elev * 100).toFixed(0)}%<br>`;
-      html += `Neighbours: ${tile.n.length}<br>`;
-      html += `Position: (${tile.pos[0].toFixed(3)}, ${tile.pos[1].toFixed(3)}, ${tile.pos[2].toFixed(3)})`;
-
-      if (city) {
-        html += `<br><br><strong>City: ${city.label}</strong>`;
-        html += `<br>Neighbours: ${city.neighbourCityIds.length}`;
-      }
-
-      tileInfoEl.innerHTML = html;
+      // Detail panel handled by DetailPanel if available
+      dbg.input.log('showTileInfo tile:', tileIndex, '| terrain:', world.tiles[tileIndex]?.terrain);
     }
 
     function onTileSelected(tileIndex: number) {
+      dbg.input.log('Globe tile selected:', tileIndex);
       showTileInfo(tileIndex);
       localMap.setSelected(tileIndex);
     }
 
     function onLocalTileSelected(tileIndex: number) {
+      dbg.input.log('LocalMap tile selected:', tileIndex);
       showTileInfo(tileIndex);
+      globe.panToTile(tileIndex);
     }
 
     // Initialize views
+    dbg.init.time('GlobeView');
     const globe = new GlobeView(globeCanvas, world, onTileSelected);
+    dbg.init.timeEnd('GlobeView');
+
+    dbg.init.time('LocalMapView');
     const localMap = new LocalMapView(localCanvas, world, onLocalTileSelected);
+    dbg.init.timeEnd('LocalMapView');
+
+    // When the user orbits the globe, auto-pan the peeled view to match
+    globe.setOnViewCentreChange((tileIndex) => {
+      dbg.globe.log('View centre changed → localMap.setCentre:', tileIndex);
+      localMap.setCentre(tileIndex);
+    });
+
+    // When the user drags the peeled view, spin the globe to match
+    localMap.setOnCentreChange((tileIndex) => {
+      dbg.localMap.log('Centre changed → globe.panToTile:', tileIndex);
+      globe.panToTile(tileIndex);
+    });
 
     // Start centred on the player's home city
-    localMap.goHome();
     const homeCity = world.cities.find((c) => c.isPlayerHome);
+    dbg.init.log('Home city:', homeCity?.label, 'tile:', homeCity?.tileIndex);
+    localMap.goHome();
     if (homeCity) {
       globe.panToTile(homeCity.tileIndex);
     }
@@ -80,11 +91,15 @@ async function main() {
     const newWorldBtn = document.getElementById('new-world-btn');
     if (newWorldBtn) {
       newWorldBtn.addEventListener('click', async () => {
+        dbg.modal.log('New World button clicked');
         const result = await showNewWorldModal();
         if (result) {
+          dbg.modal.log('New world generated, applying. playerColor:', result.playerColor);
           const worldData = result.world as Record<string, unknown>;
           worldData.playerColor = result.playerColor;
           applyNewWorld(worldData);
+        } else {
+          dbg.modal.log('New world cancelled');
         }
       });
     }
@@ -100,7 +115,7 @@ async function main() {
 
   } catch (err) {
     loadingEl.textContent = `Error: ${err}`;
-    console.error(err);
+    dbg.init.error('Fatal error during startup:', err);
   }
 }
 

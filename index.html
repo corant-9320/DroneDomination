@@ -27,6 +27,69 @@
       position: relative;
     }
 
+    /* Curtain shared styles */
+    .curtain {
+      position: absolute;
+      top: 0;
+      width: 280px;
+      height: 100%;
+      background: rgba(10, 10, 10, 0.5);
+      overflow-y: auto;
+      z-index: 20;
+      padding: 12px;
+      font-size: 12px;
+      color: #ddd;
+      pointer-events: auto;
+    }
+
+    /* Right curtain (unit/detail panel) */
+    #detail-panel {
+      right: 0;
+      border-left: 1px solid rgba(80, 80, 80, 0.5);
+    }
+
+    /* Left curtain (strategy panel) */
+    #strategy-panel {
+      left: 0;
+      border-right: 1px solid rgba(80, 80, 80, 0.5);
+    }
+
+    .curtain h3 {
+      margin: 0 0 8px 0;
+      font-size: 13px;
+      color: #fff;
+      border-bottom: 1px solid rgba(100, 100, 100, 0.5);
+      padding-bottom: 4px;
+    }
+
+    .curtain .section {
+      margin-bottom: 12px;
+    }
+
+    .curtain .unit-card {
+      background: rgba(30, 30, 30, 0.6);
+      border: 1px solid rgba(100, 100, 100, 0.4);
+      border-radius: 4px;
+      padding: 6px 8px;
+      margin-bottom: 6px;
+    }
+
+    .curtain .unit-card .unit-label {
+      font-weight: bold;
+      color: #fff;
+      margin-bottom: 2px;
+    }
+
+    .curtain .unit-card .unit-attr {
+      color: #ccc;
+      font-size: 11px;
+    }
+
+    .curtain .empty-msg {
+      color: #999;
+      font-style: italic;
+    }
+
     canvas {
       display: block;
       width: 100%;
@@ -55,36 +118,29 @@
       z-index: 10;
     }
 
-    #tile-info {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      font-size: 12px;
-      color: #ccc;
-      background: rgba(0,0,0,0.7);
-      padding: 8px 12px;
-      border-radius: 4px;
-      z-index: 10;
-      max-width: 250px;
+    /* Menu bar at top of right curtain */
+    #curtain-menu-bar {
+      display: flex;
+      gap: 6px;
+      padding: 6px 0 8px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid rgba(100, 100, 100, 0.4);
+      flex-wrap: wrap;
     }
 
-    #home-btn, #new-world-btn {
-      position: absolute;
-      bottom: 10px;
-      z-index: 10;
-      background: rgba(30,30,30,0.85);
+    #curtain-menu-bar button {
+      background: rgba(40, 40, 40, 0.85);
       border: 1px solid #555;
       color: #eee;
-      font-size: 13px;
-      padding: 6px 12px;
-      border-radius: 4px;
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 12px;
       cursor: pointer;
       transition: background 0.15s;
+      white-space: nowrap;
     }
-    #home-btn { right: 10px; }
-    #new-world-btn { right: 90px; }
-    #home-btn:hover, #new-world-btn:hover {
-      background: rgba(60,60,60,0.9);
+    #curtain-menu-bar button:hover {
+      background: rgba(70, 70, 70, 0.9);
     }
 
     #loading {
@@ -106,13 +162,20 @@
     <div id="globe-panel">
       <div class="panel-label">Globe View</div>
       <canvas id="globe-canvas"></canvas>
+      <div id="strategy-panel" class="curtain">
+        <div class="section"><h3>Strategy</h3><div class="empty-msg">Strategic info will appear here</div></div>
+      </div>
     </div>
     <div id="local-panel">
       <div class="panel-label">Local Map (Peeled View)</div>
       <canvas id="local-canvas"></canvas>
-      <div id="tile-info"></div>
-      <button id="new-world-btn" title="Generate a new world">+ New World</button>
-      <button id="home-btn" title="Go to home city (Home key)">⌂ Home</button>
+      <div id="detail-panel" class="curtain">
+        <div id="curtain-menu-bar">
+          <button id="new-world-btn" title="Generate a new world (N)">+ New</button>
+          <button id="home-btn" title="Centre on home city (Home)">⌂ Home</button>
+        </div>
+        <div id="detail-content"></div>
+      </div>
     </div>
   </div>
   <div id="info">Click a tile on either view to inspect. Scroll to zoom. Drag to rotate/pan.</div>

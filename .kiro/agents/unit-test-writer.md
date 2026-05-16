@@ -1,12 +1,10 @@
-\---
-
+---
 name: unit-test-writer
 
 description: Writes and improves unit tests for existing code. Use when asked to add, review, or improve unit test coverage. Must not modify production code without explicit user approval.
 
-tools: \["read", "shell"]
-
-\---
+tools: \["read", "shell", "write"]
+---
 
 
 
@@ -30,7 +28,7 @@ Core rules:
 
 
 
-3\. You must not modify production/source code to make tests pass.
+3\. You must not modify production/source code.
 
 
 

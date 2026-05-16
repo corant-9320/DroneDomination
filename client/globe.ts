@@ -9,6 +9,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { WorldData, TileData } from './worldData.js';
 import { terrainColorRGB } from './terrainColors.js';
 import { factionColorRGB } from './factionColors.js';
+import { dbg } from './debug.js';
 
 export class GlobeView {
   private scene: THREE.Scene;
@@ -23,7 +24,10 @@ export class GlobeView {
   private world: WorldData;
   private canvas: HTMLCanvasElement;
   private onTileSelect: (tileIndex: number) => void;
+  private onViewCentreChange: ((tileIndex: number) => void) | null = null;
   private tileIdByFace: Uint16Array; // maps triangle index -> tile index
+  private lastViewCentreTile: number = -1;
+  private isProgrammaticPan: boolean = false;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -60,7 +64,9 @@ export class GlobeView {
     this.mouse = new THREE.Vector2();
 
     // Build the tile mesh (all polygons as triangulated faces)
+    dbg.globe.time('buildTileMesh');
     const { mesh, edgeLines, faceToTile } = this.buildTileMesh();
+    dbg.globe.timeEnd('buildTileMesh');
     this.tileMesh = mesh;
     this.edgeMesh = edgeLines;
     this.tileIdByFace = faceToTile;
@@ -70,6 +76,11 @@ export class GlobeView {
     // City markers
     this.cityMarkers = this.buildCityMarkers();
     this.scene.add(this.cityMarkers);
+    dbg.globe.log('Globe initialized:', {
+      tiles: world.tileCount,
+      cities: world.cities.length,
+      cameraPos: this.camera.position.toArray(),
+    });
 
     // Lighting
     const ambient = new THREE.AmbientLight(0xffffff, 0.6);
@@ -81,6 +92,17 @@ export class GlobeView {
     // Events
     canvas.addEventListener('click', this.onClick.bind(this));
     window.addEventListener('resize', this.onResize.bind(this));
+
+    // Fire view-centre callback as the user orbits the globe (throttled)
+    let emitPending = false;
+    this.controls.addEventListener('change', () => {
+      if (emitPending) return;
+      emitPending = true;
+      requestAnimationFrame(() => {
+        emitPending = false;
+        this.emitViewCentre();
+      });
+    });
 
     this.animate();
   }
@@ -116,8 +138,10 @@ export class GlobeView {
       const boundary = tile.b;
       const sides = tile.s;
 
-      // Color for this tile
-      const [r, g, b] = terrainColorRGB(tile.terrain);
+      // Color for this tile — use faction color for city tiles, terrain color otherwise
+      const [r, g, b] = tile.city
+        ? factionColorRGB(this.world, tile.city)
+        : terrainColorRGB(tile.terrain);
 
       // Normal = tile centre (on unit sphere, points outward)
       const nx = tile.pos[0];
@@ -247,8 +271,11 @@ export class GlobeView {
       const faceIndex = intersects[0].faceIndex;
       if (faceIndex !== undefined && faceIndex !== null) {
         const tileIndex = this.tileIdByFace[faceIndex];
+        dbg.globe.log('Click hit: faceIndex=', faceIndex, '→ tileIndex=', tileIndex);
         this.onTileSelect(tileIndex);
       }
+    } else {
+      dbg.globe.log('Click missed globe (no intersection)');
     }
   }
 
@@ -262,12 +289,17 @@ export class GlobeView {
   /** Pan the camera so the given tile faces the viewer. */
   panToTile(tileIndex: number) {
     const tile = this.world.tiles[tileIndex];
-    if (!tile) return;
+    if (!tile) {
+      dbg.globe.warn('panToTile: invalid tileIndex', tileIndex);
+      return;
+    }
 
+    dbg.globe.log('panToTile:', tileIndex);
     const [x, y, z] = tile.pos;
     const len = Math.sqrt(x * x + y * y + z * z);
     const dist = this.camera.position.length();
 
+    this.isProgrammaticPan = true;
     this.camera.position.set(
       (x / len) * dist,
       (y / len) * dist,
@@ -275,6 +307,36 @@ export class GlobeView {
     );
     this.controls.target.set(0, 0, 0);
     this.controls.update();
+    this.isProgrammaticPan = false;
+
+    // Update last known centre so the callback doesn't re-fire for programmatic pans
+    this.lastViewCentreTile = tileIndex;
+  }
+
+  /** Register a callback for when the globe's view centre tile changes (orbit/rotate). */
+  setOnViewCentreChange(cb: (tileIndex: number) => void) {
+    this.onViewCentreChange = cb;
+  }
+
+  /** Raycast from screen centre to find which tile the camera is looking at, then emit. */
+  private emitViewCentre() {
+    if (!this.onViewCentreChange) return;
+    if (this.isProgrammaticPan) return;
+
+    // Cast a ray from the centre of the viewport toward the sphere
+    this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+    const intersects = this.raycaster.intersectObject(this.tileMesh);
+
+    if (intersects.length > 0) {
+      const faceIndex = intersects[0].faceIndex;
+      if (faceIndex !== undefined && faceIndex !== null) {
+        const tileIndex = this.tileIdByFace[faceIndex];
+        if (tileIndex !== this.lastViewCentreTile) {
+          this.lastViewCentreTile = tileIndex;
+          this.onViewCentreChange(tileIndex);
+        }
+      }
+    }
   }
 
   private animate() {

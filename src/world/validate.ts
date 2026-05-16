@@ -153,8 +153,8 @@ export function validateWorld(world: World): ValidationResult {
   // --- City invariants ---
 
   checks.push({
-    name: 'city_count == 14',
-    passed: cities.length === 14,
+    name: 'city_count == 12',
+    passed: cities.length === 12,
     detail: `Got ${cities.length}`,
   });
 
@@ -196,6 +196,19 @@ export function validateWorld(world: World): ValidationResult {
     name: 'no city on pentagon tile',
     passed: noCityPentagons,
     detail: noCityPentagons ? 'OK' : 'Some cities on pentagon tiles',
+  });
+
+  // City tiles are not adjacent to pentagons
+  const pentagonIndexSet = new Set(
+    tiles.filter((t) => t.sides === 5).map((t) => t.index)
+  );
+  const noCityAdjacentPentagon = cities.every((c) =>
+    tiles[c.tileIndex].neighbours.every((n) => !pentagonIndexSet.has(n))
+  );
+  checks.push({
+    name: 'no city adjacent to pentagon',
+    passed: noCityAdjacentPentagon,
+    detail: noCityAdjacentPentagon ? 'OK' : 'Some cities adjacent to pentagon tiles',
   });
 
   // City-neighbour symmetry

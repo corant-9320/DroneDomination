@@ -4,6 +4,7 @@
  */
 
 import { FACTION_PALETTE } from './factionColors.js';
+import { dbg } from './debug.js';
 
 const MAX_CITIES = 14;
 const MIN_SPACING = 20;
@@ -142,24 +143,31 @@ export function showNewWorldModal(): Promise<NewWorldResult | null> {
       const enemies = parseInt(enemiesInput.value);
       const spacing = parseInt(spacingInput.value);
 
+      dbg.modal.log('Generate clicked:', { enemies, spacing, selectedColor });
       generateBtn.disabled = true;
       statusEl.textContent = 'Generating...';
 
       try {
+        dbg.api.time('POST /api/generate');
         const res = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ enemies, spacing }),
         });
+        dbg.api.timeEnd('POST /api/generate');
+        dbg.api.log('Response status:', res.status);
         const data = await res.json();
         if (!data.success) {
+          dbg.api.error('Generate failed:', data.error);
           statusEl.textContent = `Error: ${data.error}`;
           generateBtn.disabled = false;
           return;
         }
+        dbg.api.log('Generate success, world seed:', data.world?.seed);
         cleanup();
         resolve({ world: data.world, playerColor: selectedColor });
       } catch (err) {
+        dbg.api.error('Generate fetch error:', err);
         statusEl.textContent = `Error: ${err}`;
         generateBtn.disabled = false;
       }

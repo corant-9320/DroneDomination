@@ -90,7 +90,10 @@ interface Tile {
   boundary: Vec3[];            // polygon vertices
   terrainType: TerrainType;    // plains|forest|mountain|desert|ocean|tundra|grassland|hills
   elevation: number;           // 0–1
-  ownerId?: string; cityId?: string; unitIds?: string[];
+  ownerId?: string; cityId?: string;
+  buildingIds?: string[];      // future: buildings on the tile
+  unitIds?: string[];
+  resourceType?: string;       // future: resource on the tile
 }
 
 interface City {
@@ -110,9 +113,9 @@ interface Unit {
 
 1. `generateGeodesicSphere(24)` — subdivided icosahedron → vertices + triangles
 2. `computeDual(mesh)` — triangle centroids become tiles, shared edges become adjacency
-3. Result: 1442 tiles (12 pentagons + 1430 hexagons)
+3. Result: 5762 tiles (12 pentagons + 5750 hexagons) — formula: 10×T²+2 where T=24
 4. `generateTerrain(positions, seed)` — noise-based terrain + elevation
-5. `placeCities(tiles, seed)` — 14 cities on non-ocean tiles, spaced apart
+5. `placeCities(tiles, seed)` — 12 cities on non-ocean tiles, spaced apart (avoiding polar caps)
 6. `selectEnemyCities(world, player, count, targetSpacing)` — picks enemies closest to target graph distance
 
 ## Compact Wire Format
@@ -154,7 +157,7 @@ Response (400):
 
 ## Hex Segments
 
-Each tile is divided into 6 triangular segments (0–5, clockwise from neighbour[0]). Each segment holds at most 1 unit. Max 6 units per tile.
+Each tile is divided into 6 triangular segments (0–5, clockwise from neighbour[0]). Each segment holds at most 1 unit. Max 5 units per tile — one segment must remain unoccupied, keeping hex and pentagon capacity equal.
 
 ## Pathfinding
 

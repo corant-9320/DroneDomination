@@ -76,7 +76,7 @@ Units have no fixed types — each is defined by its attributes:
 | repair | 0–5 | Health restored per action |
 | initiative | 0–5 | Turn order priority |
 
-Every unit must have at least 1 movement point (wheeled, limb, or flight). Each hex holds up to 6 units in triangular segments.
+Every unit must have at least 1 movement point (wheeled, limb, or flight). Each hex holds up to 5 units in triangular segments (one segment stays free).
 
 ## Project Layout
 

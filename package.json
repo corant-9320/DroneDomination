@@ -7,13 +7,15 @@
     "build": "tsc",
     "generate": "node dist/generate.js",
     "validate": "node dist/validate.js",
-    "dev": "vite"
+    "dev": "vite",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^25.8.0",
     "@types/three": "^0.168.0",
     "typescript": "^5.4.0",
-    "vite": "^5.4.0"
+    "vite": "^5.4.0",
+    "vitest": "^4.1.6"
   },
   "dependencies": {
     "three": "^0.168.0"

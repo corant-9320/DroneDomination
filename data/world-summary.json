@@ -3,103 +3,89 @@
   "tileCount": 5762,
   "pentagonCount": 12,
   "hexCount": 5750,
-  "cityCount": 14,
+  "cityCount": 12,
   "cities": [
     {
       "id": "city_0",
       "label": "C01",
-      "tileIndex": 625,
-      "neighbourCount": 5,
+      "tileIndex": 12,
+      "neighbourCount": 4,
       "terrain": "tundra"
     },
     {
       "id": "city_1",
       "label": "C02",
-      "tileIndex": 522,
-      "neighbourCount": 4,
-      "terrain": "tundra"
-    },
-    {
-      "id": "city_2",
-      "label": "C03",
-      "tileIndex": 1163,
+      "tileIndex": 582,
       "neighbourCount": 5,
       "terrain": "grassland"
     },
     {
+      "id": "city_2",
+      "label": "C03",
+      "tileIndex": 1202,
+      "neighbourCount": 5,
+      "terrain": "forest"
+    },
+    {
       "id": "city_3",
       "label": "C04",
-      "tileIndex": 287,
+      "tileIndex": 1767,
       "neighbourCount": 6,
-      "terrain": "forest"
+      "terrain": "plains"
     },
     {
       "id": "city_4",
       "label": "C05",
-      "tileIndex": 2338,
-      "neighbourCount": 7,
-      "terrain": "forest"
+      "tileIndex": 2329,
+      "neighbourCount": 6,
+      "terrain": "desert"
     },
     {
       "id": "city_5",
       "label": "C06",
-      "tileIndex": 2902,
+      "tileIndex": 2874,
       "neighbourCount": 7,
       "terrain": "desert"
     },
     {
       "id": "city_6",
       "label": "C07",
-      "tileIndex": 1939,
-      "neighbourCount": 8,
+      "tileIndex": 1904,
+      "neighbourCount": 6,
       "terrain": "desert"
     },
     {
       "id": "city_7",
       "label": "C08",
-      "tileIndex": 2461,
+      "tileIndex": 2418,
       "neighbourCount": 6,
-      "terrain": "desert"
+      "terrain": "grassland"
     },
     {
       "id": "city_8",
       "label": "C09",
-      "tileIndex": 4259,
-      "neighbourCount": 5,
-      "terrain": "desert"
+      "tileIndex": 4187,
+      "neighbourCount": 6,
+      "terrain": "forest"
     },
     {
       "id": "city_9",
       "label": "C10",
-      "tileIndex": 3357,
-      "neighbourCount": 5,
+      "tileIndex": 4851,
+      "neighbourCount": 6,
       "terrain": "forest"
     },
     {
       "id": "city_10",
       "label": "C11",
-      "tileIndex": 3842,
-      "neighbourCount": 5,
-      "terrain": "forest"
+      "tileIndex": 5399,
+      "neighbourCount": 7,
+      "terrain": "grassland"
     },
     {
       "id": "city_11",
       "label": "C12",
-      "tileIndex": 4571,
-      "neighbourCount": 6,
-      "terrain": "grassland"
-    },
-    {
-      "id": "city_12",
-      "label": "C13",
-      "tileIndex": 5118,
-      "neighbourCount": 7,
-      "terrain": "tundra"
-    },
-    {
-      "id": "city_13",
-      "label": "C14",
-      "tileIndex": 4382,
+      "tileIndex": 4535,
       "neighbourCount": 8,
       "terrain": "tundra"
     }

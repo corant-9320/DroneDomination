@@ -7,6 +7,11 @@
  * A hex (tile) is subdivided into 6 triangular segments (0–5), each of
  * which can hold at most one unit. Segment 0 is the triangle whose outer
  * edge faces neighbour[0], and they proceed clockwise.
+ *
+ * However, only 5 of the 6 segments may be occupied simultaneously —
+ * one segment must always remain free. This keeps hex tiles consistent
+ * with pentagon tiles (which have exactly 5 segments) and simplifies
+ * game rules across both tile shapes.
  */
 
 // ---------------------------------------------------------------------------
@@ -16,8 +21,8 @@
 /** Triangular segment index within a hex (0–5, clockwise from neighbour 0). */
 export type HexSegment = 0 | 1 | 2 | 3 | 4 | 5;
 
-/** Maximum number of units that can occupy a single tile. */
-export const MAX_UNITS_PER_TILE = 6;
+/** Maximum number of units that can occupy a single tile (one segment must stay free). */
+export const MAX_UNITS_PER_TILE = 5;
 
 // ---------------------------------------------------------------------------
 // Unit attributes

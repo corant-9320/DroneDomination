@@ -1,12 +1,10 @@
-\---
-
-name: agent-refactorer
+---
+name: refactor-writer
 
 description: Refactors code, docs, and steering files to make future agent changes easier, safer, and lower-token. Use when asked to simplify structure, reduce context load, remove redundant code, clean temporary artifacts, or reorganize steering/docs. Must preserve behavior and request approval before risky or broad changes.
 
 tools: \["read", "write", "shell"]
-
-\---
+---
 
 
 

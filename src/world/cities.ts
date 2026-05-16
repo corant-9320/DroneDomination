@@ -2,10 +2,10 @@
  * City placement on the Goldberg graph.
  *
  * Requirements:
- * - Exactly 14 cities
+ * - Exactly 12 cities
  * - Defined neighbouring city pairs should be exactly 20 tiles apart
- * - Cities should be spread evenly across the sphere
- * - City tiles should not be pentagons
+ * - Cities should be spread evenly across the sphere (avoiding polar caps)
+ * - City tiles should not be on or adjacent to pentagons
  * - Cities should not be on ocean tiles
  * - Comparable access and strategic value
  */
@@ -16,27 +16,30 @@ import { graphDistance, tilesWithinRadius } from './pathfinding.js';
 import * as v from './vec3.js';
 import { mulberry32 } from './terrain.js';
 
-const CITY_COUNT = 14;
+const CITY_COUNT = 12;
 const NEIGHBOUR_DISTANCE = 20;
 
 /**
- * Place 14 cities on the sphere using a repulsion-based approach:
- * 1. Start with 14 points distributed by Fibonacci sphere sampling
- * 2. Find the closest valid tile (non-ocean, non-pentagon) to each point
+ * Place 12 cities on the sphere using a repulsion-based approach:
+ * 1. Start with 12 points distributed by Fibonacci sphere sampling (excluding polar caps)
+ * 2. Find the closest valid tile (non-ocean, not on/adjacent to pentagon) to each point
  * 3. Refine positions so neighbour pairs are exactly 20 apart
  */
 export function placeCities(tiles: Tile[], seed: number): City[] {
   const rng = mulberry32(seed + 7777);
 
-  // Generate 14 well-distributed points on the sphere using Fibonacci method
+  // Generate 12 well-distributed points on the sphere using Fibonacci method
   const candidatePositions = fibonacciSphere(CITY_COUNT);
+
+  // Precompute tiles that are pentagons or adjacent to pentagons
+  const pentagonExclusion = buildPentagonExclusionSet(tiles);
 
   // Find the best tile for each target position
   const cityTileIndices: number[] = [];
   const usedTiles = new Set<number>();
 
   for (const targetPos of candidatePositions) {
-    const tileIdx = findClosestValidTile(tiles, targetPos, usedTiles);
+    const tileIdx = findClosestValidTile(tiles, targetPos, usedTiles, pentagonExclusion);
     if (tileIdx === -1) {
       throw new Error('Cannot find valid tile for city placement');
     }
@@ -101,13 +104,18 @@ export function placeCities(tiles: Tile[], seed: number): City[] {
   return cities;
 }
 
-/** Fibonacci sphere: distribute N points evenly on a sphere */
+/**
+ * Fibonacci sphere: distribute N points evenly within a latitude band,
+ * excluding polar caps (|y| > 0.85) to keep cities away from poles.
+ */
 function fibonacciSphere(n: number): Vec3[] {
   const points: Vec3[] = [];
   const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  const CAP_THRESHOLD = 0.85;
 
+  // Distribute N points evenly in the y range [-CAP_THRESHOLD, CAP_THRESHOLD]
   for (let i = 0; i < n; i++) {
-    const y = 1 - (2 * i) / (n - 1);
+    const y = CAP_THRESHOLD - (2 * CAP_THRESHOLD * i) / (n - 1);
     const radius = Math.sqrt(1 - y * y);
     const theta = goldenAngle * i;
 
@@ -121,18 +129,33 @@ function fibonacciSphere(n: number): Vec3[] {
   return points;
 }
 
-/** Find the closest valid tile (non-ocean, non-pentagon, not already used) */
+/** Build a set of tile indices that are pentagons or adjacent to a pentagon */
+function buildPentagonExclusionSet(tiles: Tile[]): Set<number> {
+  const excluded = new Set<number>();
+  for (let i = 0; i < tiles.length; i++) {
+    if (tiles[i].sides === 5) {
+      excluded.add(i);
+      for (const n of tiles[i].neighbours) {
+        excluded.add(n);
+      }
+    }
+  }
+  return excluded;
+}
+
+/** Find the closest valid tile (non-ocean, not on or adjacent to a pentagon, not already used) */
 function findClosestValidTile(
   tiles: Tile[],
   target: Vec3,
-  usedTiles: Set<number>
+  usedTiles: Set<number>,
+  pentagonExclusion: Set<number>
 ): number {
   let bestIdx = -1;
   let bestDist = Infinity;
 
   for (let i = 0; i < tiles.length; i++) {
     if (usedTiles.has(i)) continue;
-    if (tiles[i].sides === 5) continue; // skip pentagons
+    if (pentagonExclusion.has(i)) continue; // skip pentagons and their neighbours
     if (tiles[i].terrainType === 'ocean') continue;
 
     const dist = v.distance(tiles[i].position3d, target);

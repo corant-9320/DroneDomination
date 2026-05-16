@@ -7,6 +7,7 @@
 import { WorldData, UnitData } from './worldData.js';
 import { terrainColor } from './terrainColors.js';
 import { factionColor } from './factionColors.js';
+import { dbg } from './debug.js';
 
 interface FlatTile {
   tileIndex: number;
@@ -27,6 +28,7 @@ export class LocalMapView {
   private onTileSelect: (tileIndex: number) => void;
   private hoveredTile: number = -1;
   private selectedTile: number = -1;
+  private onCentreChange: ((tileIndex: number) => void) | null = null;
 
   // View transform
   private offsetX: number = 0;
@@ -64,8 +66,12 @@ export class LocalMapView {
   }
 
   setCentre(tileIndex: number) {
+    dbg.localMap.log('setCentre:', tileIndex);
     this.centreTileIndex = tileIndex;
+    dbg.localMap.time('buildFlatView');
     this.flatTiles = this.buildFlatView(tileIndex, this.radius);
+    dbg.localMap.timeEnd('buildFlatView');
+    dbg.localMap.log('flatTiles count:', this.flatTiles.length);
     this.offsetX = 0;
     this.offsetY = 0;
     this.scale = 0.3;
@@ -75,6 +81,7 @@ export class LocalMapView {
   /** Pan to the player's home city at default zoom. */
   goHome() {
     const homeCity = this.world.cities.find((c) => c.isPlayerHome);
+    dbg.localMap.log('goHome → city:', homeCity?.label, 'tile:', homeCity?.tileIndex);
     if (homeCity) {
       this.setCentre(homeCity.tileIndex);
     }
@@ -84,10 +91,16 @@ export class LocalMapView {
     this.selectedTile = tileIndex;
     const inView = this.flatTiles.some((ft) => ft.tileIndex === tileIndex);
     if (!inView) {
+      dbg.localMap.log('setSelected tile not in view, recentring:', tileIndex);
       this.setCentre(tileIndex);
     } else {
       this.render();
     }
+  }
+
+  /** Register a callback for when the local map's centre tile changes (drag recenter). */
+  setOnCentreChange(cb: (tileIndex: number) => void) {
+    this.onCentreChange = cb;
   }
 
   /**
@@ -277,10 +290,8 @@ export class LocalMapView {
       }
     }
 
-    // Draw units when zoomed in enough to see segments
-    if (showSegments) {
-      this.drawUnits(showDetail);
-    }
+    // Draw units at all zoom levels
+    this.drawUnits(showDetail);
   }
 
   /**
@@ -304,6 +315,15 @@ export class LocalMapView {
    * Draw unit markers in their segment triangles.
    * Each segment's centroid is 1/3 between the hex centre and the midpoint
    * of the corresponding boundary edge.
+   *
+   * At low zoom, units are placed at the tile centre (stacked).
+   * At higher zoom (segments visible), units go into their segment positions.
+   *
+   * Shape indicates movement type:
+   *   X  = flightMovement
+   *   O  = wheeledMovement
+   *   L  = limbMovement
+   * A health bar is always drawn above the unit.
    */
   private drawUnits(showDetail: boolean) {
     const units = this.world.units;
@@ -318,30 +338,120 @@ export class LocalMapView {
     for (const unit of units) {
       const ft = ftByTile.get(unit.tileIndex);
       if (!ft) continue;
-      // Only draw in hexes (pentagons are excluded from flatTiles anyway)
       const tile = this.world.tiles[unit.tileIndex];
       if (tile.s !== 6) continue;
 
+      // Always position in the unit's specific segment
       const segPos = this.getSegmentCentroid(ft, unit.segment);
       if (!segPos) continue;
-
       const [sx, sy] = this.worldToScreen(segPos.x, segPos.y);
 
-      // Unit pip
-      const radius = Math.max(3, 4 * this.scale / 3);
-      this.ctx.beginPath();
-      this.ctx.arc(sx, sy, radius, 0, Math.PI * 2);
-      this.ctx.fillStyle = this.ownerColor(unit.ownerId);
-      this.ctx.fill();
-      this.ctx.strokeStyle = '#000';
-      this.ctx.lineWidth = 1;
-      this.ctx.stroke();
+      // Dynamic size — visible at all zooms
+      const size = Math.max(4, 5 * this.scale / 2);
+      const color = this.ownerColor(unit.ownerId);
 
-      // Attribute detail when deeply zoomed
+      // Determine primary movement type for shape
+      const attrs = unit.attributes;
+      const flight = attrs.flightMovement ?? 0;
+      const wheeled = attrs.wheeledMovement ?? 0;
+      const limb = attrs.limbMovement ?? 0;
+
+      if (flight >= wheeled && flight >= limb) {
+        this.drawUnitX(sx, sy, size, color);
+      } else if (wheeled >= limb) {
+        this.drawUnitCircle(sx, sy, size, color);
+      } else {
+        this.drawUnitL(sx, sy, size, color);
+      }
+
+      // Health bar above the unit (always visible)
+      this.drawHealthBar(unit, sx, sy, size);
+
+      // Attribute detail bars when deeply zoomed
       if (showDetail) {
-        this.drawUnitDetail(unit, sx, sy, radius);
+        this.drawUnitDetail(unit, sx, sy + size + 6, size);
       }
     }
+  }
+
+  /** Draw an 'X' shape for flying units. */
+  private drawUnitX(sx: number, sy: number, size: number, color: string) {
+    const half = size * 0.7;
+    this.ctx.strokeStyle = color;
+    this.ctx.lineWidth = Math.max(1.5, size / 3);
+    this.ctx.lineCap = 'round';
+    this.ctx.beginPath();
+    this.ctx.moveTo(sx - half, sy - half);
+    this.ctx.lineTo(sx + half, sy + half);
+    this.ctx.moveTo(sx + half, sy - half);
+    this.ctx.lineTo(sx - half, sy + half);
+    this.ctx.stroke();
+    // Dark outline for readability
+    this.ctx.strokeStyle = '#000';
+    this.ctx.lineWidth = Math.max(0.5, size / 8);
+    this.ctx.beginPath();
+    this.ctx.moveTo(sx - half, sy - half);
+    this.ctx.lineTo(sx + half, sy + half);
+    this.ctx.moveTo(sx + half, sy - half);
+    this.ctx.lineTo(sx - half, sy + half);
+    this.ctx.stroke();
+  }
+
+  /** Draw a circle (O) for wheeled units. */
+  private drawUnitCircle(sx: number, sy: number, size: number, color: string) {
+    const radius = size * 0.7;
+    this.ctx.beginPath();
+    this.ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+    this.ctx.fillStyle = color;
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#000';
+    this.ctx.lineWidth = Math.max(0.5, size / 6);
+    this.ctx.stroke();
+  }
+
+  /** Draw an 'L' shape for legged units. */
+  private drawUnitL(sx: number, sy: number, size: number, color: string) {
+    const half = size * 0.7;
+    this.ctx.strokeStyle = color;
+    this.ctx.lineWidth = Math.max(1.5, size / 3);
+    this.ctx.lineCap = 'round';
+    this.ctx.beginPath();
+    // Vertical stroke of L
+    this.ctx.moveTo(sx - half * 0.4, sy - half);
+    this.ctx.lineTo(sx - half * 0.4, sy + half);
+    // Horizontal stroke of L
+    this.ctx.lineTo(sx + half * 0.6, sy + half);
+    this.ctx.stroke();
+    // Dark outline
+    this.ctx.strokeStyle = '#000';
+    this.ctx.lineWidth = Math.max(0.5, size / 8);
+    this.ctx.beginPath();
+    this.ctx.moveTo(sx - half * 0.4, sy - half);
+    this.ctx.lineTo(sx - half * 0.4, sy + half);
+    this.ctx.lineTo(sx + half * 0.6, sy + half);
+    this.ctx.stroke();
+  }
+
+  /** Draw a health bar above the unit marker. */
+  private drawHealthBar(unit: UnitData, sx: number, sy: number, size: number) {
+    const maxHp = unit.attributes.maxHealth ?? 5;
+    const curHp = unit.currentHealth;
+    const barW = size * 2.2;
+    const barH = Math.max(2, size / 3);
+    const x = sx - barW / 2;
+    const y = sy - size - barH - 2;
+
+    // Background
+    this.ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    this.ctx.fillRect(x, y, barW, barH);
+    // Health fill — green→yellow→red gradient based on HP ratio
+    const ratio = curHp / maxHp;
+    let barColor: string;
+    if (ratio > 0.6) barColor = '#4f4';
+    else if (ratio > 0.3) barColor = '#fd4';
+    else barColor = '#f44';
+    this.ctx.fillStyle = barColor;
+    this.ctx.fillRect(x, y, barW * ratio, barH);
   }
 
   /**
@@ -359,10 +469,10 @@ export class LocalMapView {
   }
 
   /** Draw compact attribute bars beneath the unit marker. */
-  private drawUnitDetail(unit: UnitData, sx: number, sy: number, radius: number) {
+  private drawUnitDetail(unit: UnitData, sx: number, sy: number, size: number) {
     const attrs = unit.attributes;
-    const barY = sy + radius + 3;
-    const barW = radius * 3;
+    const barY = sy + 2;
+    const barW = size * 2.2;
     const barH = 2;
     let row = 0;
 
@@ -379,7 +489,6 @@ export class LocalMapView {
       row++;
     };
 
-    drawBar(unit.currentHealth, attrs.maxHealth ?? 5, '#4f4');
     drawBar(attrs.armour, 5, '#88f');
     drawBar(attrs.meleeAttack, 5, '#f44');
     drawBar(attrs.rangeAttack, 5, '#fa4');
@@ -401,9 +510,12 @@ export class LocalMapView {
     const y = event.clientY - rect.top;
     const tileIdx = this.findTileAt(x, y);
     if (tileIdx >= 0) {
+      dbg.localMap.log('Click hit tile:', tileIdx, '| terrain:', this.world.tiles[tileIdx]?.terrain);
       this.selectedTile = tileIdx;
       this.onTileSelect(tileIdx);
       this.render();
+    } else {
+      dbg.localMap.log('Click missed (no tile at position)');
     }
   }
 
@@ -433,6 +545,7 @@ export class LocalMapView {
     const factor = event.deltaY > 0 ? 0.9 : 1.1;
     this.scale *= factor;
     this.scale = Math.max(0.3, Math.min(15, this.scale));
+    dbg.localMap.log('Zoom scale:', this.scale.toFixed(2));
     this.render();
   }
 

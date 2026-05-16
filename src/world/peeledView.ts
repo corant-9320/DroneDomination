@@ -54,7 +54,7 @@ export function generatePeeledView(
   }
   const tangentY = v.normalize(v.cross(normal, tangentX));
 
-  // Step 3: Project each tile onto the tangent plane
+  // Step 3: Project each tile onto the tangent plane (including pentagons)
   const peeledTiles: PeeledTile[] = [];
 
   for (const [tileIndex, distance] of distanceMap) {

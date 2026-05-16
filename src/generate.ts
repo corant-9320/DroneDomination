@@ -4,6 +4,8 @@
 
 import { generateWorld } from './world/generate.js';
 import { validateWorld, printValidation } from './world/validate.js';
+import { Tile, City } from './world/types.js';
+import { Unit, HexSegment } from './world/units.js';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -29,6 +31,9 @@ if (!result.passed) {
 // Save
 mkdirSync(OUTPUT_DIR, { recursive: true });
 
+// Spawn initial units for all cities
+const units = spawnInitialUnits(world.tiles, world.cities.map((c) => ({ id: c.id, tileIndex: c.tileIndex })));
+
 // Save a compact version (no redundant data)
 const compact = {
   seed: world.seed,
@@ -37,6 +42,15 @@ const compact = {
   hexCount: world.tiles.length - world.pentagonIndices.length,
   pentagonIndices: world.pentagonIndices,
   cities: world.cities,
+  units: units.map((u) => ({
+    id: u.id,
+    label: u.label,
+    ownerId: u.ownerId,
+    tileIndex: u.tileIndex,
+    segment: u.segment,
+    attributes: u.attributes,
+    currentHealth: u.currentHealth,
+  })),
   tiles: world.tiles.map((t) => ({
     idx: t.index,
     s: t.sides,
@@ -90,3 +104,75 @@ const summary = {
 
 writeFileSync(join(OUTPUT_DIR, 'world-summary.json'), JSON.stringify(summary, null, 2));
 console.log('Summary saved to data/world-summary.json');
+
+/**
+ * Spawn 6 initial units around each city:
+ * - 3 Melee (attack 1) + 3 Ranged (attack 1), all maxHealth 1
+ * - Each type: 2 wheeled + 1 legged
+ * - Placed in 3 alternating neighbour hexes around the city centre
+ * - Each unit occupies an outward-facing segment
+ */
+function spawnInitialUnits(tiles: Tile[], cities: { id: string; tileIndex: number }[]): Unit[] {
+  const units: Unit[] = [];
+  let unitCounter = 0;
+
+  const templates: { prefix: string; attrs: Unit['attributes'] }[] = [
+    { prefix: 'MW', attrs: { maxHealth: 1, meleeAttack: 1, wheeledMovement: 1 } },
+    { prefix: 'MW', attrs: { maxHealth: 1, meleeAttack: 1, wheeledMovement: 1 } },
+    { prefix: 'ML', attrs: { maxHealth: 1, meleeAttack: 1, limbMovement: 1 } },
+    { prefix: 'RW', attrs: { maxHealth: 1, rangeAttack: 1, wheeledMovement: 1 } },
+    { prefix: 'RW', attrs: { maxHealth: 1, rangeAttack: 1, wheeledMovement: 1 } },
+    { prefix: 'RL', attrs: { maxHealth: 1, rangeAttack: 1, limbMovement: 1 } },
+  ];
+
+  for (const city of cities) {
+    const cityTile = tiles[city.tileIndex];
+    const neighbours = cityTile.neighbours;
+    const selectedNeighbours = [
+      neighbours[0],
+      neighbours[2 % neighbours.length],
+      neighbours[4 % neighbours.length],
+    ];
+
+    for (let i = 0; i < 3; i++) {
+      const tileIndex = selectedNeighbours[i];
+      const tile = tiles[tileIndex];
+      const outwardSegment = findOutwardSegment(tiles, tileIndex, city.tileIndex);
+      const seg1 = outwardSegment;
+      const seg2 = ((outwardSegment + 1) % tile.sides) as HexSegment;
+
+      const t1 = templates[i * 2];
+      const t2 = templates[i * 2 + 1];
+
+      units.push({
+        id: `unit_${unitCounter++}`,
+        label: `${t1.prefix}${unitCounter}`,
+        ownerId: city.id,
+        tileIndex,
+        segment: seg1,
+        attributes: { ...t1.attrs },
+        currentHealth: t1.attrs.maxHealth!,
+      });
+
+      units.push({
+        id: `unit_${unitCounter++}`,
+        label: `${t2.prefix}${unitCounter}`,
+        ownerId: city.id,
+        tileIndex,
+        segment: seg2,
+        attributes: { ...t2.attrs },
+        currentHealth: t2.attrs.maxHealth!,
+      });
+    }
+  }
+
+  return units;
+}
+
+function findOutwardSegment(tiles: Tile[], tileIndex: number, cityTileIndex: number): HexSegment {
+  const tile = tiles[tileIndex];
+  const cityDir = tile.neighbours.indexOf(cityTileIndex);
+  if (cityDir === -1) return 0;
+  const outward = (cityDir + Math.floor(tile.sides / 2)) % tile.sides;
+  return outward as HexSegment;
+}
