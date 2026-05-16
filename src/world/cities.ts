@@ -16,7 +16,8 @@ import { graphDistance, tilesWithinRadius } from './pathfinding.js';
 import * as v from './vec3.js';
 import { mulberry32 } from './terrain.js';
 
-const CITY_COUNT = 12;
+/** Maximum cities placed during world generation. */
+export const CITY_COUNT = 12;
 const NEIGHBOUR_DISTANCE = 20;
 
 /**

@@ -180,4 +180,4 @@ Each tile is divided into 6 triangular segments (0–5, clockwise from neighbour
 - Barrel re-exports in `src/world/index.ts`
 - World data is immutable once generated; UI reads only
 - Server handler is pure function (no side effects, no framework deps)
-- Constants: `MAX_CITIES = 14`, `MIN_SPACING = 20`, `MAX_SPACING = 45`, `FREQUENCY = 24`
+- Constants: `CITY_COUNT = 12` (src/world/cities.ts), `MIN_SPACING = 20`, `MAX_SPACING = 45`, `FREQUENCY = 24`

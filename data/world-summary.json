@@ -10,7 +10,7 @@
       "label": "C01",
       "tileIndex": 12,
       "neighbourCount": 4,
-      "terrain": "tundra"
+      "terrain": "grassland"
     },
     {
       "id": "city_1",
@@ -87,16 +87,16 @@
       "label": "C12",
       "tileIndex": 4535,
       "neighbourCount": 8,
-      "terrain": "tundra"
+      "terrain": "grassland"
     }
   ],
   "terrainDistribution": {
+    "grassland": 1943,
     "forest": 1866,
-    "tundra": 1410,
     "desert": 1030,
-    "grassland": 990,
-    "plains": 453,
-    "hills": 9,
-    "ocean": 4
+    "plains": 540,
+    "ocean": 232,
+    "tundra": 142,
+    "hills": 9
   }
 }

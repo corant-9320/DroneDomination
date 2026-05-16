@@ -35,7 +35,8 @@ export const MAX_UNITS_PER_TILE = 5;
  * All values are integers within a fixed range:
  *   maxHealth:      1–5  (must be at least 1 if present)
  *   armour:         0–5
- *   meleeAttack:    0–5
+ *   defence:        0–5
+ *   splashAttack:   0–5
  *   rangeAttack:    0–5
  *   wheeledMovement:0–5
  *   limbMovement:   0–5
@@ -51,8 +52,10 @@ export interface UnitAttributes {
   maxHealth?: number;
   /** Damage reduction from incoming attacks (0–5). */
   armour?: number;
-  /** Base damage dealt in melee combat (0–5). */
-  meleeAttack?: number;
+  /** Chance to avoid or deflect a hit entirely (0–5). */
+  defence?: number;
+  /** Base splash damage dealt in adjacent combat (0–5). */
+  splashAttack?: number;
   /** Base damage dealt at range (0–5). */
   rangeAttack?: number;
   /** Movement points for wheeled/vehicle traversal (0–5). */
@@ -75,7 +78,8 @@ export interface UnitAttributes {
 export const ATTRIBUTE_RANGES: Record<keyof UnitAttributes, [min: number, max: number]> = {
   maxHealth: [1, 5],
   armour: [0, 5],
-  meleeAttack: [0, 5],
+  defence: [0, 5],
+  splashAttack: [0, 5],
   rangeAttack: [0, 5],
   wheeledMovement: [0, 5],
   limbMovement: [0, 5],

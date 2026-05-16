@@ -121,11 +121,28 @@ export function generateTerrain(
 }
 
 function classifyTerrain(elevation: number, latitude: number): TerrainType {
+  // --- Polar band overrides (latitude = |pos.y|, 1 = pole) ---
+  // With G(24,0) each ring ≈ 3.75° of colatitude.
+  // 2 rings from pole → colatitude ~7.5° → y > 0.99
+  // Next 1 ring → colatitude ~11° → y > 0.98
+
+  // Tundra: only the 2 tiles closest to the pole
+  if (latitude > 0.99) return 'tundra';
+
+  // Polar ocean buffer: 1 tile-width separating tundra from habitable land
+  if (latitude > 0.98) return 'ocean';
+
+  // Green band beyond the ocean: force productive terrain so polar cities
+  // are not disadvantaged. Use elevation to vary between forest/grassland.
+  if (latitude > 0.90) {
+    if (elevation > 0.65) return 'forest';
+    return 'grassland';
+  }
+
+  // --- Normal terrain classification below latitude 0.90 ---
+
   // Ocean
   if (elevation < 0.35) return 'ocean';
-
-  // Tundra at high latitudes
-  if (latitude > 0.75 && elevation < 0.7) return 'tundra';
 
   // Mountains at high elevation
   if (elevation > 0.8) return 'mountain';

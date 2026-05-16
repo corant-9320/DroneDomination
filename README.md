@@ -68,7 +68,8 @@ Units have no fixed types — each is defined by its attributes:
 |-----------|-------|-------------|
 | maxHealth | 1–5 | Hit points |
 | armour | 0–5 | Damage reduction |
-| meleeAttack | 0–5 | Adjacent combat damage |
+| defence | 0–5 | Hit avoidance/deflection |
+| splashAttack | 0–5 | Adjacent splash damage |
 | rangeAttack | 0–5 | Ranged combat damage |
 | wheeledMovement | 0–5 | Vehicle traversal speed |
 | limbMovement | 0–5 | Infantry/creature traversal speed |

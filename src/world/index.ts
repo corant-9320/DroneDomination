@@ -6,5 +6,6 @@ export * from './pathfinding.js';
 export * from './cities.js';
 export * from './generate.js';
 export * from './validate.js';
-export * from './peeledView.js';
 export * from './units.js';
+export * from './spawn.js';
+export * from './compact.js';

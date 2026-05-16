@@ -31,7 +31,7 @@ describe('units', () => {
     });
 
     it('rejects non-integer values', () => {
-      expect(isValidAttribute('meleeAttack', 2.5)).toBe(false);
+      expect(isValidAttribute('splashAttack', 2.5)).toBe(false);
     });
 
     it('rejects negative values', () => {
@@ -44,7 +44,7 @@ describe('units', () => {
       const attrs: UnitAttributes = {
         maxHealth: 3,
         limbMovement: 2,
-        meleeAttack: 1,
+        splashAttack: 1,
       };
       expect(validateAttributes(attrs)).toEqual([]);
     });
@@ -52,7 +52,7 @@ describe('units', () => {
     it('fails when no movement attribute is present', () => {
       const attrs: UnitAttributes = {
         maxHealth: 3,
-        meleeAttack: 2,
+        splashAttack: 2,
       };
       const errors = validateAttributes(attrs);
       expect(errors.length).toBe(1);

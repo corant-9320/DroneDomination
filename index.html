@@ -85,6 +85,31 @@
       font-size: 11px;
     }
 
+    .curtain .unit-card .unit-attr-detail {
+      margin-top: 4px;
+      font-size: 11px;
+    }
+
+    .curtain .unit-card .unit-attr-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 2px 0;
+      border-bottom: 1px solid rgba(80, 80, 80, 0.3);
+    }
+
+    .curtain .unit-card .unit-attr-row:last-child {
+      border-bottom: none;
+    }
+
+    .curtain .unit-card .unit-attr-key {
+      color: #aaa;
+    }
+
+    .curtain .unit-card .unit-attr-val {
+      color: #fff;
+      font-weight: bold;
+    }
+
     .curtain .empty-msg {
       color: #999;
       font-style: italic;
@@ -143,6 +168,26 @@
       background: rgba(70, 70, 70, 0.9);
     }
 
+    #next-turn-btn {
+      position: absolute;
+      bottom: 16px;
+      right: 16px;
+      background: rgba(40, 40, 40, 0.9);
+      border: 1px solid #555;
+      color: #eee;
+      font-size: 13px;
+      font-weight: bold;
+      padding: 8px 18px;
+      border-radius: 14px;
+      cursor: pointer;
+      transition: background 0.15s;
+      z-index: 30;
+    }
+    #next-turn-btn:hover {
+      background: rgba(70, 70, 70, 0.95);
+      border-color: #888;
+    }
+
     #loading {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -175,6 +220,7 @@
           <button id="home-btn" title="Centre on home city (Home)">⌂ Home</button>
         </div>
         <div id="detail-content"></div>
+        <button id="next-turn-btn" title="End turn (Space)">Next ▶</button>
       </div>
     </div>
   </div>

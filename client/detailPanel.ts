@@ -4,7 +4,7 @@
  */
 
 import { WorldData, TileData, UnitData } from './worldData.js';
-import { factionColor } from './factionColors.js';
+import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
 
 export class DetailPanel {
@@ -19,8 +19,8 @@ export class DetailPanel {
     this.showEmpty();
   }
 
-  /** Show the detail for a selected tile. */
-  showTile(tileIndex: number) {
+  /** Show the detail for a selected tile, optionally focusing a specific segment. */
+  showTile(tileIndex: number, segment?: number) {
     const tile = this.world.tiles[tileIndex];
     if (!tile) {
       dbg.detail.warn('showTile: invalid tileIndex', tileIndex);
@@ -30,11 +30,16 @@ export class DetailPanel {
 
     const city = this.world.cities.find((c) => c.tileIndex === tileIndex);
     const units = (this.world.units ?? []).filter((u) => u.tileIndex === tileIndex);
+    const focusedUnit = segment !== undefined
+      ? units.find((u) => u.segment === segment)
+      : undefined;
     dbg.detail.log('showTile:', tileIndex, {
       terrain: tile.terrain,
       elev: tile.elev,
       city: city?.label,
       units: units.length,
+      focusedSegment: segment,
+      focusedUnit: focusedUnit?.label,
     });
 
     let html = '';
@@ -70,7 +75,8 @@ export class DetailPanel {
       html += `<div class="empty-msg">No units on this tile</div>`;
     } else {
       for (const unit of units) {
-        html += this.renderUnitCard(unit);
+        const isFocused = focusedUnit && unit.id === focusedUnit.id;
+        html += this.renderUnitCard(unit, isFocused);
       }
     }
     html += `</div>`;
@@ -84,25 +90,51 @@ export class DetailPanel {
     this.el.innerHTML = html;
   }
 
-  private renderUnitCard(unit: UnitData): string {
+  private renderUnitCard(unit: UnitData, focused?: boolean): string {
     const color = factionColor(this.world, unit.ownerId);
     const attrs = unit.attributes;
 
-    let attrLines: string[] = [];
-    attrLines.push(`HP: ${unit.currentHealth}/${attrs.maxHealth ?? 1}`);
-
-    if (attrs.meleeAttack) attrLines.push(`Melee: ${attrs.meleeAttack}`);
-    if (attrs.rangeAttack) attrLines.push(`Range: ${attrs.rangeAttack}`);
-    if (attrs.armour) attrLines.push(`Armour: ${attrs.armour}`);
-    if (attrs.wheeledMovement) attrLines.push(`Wheeled: ${attrs.wheeledMovement}`);
-    if (attrs.limbMovement) attrLines.push(`Limb: ${attrs.limbMovement}`);
-    if (attrs.flightMovement) attrLines.push(`Flight: ${attrs.flightMovement}`);
-    if (attrs.repair) attrLines.push(`Repair: ${attrs.repair}`);
-    if (attrs.initiative) attrLines.push(`Initiative: ${attrs.initiative}`);
-
-    let html = `<div class="unit-card">`;
+    const focusStyle = focused
+      ? 'border:1px solid #fff; background:rgba(255,255,255,0.08);'
+      : '';
+    let html = `<div class="unit-card" style="${focusStyle}">`;
     html += `<div class="unit-label" style="color:${color};">${unit.label} <span style="font-weight:normal;color:#888;">(seg ${unit.segment})</span></div>`;
-    html += `<div class="unit-attr">${attrLines.join(' · ')}</div>`;
+
+    if (focused) {
+      // Detailed per-line view for selected unit — all non-zero attributes
+      const lines: [string, string][] = [];
+      lines.push(['HP', `${unit.currentHealth}/${attrs.maxHealth ?? 1}`]);
+      if (attrs.splashAttack) lines.push(['Splash Attack', `${attrs.splashAttack}`]);
+      if (attrs.rangeAttack) lines.push(['Range Attack', `${attrs.rangeAttack}`]);
+      if (attrs.armour) lines.push(['Armour', `${attrs.armour}`]);
+      if (attrs.defence) lines.push(['Defence', `${attrs.defence}`]);
+      if (attrs.wheeledMovement) lines.push(['Wheeled Movement', `${attrs.wheeledMovement}`]);
+      if (attrs.limbMovement) lines.push(['Limb Movement', `${attrs.limbMovement}`]);
+      if (attrs.flightMovement) lines.push(['Flight Movement', `${attrs.flightMovement}`]);
+      if (attrs.repair) lines.push(['Repair', `${attrs.repair}`]);
+      if (attrs.initiative) lines.push(['Initiative', `${attrs.initiative}`]);
+
+      html += `<div class="unit-attr-detail">`;
+      for (const [label, value] of lines) {
+        html += `<div class="unit-attr-row"><span class="unit-attr-key">${label}</span><span class="unit-attr-val">${value}</span></div>`;
+      }
+      html += `</div>`;
+    } else {
+      // Compact one-line summary for non-selected units
+      let attrLines: string[] = [];
+      attrLines.push(`HP: ${unit.currentHealth}/${attrs.maxHealth ?? 1}`);
+      if (attrs.splashAttack) attrLines.push(`Splash: ${attrs.splashAttack}`);
+      if (attrs.rangeAttack) attrLines.push(`Range: ${attrs.rangeAttack}`);
+      if (attrs.armour) attrLines.push(`Armour: ${attrs.armour}`);
+      if (attrs.defence) attrLines.push(`Defence: ${attrs.defence}`);
+      if (attrs.wheeledMovement) attrLines.push(`Wheeled: ${attrs.wheeledMovement}`);
+      if (attrs.limbMovement) attrLines.push(`Limb: ${attrs.limbMovement}`);
+      if (attrs.flightMovement) attrLines.push(`Flight: ${attrs.flightMovement}`);
+      if (attrs.repair) attrLines.push(`Repair: ${attrs.repair}`);
+      if (attrs.initiative) attrLines.push(`Initiative: ${attrs.initiative}`);
+      html += `<div class="unit-attr">${attrLines.join(' · ')}</div>`;
+    }
+
     html += `</div>`;
     return html;
   }

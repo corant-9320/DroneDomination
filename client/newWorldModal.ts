@@ -3,10 +3,11 @@
  * Keeps logic minimal; the server decides the world.
  */
 
-import { FACTION_PALETTE } from './factionColors.js';
+import { FACTION_PALETTE } from './colors.js';
 import { dbg } from './debug.js';
 
-const MAX_CITIES = 14;
+/** Must match CITY_COUNT in src/world/cities.ts. World always generates this many cities. */
+const MAX_CITIES = 12;
 const MIN_SPACING = 20;
 const MAX_SPACING = 45;
 

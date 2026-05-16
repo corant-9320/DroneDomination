@@ -34,7 +34,8 @@ export interface UnitData {
   attributes: {
     maxHealth?: number;
     armour?: number;
-    meleeAttack?: number;
+    defence?: number;
+    splashAttack?: number;
     rangeAttack?: number;
     wheeledMovement?: number;
     limbMovement?: number;

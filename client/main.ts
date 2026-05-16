@@ -6,6 +6,7 @@
 import { loadWorld, WorldData, applyNewWorld } from './worldData.js';
 import { GlobeView } from './globe.js';
 import { LocalMapView } from './localMap.js';
+import { DetailPanel } from './detailPanel.js';
 import { showNewWorldModal } from './newWorldModal.js';
 import { dbg } from './debug.js';
 
@@ -26,11 +27,15 @@ async function main() {
 
     const globeCanvas = document.getElementById('globe-canvas') as HTMLCanvasElement;
     const localCanvas = document.getElementById('local-canvas') as HTMLCanvasElement;
+    const detailEl = document.getElementById('detail-panel') as HTMLElement;
+
+    // Detail panel — shows terrain, units, city info for selected tile
+    const detailPanel = new DetailPanel(detailEl, world);
 
     // Shared tile selection handler
-    function showTileInfo(tileIndex: number) {
-      // Detail panel handled by DetailPanel if available
-      dbg.input.log('showTileInfo tile:', tileIndex, '| terrain:', world.tiles[tileIndex]?.terrain);
+    function showTileInfo(tileIndex: number, segment?: number) {
+      dbg.input.log('showTileInfo tile:', tileIndex, 'segment:', segment, '| terrain:', world.tiles[tileIndex]?.terrain);
+      detailPanel.showTile(tileIndex, segment);
     }
 
     function onTileSelected(tileIndex: number) {
@@ -39,9 +44,9 @@ async function main() {
       localMap.setSelected(tileIndex);
     }
 
-    function onLocalTileSelected(tileIndex: number) {
-      dbg.input.log('LocalMap tile selected:', tileIndex);
-      showTileInfo(tileIndex);
+    function onLocalTileSelected(tileIndex: number, segment?: number) {
+      dbg.input.log('LocalMap tile selected:', tileIndex, 'segment:', segment);
+      showTileInfo(tileIndex, segment);
       globe.panToTile(tileIndex);
     }
 
@@ -77,13 +82,17 @@ async function main() {
     // Home button
     const homeBtn = document.getElementById('home-btn');
     if (homeBtn) {
-      homeBtn.addEventListener('click', () => localMap.goHome());
+      homeBtn.addEventListener('click', () => {
+        localMap.goHome();
+        if (homeCity) globe.panToTile(homeCity.tileIndex);
+      });
     }
 
     // Home key (keyboard)
     window.addEventListener('keydown', (event) => {
       if (event.key === 'Home') {
         localMap.goHome();
+        if (homeCity) globe.panToTile(homeCity.tileIndex);
       }
     });
 
@@ -103,6 +112,23 @@ async function main() {
         }
       });
     }
+
+    // Next Turn button
+    const nextTurnBtn = document.getElementById('next-turn-btn');
+    if (nextTurnBtn) {
+      nextTurnBtn.addEventListener('click', () => {
+        dbg.input.log('Next Turn button clicked');
+        localMap.endTurn();
+      });
+    }
+
+    // Space key ends turn
+    window.addEventListener('keydown', (event) => {
+      if (event.key === ' ' && (event.target as HTMLElement).tagName !== 'INPUT') {
+        event.preventDefault();
+        localMap.endTurn();
+      }
+    });
 
     // Double-click on local map recenters
     localCanvas.addEventListener('dblclick', (event) => {

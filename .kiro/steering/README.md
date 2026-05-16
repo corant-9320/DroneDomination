@@ -4,9 +4,7 @@ Scoped guidance for AI agents working on Drone Domination.
 
 | File | Loads when | Purpose |
 |------|-----------|---------|
-| `conventions.md` | Always | Core repo conventions, import rules, naming |
-| `world-module.md` | Editing `src/world/` | World generation constraints, tile math, invariants |
-| `client.md` | Editing `client/` | Rendering approach, Three.js/Canvas patterns |
-| `server-api.md` | Editing `server/` | API handler rules, deployment constraints |
+| `conventions.md` | Always | Build commands, import rules, post-change actions |
+| `ui-defaults.md` | Editing `client/**`, `index.html` | Civ6-inspired HUD layout and keyboard shortcuts |
 
-For full architecture details, read [ARCHITECTURE.md](/ARCHITECTURE.md).
+For architecture, types, API contract, generation pipeline, and constants see [ARCHITECTURE.md](/ARCHITECTURE.md).

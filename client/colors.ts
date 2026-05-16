@@ -1,10 +1,49 @@
 /**
- * Faction color palette — one bold, easily distinguishable color per faction.
- * The player chooses their color from the shared palette at world creation.
- * Enemy factions are assigned the remaining colors in order.
+ * Color utilities — terrain palette + faction palette in one place.
+ * Shared hex→RGB conversion eliminates duplication.
  */
 
 import { WorldData } from './worldData.js';
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+/** Convert a hex color string (#RRGGBB) to an RGB triple in [0–1] range. */
+function hexToRGB(hex: string): [number, number, number] {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  return [r, g, b];
+}
+
+// ---------------------------------------------------------------------------
+// Terrain colors
+// ---------------------------------------------------------------------------
+
+/** Terrain type to color mapping. */
+export const TERRAIN_COLORS: Record<string, string> = {
+  ocean: '#1a5276',
+  plains: '#a8c686',
+  grassland: '#6b9b37',
+  forest: '#2d6a2d',
+  hills: '#8b7355',
+  mountain: '#6b6b6b',
+  desert: '#d4a843',
+  tundra: '#b8c9d4',
+};
+
+export function terrainColor(terrain: string): string {
+  return TERRAIN_COLORS[terrain] || '#555555';
+}
+
+export function terrainColorRGB(terrain: string): [number, number, number] {
+  return hexToRGB(terrainColor(terrain));
+}
+
+// ---------------------------------------------------------------------------
+// Faction colors
+// ---------------------------------------------------------------------------
 
 /** Default player faction color if none was chosen. */
 const DEFAULT_PLAYER_COLOR = '#00e5ff';
@@ -48,7 +87,6 @@ function buildColorMap(world: WorldData): Map<string, string> {
   lastWorldSeed = world.seed;
   lastPlayerColor = playerColor;
 
-  // Enemy palette = full palette minus the player's chosen color
   const enemyPalette = FACTION_PALETTE.filter((c) => c !== playerColor);
 
   let enemyIndex = 0;
@@ -73,15 +111,9 @@ export function factionColor(world: WorldData, ownerId: string): string {
   return map.get(ownerId) ?? '#888888';
 }
 
-/**
- * Get the faction color as an RGB triple [0–1] for Three.js usage.
- */
+/** Get the faction color as an RGB triple [0–1] for Three.js usage. */
 export function factionColorRGB(world: WorldData, ownerId: string): [number, number, number] {
-  const hex = factionColor(world, ownerId);
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  return [r, g, b];
+  return hexToRGB(factionColor(world, ownerId));
 }
 
 /** Get the player color for the current world (useful for legends/UI). */

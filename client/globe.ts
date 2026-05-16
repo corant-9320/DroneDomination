@@ -7,8 +7,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { WorldData, TileData } from './worldData.js';
-import { terrainColorRGB } from './terrainColors.js';
-import { factionColorRGB } from './factionColors.js';
+import { terrainColorRGB, factionColorRGB } from './colors.js';
 import { dbg } from './debug.js';
 
 export class GlobeView {

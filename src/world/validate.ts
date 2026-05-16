@@ -5,6 +5,7 @@
 
 import { World, Tile, City } from './types.js';
 import { graphDistance } from './pathfinding.js';
+import { CITY_COUNT } from './cities.js';
 
 export interface ValidationResult {
   passed: boolean;
@@ -153,8 +154,8 @@ export function validateWorld(world: World): ValidationResult {
   // --- City invariants ---
 
   checks.push({
-    name: 'city_count == 12',
-    passed: cities.length === 12,
+    name: `city_count == ${CITY_COUNT}`,
+    passed: cities.length === CITY_COUNT,
     detail: `Got ${cities.length}`,
   });
 
