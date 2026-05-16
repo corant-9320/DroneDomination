@@ -4,14 +4,15 @@
  * Each unit is drawn as a composite of visual elements based on its attributes:
  *
  *   Base shape:     Rectangle oriented toward the hex edge (segment direction)
- *   Health bar:     Width proportional to maxHealth; red/green fill shows current HP
+ *   Health bar:     Hovers above the unit in screen space (always horizontal);
+ *                   depth (height) proportional to maxHealth, green fill ∝ currentHealth/maxHealth
  *   Border:         Thickness proportional to armour rating
  *   Range stick:    Line from front of rectangle in facing direction, length ∝ rangeAttack
  *   Splash T-bar:   Perpendicular bar across the end of the range stick, ∝ splashAttack
  *   Wheels:         Pair of circles under the rectangle (wheeledMovement)
  *   Legs:           Pair of 'L' shapes under the rectangle (limbMovement)
- *   Flight rotor:   Elongated 'x' above the rectangle (flightMovement)
- *   Repair cross:   + behind/inside the rectangle (repair)
+ *   Defence:        Antenna sticking up from front (windshield), length ∝ defence
+ *   Repair cross:   Red + inside the rectangle, next to initiative number
  *   Initiative #:   Number rendered inside the rectangle (initiative)
  */
 
@@ -65,16 +66,10 @@ export function drawUnitIcon(
   const halfW = bodyW / 2;
   const halfH = bodyH / 2;
 
-  // --- Repair cross (behind rectangle) ---
-  const repair = attrs.repair ?? 0;
-  if (repair > 0) {
-    drawRepairCross(ctx, halfW, halfH, repair, size);
-  }
-
-  // --- Flight rotor (above rectangle) ---
+  // --- Flight rotor (opposite long side from wheels/legs) ---
   const flight = attrs.flightMovement ?? 0;
   if (flight > 0) {
-    drawFlightRotor(ctx, halfW, halfH, flight, size);
+    drawFlightRotor(ctx, halfW, halfH, flight, size, angle);
   }
 
   // --- Body rectangle ---
@@ -87,16 +82,17 @@ export function drawUnitIcon(
   ctx.fillRect(-halfW, -halfH, bodyW, bodyH);
   ctx.strokeRect(-halfW, -halfH, bodyW, bodyH);
 
-  // --- Defence extension (front edge extends forward proportionally) ---
+  // --- Defence antenna (roof side, in front of rotors) ---
   const defence = attrs.defence ?? 0;
   if (defence > 0) {
-    drawDefenceExtension(ctx, halfW, halfH, defence, size, color, borderWidth);
+    drawDefenceAntenna(ctx, halfW, halfH, defence, size, angle);
   }
 
-  // --- Initiative number inside rectangle ---
+  // --- Initiative number & Repair cross inside rectangle ---
   const initiative = attrs.initiative ?? 0;
-  if (initiative > 0) {
-    drawInitiativeNumber(ctx, initiative, halfW, halfH, size);
+  const repair = attrs.repair ?? 0;
+  if (initiative > 0 || repair > 0) {
+    drawInteriorMarkers(ctx, initiative, repair, halfW, halfH, size);
   }
 
   // --- Range stick + Splash T-bar (from front of rectangle) ---
@@ -118,10 +114,43 @@ export function drawUnitIcon(
     drawLegs(ctx, halfW, halfH, size, angle);
   }
 
-  // --- Health bar (width ∝ maxHealth) ---
-  drawHealthBar(ctx, unit, halfW, halfH, size);
-
   ctx.restore();
+
+  // --- Health bar (drawn in screen space so it always hovers above the unit) ---
+  // Compute the maximum extent from centre so the bar clears all drawn elements.
+  const extents: number[] = [halfH]; // body half-height at minimum
+
+  // Range stick extends from front
+  const rangeExt = range > 0 ? halfH + size * 0.5 * Math.max(range, 1) : 0;
+  if (rangeExt > 0) extents.push(rangeExt);
+
+  // Rotor strut extends outward from roof
+  if (flight > 0) {
+    const strutHeight = size * 0.35;
+    const rotorSize = size * 0.4 + flight * size * 0.08;
+    extents.push(halfW + strutHeight + rotorSize * 0.5);
+  }
+
+  // Defence antenna extends outward from roof
+  if (defence > 0) {
+    const antennaLen = size * 0.3 + defence * size * 0.18;
+    extents.push(halfW + antennaLen);
+  }
+
+  // Wheels extend sideways
+  if (wheeled > 0) {
+    const wheelRadius = size * 0.22;
+    extents.push(halfW + wheelRadius * 2 + 1);
+  }
+
+  // Legs extend sideways
+  if (limb > 0 && wheeled === 0) {
+    const legLen = size * 0.35;
+    extents.push(halfW + 1 + legLen);
+  }
+
+  const maxExtent = Math.max(...extents);
+  drawHealthBar(ctx, unit, sx, sy, size, maxExtent);
 }
 
 // ---------------------------------------------------------------------------
@@ -131,31 +160,30 @@ export function drawUnitIcon(
 function drawHealthBar(
   ctx: CanvasRenderingContext2D,
   unit: UnitData,
-  halfW: number,
-  halfH: number,
+  sx: number,
+  sy: number,
   size: number,
+  extent: number,
 ): void {
   const maxHp = unit.attributes.maxHealth ?? 1;
   const curHp = unit.currentHealth;
 
-  // Bar sits just above the rectangle (in local space, that's at -halfH - gap)
-  const barH = Math.max(2, size * 0.2);
-  const barMaxW = halfW * 2 * (maxHp / 5); // width proportional to maxHealth
-  const barX = -barMaxW / 2;
-  const barY = -halfH - barH - 1;
+  // Bar hovers above the unit in screen space (always horizontal).
+  // Width matches body width; depth (height) is proportional to maxHealth.
+  // Positioned above the full rendering extent of the unit.
+  const barW = size * 1.2; // same as bodyW
+  const barH = Math.max(2, size * 0.12 * maxHp); // depth ∝ maxHealth
+  const barX = sx - barW / 2;
+  const barY = sy - extent - barH - Math.max(3, barH * 0.4); // extra clearance for deeper bars
 
   // Background (dark)
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
-  ctx.fillRect(barX, barY, barMaxW, barH);
+  ctx.fillRect(barX, barY, barW, barH);
 
-  // Health fill
+  // Health fill — green portion proportional to current/max
   const ratio = curHp / maxHp;
-  let barColor: string;
-  if (ratio > 0.6) barColor = '#4f4';
-  else if (ratio > 0.3) barColor = '#fd4';
-  else barColor = '#f44';
-  ctx.fillStyle = barColor;
-  ctx.fillRect(barX, barY, barMaxW * ratio, barH);
+  ctx.fillStyle = '#4f4';
+  ctx.fillRect(barX, barY, barW * ratio, barH);
 }
 
 function drawRangeAndSplash(
@@ -271,86 +299,123 @@ function drawFlightRotor(
   halfH: number,
   flight: number,
   size: number,
+  angle: number,
 ): void {
-  // Elongated 'x' above the rectangle (like a rotor)
+  // Rotor raised from the roof of the vehicle (opposite side from wheels/legs).
+  // Sits behind the antenna (toward the rear of the body, local +Y direction).
+  const side = -profileSide(angle); // roof side
   const rotorSize = size * 0.4 + flight * size * 0.08;
-  const rotorY = -halfH - size * 0.5;
-  const elongation = 1.6; // stretch horizontally
+  const strutHeight = size * 0.35; // raised above the roof edge
+  const roofX = side * halfW;
+  const strutX = roofX + side * strutHeight;
+  const rotorY = halfH * 0.2; // slightly rear-of-centre
+  const elongation = 1.4; // stretch along the long axis (Y)
 
   ctx.strokeStyle = '#555';
-  ctx.lineWidth = Math.max(1, size * 0.12);
+  ctx.lineWidth = Math.max(1, size * 0.10);
   ctx.lineCap = 'round';
 
+  // Strut from roof to rotor hub
   ctx.beginPath();
-  ctx.moveTo(-rotorSize * elongation, rotorY - rotorSize * 0.6);
-  ctx.lineTo(rotorSize * elongation, rotorY + rotorSize * 0.6);
-  ctx.moveTo(rotorSize * elongation, rotorY - rotorSize * 0.6);
-  ctx.lineTo(-rotorSize * elongation, rotorY + rotorSize * 0.6);
+  ctx.moveTo(roofX, rotorY);
+  ctx.lineTo(strutX, rotorY);
+  ctx.stroke();
+
+  // Elongated 'x' rotor blades at the top of the strut
+  ctx.beginPath();
+  ctx.moveTo(strutX, rotorY - rotorSize * elongation);
+  ctx.lineTo(strutX, rotorY + rotorSize * elongation);
+  ctx.moveTo(strutX - rotorSize * 0.5, rotorY - rotorSize * elongation * 0.7);
+  ctx.lineTo(strutX + rotorSize * 0.5, rotorY + rotorSize * elongation * 0.7);
+  ctx.moveTo(strutX + rotorSize * 0.5, rotorY - rotorSize * elongation * 0.7);
+  ctx.lineTo(strutX - rotorSize * 0.5, rotorY + rotorSize * elongation * 0.7);
   ctx.stroke();
 }
 
 function drawRepairCross(
   ctx: CanvasRenderingContext2D,
-  halfW: number,
-  halfH: number,
-  repair: number,
-  size: number,
+  cx: number,
+  cy: number,
+  crossSize: number,
 ): void {
-  // Cross (+) behind the rectangle — drawn first so it appears behind
-  const crossSize = size * 0.35 + repair * size * 0.06;
-
-  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-  ctx.lineWidth = Math.max(1.5, size * 0.18);
+  // Red medical cross
+  ctx.strokeStyle = '#f22';
+  ctx.lineWidth = Math.max(1.5, crossSize * 0.4);
   ctx.lineCap = 'round';
 
-  // Vertical bar of cross
   ctx.beginPath();
-  ctx.moveTo(0, -crossSize);
-  ctx.lineTo(0, crossSize);
+  ctx.moveTo(cx, cy - crossSize);
+  ctx.lineTo(cx, cy + crossSize);
   ctx.stroke();
 
-  // Horizontal bar of cross
   ctx.beginPath();
-  ctx.moveTo(-crossSize, 0);
-  ctx.lineTo(crossSize, 0);
+  ctx.moveTo(cx - crossSize, cy);
+  ctx.lineTo(cx + crossSize, cy);
   ctx.stroke();
 }
 
-function drawInitiativeNumber(
+/**
+ * Draw initiative number and/or repair cross inside the vehicle body.
+ * If both exist, initiative is left-of-centre and repair cross is right-of-centre.
+ * If only one exists, it's centred.
+ */
+function drawInteriorMarkers(
   ctx: CanvasRenderingContext2D,
   initiative: number,
+  repair: number,
   halfW: number,
   halfH: number,
   size: number,
 ): void {
+  const hasBoth = initiative > 0 && repair > 0;
   const fontSize = Math.max(6, size * 0.8);
-  ctx.font = `bold ${fontSize}px sans-serif`;
-  ctx.fillStyle = '#000';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`${initiative}`, 0, 0);
+
+  if (initiative > 0) {
+    const numX = hasBoth ? -halfW * 0.35 : 0;
+    ctx.font = `bold ${fontSize}px sans-serif`;
+    ctx.fillStyle = '#000';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${initiative}`, numX, 0);
+  }
+
+  if (repair > 0) {
+    const crossX = hasBoth ? halfW * 0.35 : 0;
+    const crossSize = size * 0.25;
+    drawRepairCross(ctx, crossX, 0, crossSize);
+  }
 }
 
-function drawDefenceExtension(
+function drawDefenceAntenna(
   ctx: CanvasRenderingContext2D,
   halfW: number,
   halfH: number,
   defence: number,
   size: number,
-  color: string,
-  borderWidth: number,
+  angle: number,
 ): void {
-  // Extend the front edge of the rectangle forward proportionally to defence.
-  // This creates a raised shield/prow shape at the front of the unit.
-  const extHeight = size * 0.2 * defence; // proportional to defence (0–5)
-  const extTop = -halfH - extHeight;
+  // Antenna on the roof side (opposite from wheels/legs), toward the front of the vehicle.
+  // Sits in front of the rotors.
+  const side = -profileSide(angle); // roof side
+  const roofX = side * halfW;
+  const antennaLen = size * 0.3 + defence * size * 0.18;
+  const tipX = roofX + side * antennaLen;
+  const antennaY = -halfH * 0.5; // front half of the body
 
-  // Draw the extension as a filled rectangle spanning the full front width
-  ctx.fillStyle = color;
-  ctx.fillRect(-halfW, extTop, halfW * 2, extHeight);
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = Math.max(1, size * 0.08);
+  ctx.lineCap = 'round';
 
-  // Border matching armour thickness
-  ctx.strokeStyle = '#000';
-  ctx.lineWidth = borderWidth;
-  ctx.strokeRect(-halfW, extTop, halfW * 2, extHeight);
+  // Stalk from roof outward
+  ctx.beginPath();
+  ctx.moveTo(roofX, antennaY);
+  ctx.lineTo(tipX, antennaY);
+  ctx.stroke();
+
+  // Small ball at tip
+  const tipRadius = Math.max(1, size * 0.08);
+  ctx.fillStyle = '#555';
+  ctx.beginPath();
+  ctx.arc(tipX, antennaY, tipRadius, 0, Math.PI * 2);
+  ctx.fill();
 }
