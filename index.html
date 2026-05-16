@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Drone Domination — Goldberg G(24,0) World</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #111; color: #eee; font-family: 'Segoe UI', sans-serif; }
+
+    #app {
+      display: flex;
+      width: 100%;
+      height: 100%;
+    }
+
+    #globe-panel {
+      width: 50%;
+      height: 100%;
+      position: relative;
+      border-right: 2px solid #333;
+    }
+
+    #local-panel {
+      width: 50%;
+      height: 100%;
+      position: relative;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .panel-label {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-size: 12px;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    #info {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      font-size: 11px;
+      color: #888;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    #tile-info {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      font-size: 12px;
+      color: #ccc;
+      background: rgba(0,0,0,0.7);
+      padding: 8px 12px;
+      border-radius: 4px;
+      z-index: 10;
+      max-width: 250px;
+    }
+
+    #home-btn, #new-world-btn {
+      position: absolute;
+      bottom: 10px;
+      z-index: 10;
+      background: rgba(30,30,30,0.85);
+      border: 1px solid #555;
+      color: #eee;
+      font-size: 13px;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    #home-btn { right: 10px; }
+    #new-world-btn { right: 90px; }
+    #home-btn:hover, #new-world-btn:hover {
+      background: rgba(60,60,60,0.9);
+    }
+
+    #loading {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #111;
+      z-index: 1000;
+      font-size: 18px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">Loading world...</div>
+  <div id="app">
+    <div id="globe-panel">
+      <div class="panel-label">Globe View</div>
+      <canvas id="globe-canvas"></canvas>
+    </div>
+    <div id="local-panel">
+      <div class="panel-label">Local Map (Peeled View)</div>
+      <canvas id="local-canvas"></canvas>
+      <div id="tile-info"></div>
+      <button id="new-world-btn" title="Generate a new world">+ New World</button>
+      <button id="home-btn" title="Go to home city (Home key)">⌂ Home</button>
+    </div>
+  </div>
+  <div id="info">Click a tile on either view to inspect. Scroll to zoom. Drag to rotate/pan.</div>
+  <script type="module" src="/client/main.ts"></script>
+</body>
+</html>
