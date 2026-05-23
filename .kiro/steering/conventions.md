@@ -2,10 +2,7 @@
 
 ## Build & run
 
-- Build: `tsc` → `dist/`
-- Dev: `npm run dev` (Vite, port 3000)
-- Tests: `npm run test` (vitest)
-- Generate static world: `npm run build && npm run generate`
+See `package.json` scripts. Key: `dev` (Vite:3000), `test` (vitest), `build && generate` for world regen.
 
 ## Import rules
 
@@ -23,7 +20,18 @@
 | `src/world/**` (generation logic) | `npm run build && npm run generate`, then refresh |
 | `data/world.json` regenerated | Refresh the browser |
 | `tsconfig.json`, `vite.config.ts` | Restart `npm run dev` |
+| `scripts/**` | Run the script manually (`node scripts/<name>.js`) |
+
+## When editing specific areas
+
+| Area | Also check / verify |
+|---|---|
+| `src/world/types.ts` | `client/worldData.ts` mirrors compact format — keep in sync |
+| `src/world/compact.ts` | Wire format affects `client/worldData.ts` interfaces |
+| `src/world/units.ts` | `client/unitIcons.ts` renders from attributes |
+| `client/colors.ts` | Single source for both terrain + faction palettes |
+| `server/generate.ts` | Uses `spawnInitialUnits` + `toCompactWorld` from `src/world/` |
 
 ## Key reference
 
-- [ARCHITECTURE.md](/ARCHITECTURE.md) — module map, types, data flow, wire format, constants, API contract
+- `architecture.md` auto-loads when editing `src/`, `server/`, or config files

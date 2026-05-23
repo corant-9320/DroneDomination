@@ -31,8 +31,10 @@ export interface UnitData {
   ownerId: string;
   tileIndex: number;
   segment: 0 | 1 | 2 | 3 | 4 | 5;
+  facing: 0 | 1 | 2 | 3 | 4 | 5;
   attributes: {
     maxHealth?: number;
+    attack?: number;
     armour?: number;
     defence?: number;
     splashAttack?: number;
@@ -41,7 +43,6 @@ export interface UnitData {
     limbMovement?: number;
     flightMovement?: number;
     repair?: number;
-    initiative?: number;
   };
   currentHealth: number;
 }
@@ -60,6 +61,11 @@ export interface WorldData {
 }
 
 let cachedWorld: WorldData | null = null;
+
+/** Returns the currently loaded world, or null if not yet loaded. */
+export function getWorld(): WorldData | null {
+  return cachedWorld;
+}
 
 export async function loadWorld(): Promise<WorldData> {
   if (cachedWorld) {

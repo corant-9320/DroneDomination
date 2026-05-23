@@ -30,16 +30,22 @@ export class LocalMapView {
   private selectedTile: number = -1;
   private selectedSegment: number = -1;
   private onCentreChange: ((tileIndex: number) => void) | null = null;
+  /** Callback when player hovers an enemy tile (for attack preview). */
+  private onHoverEnemy: ((attacker: UnitData | null, target: UnitData | null) => void) | null = null;
+  /** Track last hovered enemy to avoid redundant callbacks. */
+  private lastHoveredEnemyId: string | null = null;
 
   // Movement system
   /** Units currently selected for movement (by unit id). */
   private selectedUnits: Set<string> = new Set();
   /** Remaining movement points per unit this turn (keyed by unit id). */
   private movementPoints: Map<string, number> = new Map();
-  /** Facing angle (radians) per tile — set by last movement into that tile. */
-  private tileFacing: Map<number, number> = new Map();
   /** Callback when turn ends. */
   private onTurnEnd: (() => void) | null = null;
+  /** Callback when player initiates an attack (attackerId, targetId). */
+  private onAttack: ((attackerId: string, targetId: string) => void) | null = null;
+  /** The faction (ownerId) allowed to select and move units. */
+  private activeFaction: string = '';
 
   // View transform
   private offsetX: number = 0;
@@ -47,6 +53,8 @@ export class LocalMapView {
   private scale: number = 0.3;
   private dragging: boolean = false;
   private lastMouse: { x: number; y: number } = { x: 0, y: 0 };
+  private dragEmitPending: boolean = false;
+  private lastEmittedCentreTile: number = -1;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -79,6 +87,7 @@ export class LocalMapView {
   setCentre(tileIndex: number) {
     dbg.localMap.log('setCentre:', tileIndex);
     this.centreTileIndex = tileIndex;
+    this.lastEmittedCentreTile = tileIndex;
     dbg.localMap.time('buildFlatView');
     this.flatTiles = this.buildFlatView(tileIndex, this.radius);
     dbg.localMap.timeEnd('buildFlatView');
@@ -113,6 +122,11 @@ export class LocalMapView {
   /** Register a callback for when the local map's centre tile changes (drag recenter). */
   setOnCentreChange(cb: (tileIndex: number) => void) {
     this.onCentreChange = cb;
+  }
+
+  /** Register a callback for enemy hover (attack preview). */
+  setOnHoverEnemy(cb: (attacker: UnitData | null, target: UnitData | null) => void) {
+    this.onHoverEnemy = cb;
   }
 
   /**
@@ -314,6 +328,15 @@ export class LocalMapView {
 
     // Draw units at all zoom levels
     this.drawUnits();
+
+    // HUD: zoom factor (top-left)
+    this.ctx.save();
+    this.ctx.font = '12px sans-serif';
+    this.ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    this.ctx.textAlign = 'left';
+    this.ctx.textBaseline = 'top';
+    this.ctx.fillText(`Zoom: ${this.scale.toFixed(1)}×`, 8, 8);
+    this.ctx.restore();
   }
 
   /**
@@ -365,7 +388,7 @@ export class LocalMapView {
 
   /**
    * Draw unit markers in their segment triangles using composite icons.
-   * All units on a tile face the same direction (the tile's facing from last movement).
+   * Each unit faces its own `facing` direction (0–5 segment angle).
    */
   private drawUnits() {
     const units = this.world.units;
@@ -388,22 +411,16 @@ export class LocalMapView {
       if (!segPos) continue;
       const [sx, sy] = this.worldToScreen(segPos.x, segPos.y);
 
-      // Dynamic size — 3x the original
-      const size = Math.max(12, 15 * this.scale / 2);
+      // Compute size from the segment triangle's screen-space inradius so the
+      // icon scales proportionally with zoom and always fits inside the triangle.
+      const size = this.getSegmentIconSize(ft, unit.segment);
       const color = this.ownerColor(unit.ownerId);
 
-      // All units on a tile face the same direction (tile facing from last movement)
-      const facingAngle = this.tileFacing.get(unit.tileIndex);
+      // Per-unit facing direction
+      const facingAngle = segmentAngle(unit.facing);
 
       // Draw composite icon
       drawUnitIcon(this.ctx, unit, sx, sy, size, color, facingAngle);
-
-      // Log first unit per tile for debugging
-      if (facingAngle !== undefined) {
-        dbg.localMap.log('drawUnit', unit.label, 'at tile', unit.tileIndex,
-          '| facingAngle (deg):', (facingAngle * 180 / Math.PI).toFixed(1),
-          '| screen pos:', sx.toFixed(0), sy.toFixed(0));
-      }
 
       // Selection ring for selected units
       if (this.selectedUnits.has(unit.id)) {
@@ -414,6 +431,54 @@ export class LocalMapView {
         this.ctx.stroke();
       }
     }
+  }
+
+  /**
+   * Compute the icon base-size for a segment triangle so the drawn unit
+   * fills ~90% of the triangle at every zoom level.
+   *
+   * Returns a `size` value (half-width of body rectangle in drawUnitIcon).
+   * The icon's maximum extent is roughly size * 1.75 (tank sprite radius),
+   * so we target size ≈ inradius * 0.5 which places the outer edge at ~87%
+   * of the triangle's inscribed circle.
+   */
+  private getSegmentIconSize(ft: FlatTile, segment: number): number {
+    if (ft.poly.length < 6) return 8;
+
+    // Triangle vertices in screen space
+    const [cx, cy] = this.worldToScreen(ft.cx, ft.cy);
+    const v0 = ft.poly[segment % 6];
+    const v1 = ft.poly[(segment + 1) % 6];
+    const [ax, ay] = this.worldToScreen(v0.x, v0.y);
+    const [bx, by] = this.worldToScreen(v1.x, v1.y);
+
+    // Centroid in screen space (where the icon is drawn)
+    const px = (cx + ax + bx) / 3;
+    const py = (cy + ay + by) / 3;
+
+    // Distance from centroid to each of the three edges
+    const d1 = this.pointToEdgeDist(px, py, cx, cy, ax, ay);
+    const d2 = this.pointToEdgeDist(px, py, ax, ay, bx, by);
+    const d3 = this.pointToEdgeDist(px, py, bx, by, cx, cy);
+    const inradius = Math.min(d1, d2, d3);
+
+    // size * 1.75 is the largest radius used (tank sprite), so
+    // size = inradius * 0.5 keeps the sprite at ~87% of the triangle edge.
+    return Math.max(4, inradius * 0.5);
+  }
+
+  /** Perpendicular distance from point (px,py) to the line through (x1,y1)-(x2,y2). */
+  private pointToEdgeDist(
+    px: number, py: number,
+    x1: number, y1: number,
+    x2: number, y2: number,
+  ): number {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1e-6) return 0;
+    // Absolute value of cross product / length
+    return Math.abs((px - x1) * dy - (py - y1) * dx) / len;
   }
 
 
@@ -495,19 +560,21 @@ export class LocalMapView {
       this.selectedTile = tileIdx;
       this.selectedSegment = segment;
 
-      // Unit selection: select units on this tile
+      // Unit selection: select units on this tile (only active faction)
       const tileUnits = this.world.units.filter((u) => u.tileIndex === tileIdx);
       if (event.shiftKey) {
-        // Shift+click: select all units on the hex
+        // Shift+click: select all active-faction units on the hex
         this.selectedUnits.clear();
         for (const u of tileUnits) {
-          this.selectedUnits.add(u.id);
+          if (u.ownerId === this.activeFaction) {
+            this.selectedUnits.add(u.id);
+          }
         }
       } else if (segment >= 0) {
-        // Normal click on segment: select unit in that segment (if any)
+        // Normal click on segment: select unit in that segment (if it's active faction)
         this.selectedUnits.clear();
         const segUnit = tileUnits.find((u) => u.segment === segment);
-        if (segUnit) {
+        if (segUnit && segUnit.ownerId === this.activeFaction) {
           this.selectedUnits.add(segUnit.id);
         }
       } else {
@@ -533,12 +600,76 @@ export class LocalMapView {
       this.offsetY += dy;
       this.lastMouse = { x: event.clientX, y: event.clientY };
       this.render();
+      this.emitDragCentre();
       return;
     }
 
     const rect = this.canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
+
+    // Attack preview: when player has a unit selected, hovering an enemy shows preview
+    if (this.onHoverEnemy && this.selectedUnits.size > 0) {
+      const tileIdx = this.findTileAt(x, y);
+      if (tileIdx >= 0) {
+        const unitsOnTile = this.world.units.filter((u) => u.tileIndex === tileIdx);
+        const playerUnits = this.world.units.filter((u) => this.selectedUnits.has(u.id));
+        if (playerUnits.length > 0) {
+          const playerOwner = playerUnits[0].ownerId;
+          const enemy = unitsOnTile.find((u) => u.ownerId !== playerOwner);
+          if (enemy) {
+            if (this.lastHoveredEnemyId !== enemy.id) {
+              this.lastHoveredEnemyId = enemy.id;
+              this.onHoverEnemy(playerUnits[0], enemy);
+            }
+            return;
+          }
+        }
+      }
+      // No enemy under cursor — clear preview
+      if (this.lastHoveredEnemyId !== null) {
+        this.lastHoveredEnemyId = null;
+        this.onHoverEnemy(null, null);
+      }
+    }
+  }
+
+  /**
+   * During drag, find the tile at viewport centre. If it's a different tile
+   * than the current centre, rebuild the flat view around it so new territory
+   * appears. Setting offset to 0 is correct because the tile at screen-centre
+   * becomes the new projection centre (placed at screen centre by definition).
+   * Also emit to the globe for smooth sync.
+   */
+  private emitDragCentre() {
+    if (this.dragEmitPending) return;
+    this.dragEmitPending = true;
+    requestAnimationFrame(() => {
+      this.dragEmitPending = false;
+      const rect = this.canvas.getBoundingClientRect();
+      const centreX = rect.width / 2;
+      const centreY = rect.height / 2;
+      const tileIdx = this.findTileAt(centreX, centreY);
+      if (tileIdx < 0) return;
+      if (tileIdx === this.lastEmittedCentreTile) return;
+      this.lastEmittedCentreTile = tileIdx;
+
+      // Rebuild flat view around the new centre tile — gives real panning
+      if (tileIdx !== this.centreTileIndex) {
+        this.centreTileIndex = tileIdx;
+        this.flatTiles = this.buildFlatView(tileIdx, this.radius);
+        // Reset offset: the tile that was at screen centre is now the
+        // projection origin, so (0,0) lands at screen centre.
+        this.offsetX = 0;
+        this.offsetY = 0;
+        this.render();
+      }
+
+      // Sync globe
+      if (this.onCentreChange) {
+        this.onCentreChange(tileIdx);
+      }
+    });
   }
 
   private onWheel(event: WheelEvent) {
@@ -562,8 +693,17 @@ export class LocalMapView {
   }
 
   /**
-   * Arrow Left/Right rotates the facing of all units on the selected hex
-   * by ±60°. This is a free action (no movement cost).
+   * Arrow key rotation behaviour depends on selection mode:
+   *
+   * WHOLE HEX selected (selectedSegment === -1):
+   *   L/R        → All units rotate but stay in their triangle (facing rotates ±1).
+   *   Shift+L/R  → All units rotate triangles (segment ±1). Facing points outward
+   *                (set to the segment the unit lands in).
+   *
+   * SINGLE UNIT selected (selectedSegment >= 0):
+   *   L/R        → Rotate that single unit's facing ±1 (stays in its triangle).
+   *   Shift+L/R  → All units on the hex rotate triangles (segment ±1).
+   *                Facing remains unchanged (preserves current orientation).
    */
   private onKeyDown(event: KeyboardEvent) {
     if (this.selectedTile < 0) return;
@@ -578,22 +718,43 @@ export class LocalMapView {
     event.preventDefault();
     const direction = event.key === 'ArrowRight' ? 1 : -1;
 
-    // Rotate each unit's segment (position within hex)
-    for (const unit of tileUnits) {
-      unit.segment = ((unit.segment + direction + 6) % 6) as 0 | 1 | 2 | 3 | 4 | 5;
-    }
+    const wholeHexSelected = this.selectedSegment < 0;
 
-    // Also rotate the tile facing so icons point in the new direction
-    const currentFacing = this.tileFacing.get(this.selectedTile);
-    const rotationStep = (direction * Math.PI) / 3; // 60°
-    if (currentFacing !== undefined) {
-      this.tileFacing.set(this.selectedTile, currentFacing + rotationStep);
+    if (wholeHexSelected) {
+      if (event.shiftKey) {
+        // Shift+L/R with whole hex: rotate segments, facing = outward (segment direction)
+        for (const unit of tileUnits) {
+          unit.segment = ((unit.segment + direction + 6) % 6) as 0 | 1 | 2 | 3 | 4 | 5;
+          unit.facing = unit.segment;
+        }
+        dbg.localMap.log('Whole-hex Shift-rotate segments (outward facing), dir:', direction);
+      } else {
+        // L/R with whole hex: rotate facing only, segments unchanged
+        for (const unit of tileUnits) {
+          unit.facing = ((unit.facing + direction + 6) % 6) as 0 | 1 | 2 | 3 | 4 | 5;
+        }
+        dbg.localMap.log('Whole-hex rotate facing, dir:', direction);
+      }
     } else {
-      // Default facing was segment-based; set an explicit facing
-      this.tileFacing.set(this.selectedTile, segmentAngle(0) + rotationStep);
+      // Single unit selected
+      if (event.shiftKey) {
+        // Shift+L/R with single unit: rotate all segments, facing unchanged
+        for (const unit of tileUnits) {
+          unit.segment = ((unit.segment + direction + 6) % 6) as 0 | 1 | 2 | 3 | 4 | 5;
+        }
+        // Update selected segment to follow the rotation
+        this.selectedSegment = ((this.selectedSegment + direction + 6) % 6);
+        dbg.localMap.log('Single-unit Shift-rotate segments (facing preserved), dir:', direction);
+      } else {
+        // L/R with single unit: rotate only that unit's facing
+        const selectedUnit = tileUnits.find((u) => u.segment === this.selectedSegment);
+        if (selectedUnit) {
+          selectedUnit.facing = ((selectedUnit.facing + direction + 6) % 6) as 0 | 1 | 2 | 3 | 4 | 5;
+          dbg.localMap.log('Single-unit rotate facing:', selectedUnit.label, 'dir:', direction);
+        }
+      }
     }
 
-    dbg.localMap.log('Rotated units in tile', this.selectedTile, 'direction:', direction);
     this.render();
   }
 
@@ -626,6 +787,16 @@ export class LocalMapView {
   /** Register callback for end-of-turn. */
   setOnTurnEnd(cb: () => void) {
     this.onTurnEnd = cb;
+  }
+
+  /** Register callback for when the player attacks. */
+  setOnAttack(cb: (attackerId: string, targetId: string) => void) {
+    this.onAttack = cb;
+  }
+
+  /** Set the faction allowed to select/move/attack. */
+  setActiveFaction(factionId: string) {
+    this.activeFaction = factionId;
   }
 
   /** End the current turn: reset all movement points and deselect. */
@@ -687,8 +858,24 @@ export class LocalMapView {
   }
 
   /**
-   * Right-click handler: move selected units toward the target hex.
-   * Units sharing a hex move at the speed of the slowest in the group.
+   * Convert a radian angle to the nearest facing index (0–5).
+   * Segment 0 faces up (-π/2), each step rotates 60° clockwise.
+   */
+  private angleToFacing(angle: number): 0 | 1 | 2 | 3 | 4 | 5 {
+    // segmentAngle(i) = -π/2 + i * π/3
+    // Invert: i = (angle + π/2) / (π/3)
+    let idx = (angle + Math.PI / 2) / (Math.PI / 3);
+    // Normalise to [0, 6)
+    idx = ((idx % 6) + 6) % 6;
+    return Math.round(idx) % 6 as 0 | 1 | 2 | 3 | 4 | 5;
+  }
+
+  /**
+   * Right-click handler: move selected units toward the target hex,
+   * OR attack an enemy unit on the target hex.
+   *
+   * If the target tile/segment has an enemy unit and the player has a
+   * unit selected, it's treated as an attack command.
    */
   private onRightClick(event: MouseEvent) {
     event.preventDefault();
@@ -702,11 +889,6 @@ export class LocalMapView {
     if (targetTile < 0) return;
 
     const targetTileData = this.world.tiles[targetTile];
-    // Can't move into ocean
-    if (targetTileData.terrain === 'ocean') {
-      dbg.localMap.log('Movement blocked: ocean tile');
-      return;
-    }
 
     // Detect explicitly clicked segment on the target hex
     let targetSegment: number = -1;
@@ -715,6 +897,40 @@ export class LocalMapView {
       if (ft) {
         targetSegment = this.findSegmentAt(x, y, ft);
       }
+    }
+
+    // --- Attack check ---
+    // Find if there's an enemy unit at the right-clicked location.
+    const unitsOnTarget = this.world.units.filter((u) => u.tileIndex === targetTile);
+    const playerUnits = this.world.units.filter((u) => this.selectedUnits.has(u.id));
+    if (playerUnits.length > 0) {
+      const playerOwner = playerUnits[0].ownerId;
+
+      // Find the specific enemy unit to attack
+      let enemyTarget: UnitData | undefined;
+      if (targetSegment >= 0) {
+        // Clicked a specific segment — target that unit if it's an enemy
+        enemyTarget = unitsOnTarget.find((u) => u.segment === targetSegment && u.ownerId !== playerOwner);
+      }
+      if (!enemyTarget) {
+        // No segment match — target any enemy on that tile
+        enemyTarget = unitsOnTarget.find((u) => u.ownerId !== playerOwner);
+      }
+
+      if (enemyTarget && this.onAttack) {
+        // Attack with the first selected unit (single attacker per click)
+        const attacker = playerUnits[0];
+        dbg.localMap.log('Attack command:', attacker.label, '→', enemyTarget.label);
+        this.onAttack(attacker.id, enemyTarget.id);
+        return;
+      }
+    }
+
+    // --- Movement (existing logic) ---
+    // Can't move into ocean
+    if (targetTileData.terrain === 'ocean') {
+      dbg.localMap.log('Movement blocked: ocean tile');
+      return;
     }
 
     // Gather selected units that can still move
@@ -754,12 +970,13 @@ export class LocalMapView {
         return;
       }
 
-      // Set tile facing based on movement direction
+      // Set unit facing based on movement direction
       const facingAngle = this.computeFacingAngle(prevTileIndex, destTileIndex);
-      this.tileFacing.set(destTileIndex, facingAngle);
+      const moveFacing = this.angleToFacing(facingAngle);
       dbg.localMap.log('Facing: from tile', prevTileIndex, '→ to tile', destTileIndex,
         '| angle (rad):', facingAngle.toFixed(3),
-        '| angle (deg):', (facingAngle * 180 / Math.PI).toFixed(1));
+        '| angle (deg):', (facingAngle * 180 / Math.PI).toFixed(1),
+        '| facing idx:', moveFacing);
 
       // Move all units to destination, preserving their source segment.
       // If a single unit lands on the actual target tile and a segment was
@@ -776,6 +993,7 @@ export class LocalMapView {
 
         unit.tileIndex = destTileIndex;
         unit.segment = freeSegment as 0 | 1 | 2 | 3 | 4 | 5;
+        unit.facing = moveFacing;
         this.movementPoints.set(unit.id, (this.movementPoints.get(unit.id) ?? 0) - hops);
         occupiedSegments.add(freeSegment as 0 | 1 | 2 | 3 | 4 | 5);
 
@@ -808,10 +1026,8 @@ export class LocalMapView {
 
         unit.tileIndex = destTileIndex;
         unit.segment = freeSegment as 0 | 1 | 2 | 3 | 4 | 5;
+        unit.facing = this.angleToFacing(this.computeFacingAngle(prevTileIndex, destTileIndex));
         this.movementPoints.set(unit.id, (this.movementPoints.get(unit.id) ?? 0) - hops);
-
-        // Set tile facing based on movement direction
-        this.tileFacing.set(destTileIndex, this.computeFacingAngle(prevTileIndex, destTileIndex));
 
         dbg.localMap.log(
           'Moved', unit.label, '→ tile', destTileIndex,

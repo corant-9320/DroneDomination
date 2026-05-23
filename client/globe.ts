@@ -27,6 +27,10 @@ export class GlobeView {
   private tileIdByFace: Uint16Array; // maps triangle index -> tile index
   private lastViewCentreTile: number = -1;
   private isProgrammaticPan: boolean = false;
+  private panTarget: THREE.Vector3 | null = null;
+  private panStart: THREE.Vector3 | null = null;
+  private panProgress: number = 1; // 1 = done
+  private mouseDownPos: { x: number; y: number } | null = null;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -88,7 +92,10 @@ export class GlobeView {
     dirLight.position.set(3, 2, 4);
     this.scene.add(dirLight);
 
-    // Events
+    // Events — track mousedown position to distinguish click from drag
+    canvas.addEventListener('mousedown', (e) => {
+      this.mouseDownPos = { x: e.clientX, y: e.clientY };
+    });
     canvas.addEventListener('click', this.onClick.bind(this));
     window.addEventListener('resize', this.onResize.bind(this));
 
@@ -217,7 +224,7 @@ export class GlobeView {
     );
     const edgeMaterial = new THREE.LineBasicMaterial({
       color: 0x000000,
-      opacity: 0.25,
+      opacity: 0.02,
       transparent: true,
     });
     const edgeLines = new THREE.LineSegments(edgeGeometry, edgeMaterial);
@@ -259,6 +266,17 @@ export class GlobeView {
   }
 
   private onClick(event: MouseEvent) {
+    // Suppress click if the user dragged (orbit) before releasing
+    if (this.mouseDownPos) {
+      const dx = event.clientX - this.mouseDownPos.x;
+      const dy = event.clientY - this.mouseDownPos.y;
+      if (dx * dx + dy * dy > 9) { // > 3px movement = drag, not click
+        this.mouseDownPos = null;
+        return;
+      }
+    }
+    this.mouseDownPos = null;
+
     const rect = this.canvas.getBoundingClientRect();
     this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -285,7 +303,7 @@ export class GlobeView {
     this.renderer.setSize(rect.width, rect.height);
   }
 
-  /** Pan the camera so the given tile faces the viewer. */
+  /** Pan the camera so the given tile faces the viewer (smooth slerp). */
   panToTile(tileIndex: number) {
     const tile = this.world.tiles[tileIndex];
     if (!tile) {
@@ -298,17 +316,19 @@ export class GlobeView {
     const len = Math.sqrt(x * x + y * y + z * z);
     const dist = this.camera.position.length();
 
-    this.isProgrammaticPan = true;
-    this.camera.position.set(
-      (x / len) * dist,
-      (y / len) * dist,
-      (z / len) * dist
-    );
-    this.controls.target.set(0, 0, 0);
-    this.controls.update();
-    this.isProgrammaticPan = false;
+    const target = new THREE.Vector3(x / len * dist, y / len * dist, z / len * dist);
 
-    // Update last known centre so the callback doesn't re-fire for programmatic pans
+    // If already very close, snap immediately
+    const current = this.camera.position.clone();
+    if (current.distanceTo(target) < 0.01) {
+      this.lastViewCentreTile = tileIndex;
+      return;
+    }
+
+    this.panStart = current;
+    this.panTarget = target;
+    this.panProgress = 0;
+    this.isProgrammaticPan = true;
     this.lastViewCentreTile = tileIndex;
   }
 
@@ -340,6 +360,25 @@ export class GlobeView {
 
   private animate() {
     requestAnimationFrame(() => this.animate());
+
+    // Smooth slerp pan when following the local map
+    if (this.panTarget && this.panStart && this.panProgress < 1) {
+      this.panProgress = Math.min(1, this.panProgress + 0.15);
+      // Slerp on unit sphere, then scale to correct distance
+      const dist = this.panStart.length();
+      const startDir = this.panStart.clone().normalize();
+      const endDir = this.panTarget.clone().normalize();
+      const pos = startDir.clone().lerp(endDir, this.panProgress).normalize().multiplyScalar(dist);
+      this.camera.position.copy(pos);
+      this.controls.target.set(0, 0, 0);
+      this.controls.update();
+      if (this.panProgress >= 1) {
+        this.panTarget = null;
+        this.panStart = null;
+        this.isProgrammaticPan = false;
+      }
+    }
+
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }

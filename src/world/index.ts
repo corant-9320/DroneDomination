@@ -9,3 +9,5 @@ export * from './validate.js';
 export * from './units.js';
 export * from './spawn.js';
 export * from './compact.js';
+export * from './combat.js';
+export * from './turnState.js';

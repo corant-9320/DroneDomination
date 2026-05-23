@@ -28,6 +28,7 @@ export interface CompactUnit {
   ownerId: string;
   tileIndex: number;
   segment: number;
+  facing: number;
   attributes: Unit['attributes'];
   currentHealth: number;
 }
@@ -74,6 +75,7 @@ export function toCompactUnit(u: Unit): CompactUnit {
     ownerId: u.ownerId,
     tileIndex: u.tileIndex,
     segment: u.segment,
+    facing: u.facing,
     attributes: u.attributes,
     currentHealth: u.currentHealth,
   };

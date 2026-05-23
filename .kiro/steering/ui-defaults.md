@@ -1,3 +1,8 @@
+---
+inclusion: fileMatch
+fileMatchPattern: "client/**"
+---
+
 # UI Defaults — Civ6-Inspired Screen Furniture
 
 ## Applies to: `client/**`, `index.html`
@@ -10,43 +15,37 @@ Drone Domination targets the same player base as Civilization VI. The screen
 furniture and keyboard conventions should feel immediately familiar to Civ6
 players while adapting to our dual-panel globe/local-map layout.
 
-## Civ6 HUD Reference (adapted)
+## Layout Deviations from Civ6
 
-| Civ6 Element | Drone Domination Equivalent |
-|---|---|
-| Top resource bar (Science, Culture, Gold…) | Future: top bar with faction resources/turn info |
-| Mini-map (bottom-left) | Globe view (left panel) serves as the strategic overview |
-| Unit/City info panel (bottom-centre) | **Deviation:** Full right curtain (not a small box). Up to 5 units per tile means we need the vertical space to show all unit cards, terrain, and city info together. |
-| Notifications (right edge) | Future: notification feed in right curtain |
-| Civilopedia (top-right) | Future: in-game help |
-| End Turn button (bottom-right) | Future: End Turn in action bar |
-| Menu bar (top of panels) | **Menu bar at top of right curtain** — holds quick-action buttons (New World, Home, Settings) |
+- Globe view (left panel) replaces the mini-map
+- Right curtain replaces the small unit/city info box — needed for up to 5 unit cards + terrain + city info
+- Menu bar lives at top of right curtain (not top-of-screen)
 
 ## Right Curtain Menu Bar
 
-The right curtain (`#detail-panel`) has a **menu bar** pinned at its top.
-This bar holds icon/text buttons for global actions:
+The right curtain (`#detail-panel`) has a **menu bar** (`#curtain-menu-bar`)
+pinned at its top. This bar holds pill-shaped buttons for global actions:
 
 - **+ New** — opens the New World generation modal
 - **⌂ Home** — centres both views on the player's home city
-- Future slots: Settings (gear icon), Civilopedia (? icon), End Turn
+- **💾 Save** — saves game state to localStorage
+- **📂 Load** — opens load-game modal (pick from saved slots)
+
+A **Next ▶** button is positioned at the bottom-right of the curtain
+(outside the menu bar) for ending the turn.
 
 The menu bar uses a horizontal flex layout, dark background slightly lighter
 than the curtain, with compact pill-shaped buttons.
 
-## Keyboard Shortcuts (Civ6-aligned)
+## Keyboard Shortcuts (implemented)
 
-| Key | Action | Civ6 analogue |
-|---|---|---|
-| Home | Centre on home city | Capital (\) |
-| G | Toggle grid overlay (future) | Toggle Grid |
-| N | Open New World modal | — |
-| Escape | Close modal / deselect | Close dialogs |
-| Space | Skip/End Turn (future) | Skip Turn |
-| 1–9 | Lens overlays (future) | Lenses |
-| T | Technology panel (future) | Technology Tree |
-| M | Move selected unit (future) | Move To |
-| A | Attack with selected unit (future) | Attack |
+| Key | Action |
+|---|---|
+| Home | Centre on home city |
+| Space | End Turn |
+| Ctrl+S | Save game |
+| Ctrl+L | Load game |
+| Escape | Close modal / deselect |
 
 ## Design Principles
 

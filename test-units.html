@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Unit Designer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1a2e; color: #eee; font-family: system-ui, sans-serif; }
+
+    #app {
+      display: flex;
+      width: 100%;
+      height: 100%;
+    }
+
+    #viewport {
+      flex: 1;
+      position: relative;
+      background: #2a2a3e;
+    }
+
+    #viewport canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    #viewport .hint {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      font-size: 11px;
+      color: #666;
+      pointer-events: none;
+    }
+
+    #controls {
+      width: 320px;
+      height: 100%;
+      overflow-y: auto;
+      background: rgba(10, 10, 10, 0.9);
+      border-left: 1px solid #333;
+      padding: 16px;
+    }
+
+    #controls h2 {
+      margin-bottom: 16px;
+      font-size: 16px;
+      color: #7fdbca;
+    }
+
+    .control-group {
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #333;
+    }
+
+    .control-group:last-child {
+      border-bottom: none;
+    }
+
+    .control-group h3 {
+      font-size: 12px;
+      color: #aaa;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .chassis-selector {
+      display: flex;
+      gap: 6px;
+    }
+
+    .chassis-btn {
+      flex: 1;
+      padding: 8px 4px;
+      background: rgba(40, 40, 40, 0.8);
+      border: 2px solid #444;
+      border-radius: 6px;
+      color: #ccc;
+      font-size: 11px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .chassis-btn:hover {
+      border-color: #666;
+      background: rgba(60, 60, 60, 0.8);
+    }
+
+    .chassis-btn.active {
+      border-color: #7fdbca;
+      color: #fff;
+      background: rgba(50, 80, 70, 0.5);
+    }
+
+    .chassis-btn .icon {
+      font-size: 20px;
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .attr-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .attr-row label {
+      width: 80px;
+      font-size: 12px;
+      color: #bbb;
+      flex-shrink: 0;
+    }
+
+    .attr-row input[type="range"] {
+      flex: 1;
+      height: 6px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: #333;
+      border-radius: 3px;
+      outline: none;
+    }
+
+    .attr-row input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #7fdbca;
+      cursor: pointer;
+    }
+
+    .attr-row .attr-val {
+      width: 24px;
+      text-align: center;
+      font-size: 12px;
+      color: #f7b731;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+
+    .points-display {
+      text-align: center;
+      padding: 8px;
+      background: rgba(30, 30, 30, 0.6);
+      border-radius: 6px;
+      margin-bottom: 12px;
+    }
+
+    .points-display .total {
+      font-size: 20px;
+      font-weight: bold;
+      color: #f7b731;
+    }
+
+    .points-display .label {
+      font-size: 11px;
+      color: #888;
+    }
+
+    .points-display.over .total {
+      color: #ff4444;
+    }
+
+    .unit-name {
+      text-align: center;
+      padding: 10px;
+      background: rgba(30, 50, 40, 0.4);
+      border-radius: 6px;
+      font-size: 13px;
+      color: #ccc;
+      margin-top: 12px;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="viewport">
+      <canvas id="render-canvas"></canvas>
+      <div class="hint">Drag to rotate · Scroll to zoom · Right-drag to pan</div>
+    </div>
+    <div id="controls">
+      <h2>🤖 Unit Designer</h2>
+
+      <div class="points-display" id="points-display">
+        <div class="total" id="points-total">0</div>
+        <div class="label">points used (no cap — just experiment)</div>
+      </div>
+
+      <div class="control-group">
+        <h3>Chassis (Movement Type)</h3>
+        <div class="chassis-selector" id="chassis-selector">
+          <div class="chassis-btn active" data-chassis="wheeled">
+            <span class="icon">🛞</span>Tank
+          </div>
+          <div class="chassis-btn" data-chassis="limbed">
+            <span class="icon">🕷️</span>Spider
+          </div>
+          <div class="chassis-btn" data-chassis="flight">
+            <span class="icon">🚁</span>Drone
+          </div>
+        </div>
+        <div class="attr-row" style="margin-top: 10px;">
+          <label>Movement</label>
+          <input type="range" min="1" max="5" value="3" data-attr="movement">
+          <span class="attr-val">3</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <h3>Weapons</h3>
+        <div class="attr-row">
+          <label>Attack</label>
+          <input type="range" min="0" max="5" value="0" data-attr="attack">
+          <span class="attr-val">0</span>
+        </div>
+        <div class="attr-row">
+          <label>Range</label>
+          <input type="range" min="0" max="5" value="0" data-attr="rangeAttack">
+          <span class="attr-val">0</span>
+        </div>
+        <div class="attr-row">
+          <label>Splash</label>
+          <input type="range" min="0" max="5" value="0" data-attr="splashAttack">
+          <span class="attr-val">0</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <h3>Defence</h3>
+        <div class="attr-row">
+          <label>Armour</label>
+          <input type="range" min="0" max="5" value="0" data-attr="armour">
+          <span class="attr-val">0</span>
+        </div>
+        <div class="attr-row">
+          <label>EW / Def</label>
+          <input type="range" min="0" max="5" value="0" data-attr="defence">
+          <span class="attr-val">0</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <h3>Utility</h3>
+        <div class="attr-row">
+          <label>Repair</label>
+          <input type="range" min="0" max="5" value="0" data-attr="repair">
+          <span class="attr-val">0</span>
+        </div>
+      </div>
+
+      <div class="unit-name" id="unit-name">Base Tank</div>
+    </div>
+  </div>
+
+  <script type="module" src="/client/unitDesigner.ts"></script>
+</body>
+</html>

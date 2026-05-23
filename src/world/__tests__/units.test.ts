@@ -35,7 +35,7 @@ describe('units', () => {
     });
 
     it('rejects negative values', () => {
-      expect(isValidAttribute('initiative', -1)).toBe(false);
+      expect(isValidAttribute('repair', -1)).toBe(false);
     });
   });
 
@@ -172,10 +172,104 @@ describe('units', () => {
       const keys = Object.keys(ATTRIBUTE_RANGES);
       expect(keys).toContain('maxHealth');
       expect(keys).toContain('armour');
+      expect(keys).toContain('defence');
+      expect(keys).toContain('splashAttack');
       expect(keys).toContain('wheeledMovement');
       expect(keys).toContain('limbMovement');
       expect(keys).toContain('flightMovement');
-      expect(keys).toContain('initiative');
+      expect(keys).toContain('repair');
+    });
+
+    it('ATTRIBUTE_RANGES has 10 total attribute keys', () => {
+      expect(Object.keys(ATTRIBUTE_RANGES)).toHaveLength(10);
+    });
+  });
+
+  describe('defence attribute', () => {
+    it('ATTRIBUTE_RANGES includes defence with range [0, 5]', () => {
+      expect(ATTRIBUTE_RANGES).toHaveProperty('defence');
+      expect(ATTRIBUTE_RANGES.defence).toEqual([0, 5]);
+    });
+
+    it('isValidAttribute accepts defence = 0', () => {
+      expect(isValidAttribute('defence', 0)).toBe(true);
+    });
+
+    it('isValidAttribute accepts defence = 5', () => {
+      expect(isValidAttribute('defence', 5)).toBe(true);
+    });
+
+    it('isValidAttribute rejects defence = -1', () => {
+      expect(isValidAttribute('defence', -1)).toBe(false);
+    });
+
+    it('isValidAttribute rejects defence = 6', () => {
+      expect(isValidAttribute('defence', 6)).toBe(false);
+    });
+
+    it('isValidAttribute rejects non-integer defence', () => {
+      expect(isValidAttribute('defence', 2.5)).toBe(false);
+    });
+
+    it('validateAttributes passes with defence in valid range', () => {
+      const attrs: UnitAttributes = {
+        maxHealth: 2,
+        wheeledMovement: 1,
+        defence: 3,
+      };
+      expect(validateAttributes(attrs)).toEqual([]);
+    });
+
+    it('validateAttributes reports defence out of range', () => {
+      const attrs: UnitAttributes = {
+        maxHealth: 2,
+        wheeledMovement: 1,
+        defence: 7,
+      };
+      const errors = validateAttributes(attrs);
+      expect(errors.some((e) => e.includes('defence'))).toBe(true);
+    });
+  });
+
+  describe('splashAttack attribute', () => {
+    it('ATTRIBUTE_RANGES includes splashAttack with range [0, 5]', () => {
+      expect(ATTRIBUTE_RANGES).toHaveProperty('splashAttack');
+      expect(ATTRIBUTE_RANGES.splashAttack).toEqual([0, 5]);
+    });
+
+    it('isValidAttribute accepts splashAttack = 0', () => {
+      expect(isValidAttribute('splashAttack', 0)).toBe(true);
+    });
+
+    it('isValidAttribute accepts splashAttack = 5', () => {
+      expect(isValidAttribute('splashAttack', 5)).toBe(true);
+    });
+
+    it('isValidAttribute rejects splashAttack = 6', () => {
+      expect(isValidAttribute('splashAttack', 6)).toBe(false);
+    });
+
+    it('isValidAttribute rejects non-integer splashAttack', () => {
+      expect(isValidAttribute('splashAttack', 1.5)).toBe(false);
+    });
+
+    it('validateAttributes passes with splashAttack in valid range', () => {
+      const attrs: UnitAttributes = {
+        maxHealth: 1,
+        limbMovement: 2,
+        splashAttack: 4,
+      };
+      expect(validateAttributes(attrs)).toEqual([]);
+    });
+
+    it('validateAttributes reports splashAttack out of range', () => {
+      const attrs: UnitAttributes = {
+        maxHealth: 1,
+        limbMovement: 1,
+        splashAttack: 10,
+      };
+      const errors = validateAttributes(attrs);
+      expect(errors.some((e) => e.includes('splashAttack'))).toBe(true);
     });
   });
 });

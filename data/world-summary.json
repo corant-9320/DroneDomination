@@ -91,12 +91,12 @@
     }
   ],
   "terrainDistribution": {
-    "grassland": 1943,
+    "grassland": 2173,
     "forest": 1866,
     "desert": 1030,
     "plains": 540,
-    "ocean": 232,
-    "tundra": 142,
+    "tundra": 92,
+    "ocean": 52,
     "hills": 9
   }
 }

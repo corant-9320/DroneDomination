@@ -34,6 +34,7 @@ export const MAX_UNITS_PER_TILE = 5;
  *
  * All values are integers within a fixed range:
  *   maxHealth:      1–5  (must be at least 1 if present)
+ *   attack:         0–5
  *   armour:         0–5
  *   defence:        0–5
  *   splashAttack:   0–5
@@ -42,7 +43,6 @@ export const MAX_UNITS_PER_TILE = 5;
  *   limbMovement:   0–5
  *   flightMovement: 0–5
  *   repair:         0–5
- *   initiative:     0–5
  *
  * A unit MUST have at least 1 point in one movement category
  * (wheeledMovement, limbMovement, or flightMovement).
@@ -50,6 +50,8 @@ export const MAX_UNITS_PER_TILE = 5;
 export interface UnitAttributes {
   /** Maximum hit points (1–5). */
   maxHealth?: number;
+  /** Base attack power — determines gun length in icon (0–5). */
+  attack?: number;
   /** Damage reduction from incoming attacks (0–5). */
   armour?: number;
   /** Chance to avoid or deflect a hit entirely (0–5). */
@@ -66,8 +68,6 @@ export interface UnitAttributes {
   flightMovement?: number;
   /** Repair capability — points of health restored per action (0–5). */
   repair?: number;
-  /** Determines action order within a turn; higher goes first (0–5). */
-  initiative?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -77,6 +77,7 @@ export interface UnitAttributes {
 /** Allowed [min, max] for each attribute. */
 export const ATTRIBUTE_RANGES: Record<keyof UnitAttributes, [min: number, max: number]> = {
   maxHealth: [1, 5],
+  attack: [0, 5],
   armour: [0, 5],
   defence: [0, 5],
   splashAttack: [0, 5],
@@ -85,7 +86,6 @@ export const ATTRIBUTE_RANGES: Record<keyof UnitAttributes, [min: number, max: n
   limbMovement: [0, 5],
   flightMovement: [0, 5],
   repair: [0, 5],
-  initiative: [0, 5],
 };
 
 /** The attribute keys that count as movement categories. */
@@ -112,11 +112,15 @@ export function validateAttributes(attrs: UnitAttributes): string[] {
     }
   }
 
-  // A unit must have at least 1 point in one movement category.
-  const hasMovement = MOVEMENT_ATTRIBUTES.some((k) => (attrs[k] ?? 0) >= 1);
-  if (!hasMovement) {
+  // A unit must have exactly one movement type with at least 1 point.
+  const activeMovement = MOVEMENT_ATTRIBUTES.filter((k) => (attrs[k] ?? 0) >= 1);
+  if (activeMovement.length === 0) {
     errors.push(
       'Unit must have at least 1 point in a movement attribute (wheeledMovement, limbMovement, or flightMovement)',
+    );
+  } else if (activeMovement.length > 1) {
+    errors.push(
+      `Unit can only have one movement type, but has points in: ${activeMovement.join(', ')}`,
     );
   }
 
@@ -139,10 +143,87 @@ export interface Unit {
   tileIndex: number;
   /** Which triangular segment within the tile the unit sits in. */
   segment: HexSegment;
+  /** Direction the unit is facing (0–5), set by last movement direction. */
+  facing: HexSegment;
   /** The unit's attribute profile — defines what it can do. */
   attributes: UnitAttributes;
   /** Current health (≤ attributes.maxHealth). */
   currentHealth: number;
+}
+
+// ---------------------------------------------------------------------------
+// Naming
+// ---------------------------------------------------------------------------
+
+/** Movement speed words by level (1–5). */
+const SPEED_NAMES: Record<number, string> = {
+  1: 'Loitering',
+  2: 'Plodder',
+  3: 'Walker',
+  4: 'Runner',
+  5: 'Sprinter',
+};
+
+/** Movement type words by movement attribute. */
+const TYPE_NAMES: Record<string, string> = {
+  wheeledMovement: 'Tank',
+  flightMovement: 'Drone',
+  limbMovement: 'Spider',
+};
+
+/** Attribute column words by level (1–5). */
+const ATTRIBUTE_NAMES: Record<string, Record<number, string>> = {
+  attack: { 1: 'Harasser', 2: 'Raider', 3: 'Striker', 4: 'Breaker', 5: 'Executioner' },
+  armour: { 1: 'Flyweight', 2: 'Bantamweight', 3: 'Welterweight', 4: 'Middleweight', 5: 'Heavyweight' },
+  defence: { 1: 'Listener', 2: 'Scrambler', 3: 'Jammer', 4: 'Disruptor', 5: 'Nullifier' },
+  splashAttack: { 1: 'Popper', 2: 'Blaster', 3: 'Bombardier', 4: 'Demolisher', 5: 'Devastator' },
+  rangeAttack: { 1: 'Melee', 2: 'Short', 3: 'Medium', 4: 'Long', 5: 'Distance' },
+  repair: { 1: 'Tinkerer', 2: 'Mechanic', 3: 'Engineer', 4: 'Restorer', 5: 'Fabricator' },
+};
+
+/** Non-movement attribute keys eligible for naming. */
+const NAMING_ATTRIBUTES: (keyof UnitAttributes)[] = [
+  'attack', 'armour', 'defence', 'splashAttack', 'rangeAttack', 'repair',
+];
+
+/**
+ * Generate a unit name from its attributes.
+ *
+ * Format: "[Top1 Word] [Top2 Word] [Speed Word] [Type Word]"
+ * - Speed comes from the movement value (1–5)
+ * - Type comes from the movement category (Tank / Drone / Spider)
+ * - Top two words come from the two highest non-movement attributes
+ */
+export function generateUnitName(attrs: UnitAttributes): string {
+  // Determine movement type and speed
+  const movementKey = MOVEMENT_ATTRIBUTES.find((k) => (attrs[k] ?? 0) >= 1) ?? 'wheeledMovement';
+  const speed = attrs[movementKey] ?? 1;
+  const speedWord = SPEED_NAMES[Math.min(Math.max(speed, 1), 5)];
+  const typeWord = TYPE_NAMES[movementKey];
+
+  // Rank non-movement attributes by value (descending), pick top two
+  const ranked = NAMING_ATTRIBUTES
+    .map((key) => ({ key, value: attrs[key] ?? 0 }))
+    .filter((e) => e.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  const top1 = ranked[0];
+  const top2 = ranked[1];
+
+  const parts: string[] = [];
+  if (top1) parts.push(ATTRIBUTE_NAMES[top1.key]![Math.min(Math.max(top1.value, 1), 5)]);
+  if (top2) parts.push(ATTRIBUTE_NAMES[top2.key]![Math.min(Math.max(top2.value, 1), 5)]);
+  parts.push(speedWord, typeWord);
+
+  const mov = attrs[movementKey] ?? 0;
+  const att = attrs.attack ?? 0;
+  const rng = attrs.rangeAttack ?? 0;
+  const spl = attrs.splashAttack ?? 0;
+  const arm = attrs.armour ?? 0;
+  const ew = attrs.defence ?? 0;
+  const rep = attrs.repair ?? 0;
+
+  return `${parts.join(' ')} (Mov ${mov}, Att ${att}, Rng ${rng}, Spl ${spl}, Arm ${arm}, EW ${ew}, Rep ${rep})`;
 }
 
 // ---------------------------------------------------------------------------

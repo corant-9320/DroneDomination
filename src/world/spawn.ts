@@ -6,11 +6,10 @@
  */
 
 import { Tile } from './types.js';
-import { Unit, HexSegment } from './units.js';
+import { Unit, HexSegment, generateUnitName } from './units.js';
 
 /** Unit template used for initial spawning. */
 interface SpawnTemplate {
-  prefix: string;
   attrs: Unit['attributes'];
 }
 
@@ -20,12 +19,12 @@ interface SpawnTemplate {
  * All have maxHealth 1 and attack 1.
  */
 const INITIAL_TEMPLATES: SpawnTemplate[] = [
-  { prefix: 'SW', attrs: { maxHealth: 1, splashAttack: 1, wheeledMovement: 1 } },
-  { prefix: 'SW', attrs: { maxHealth: 1, splashAttack: 1, wheeledMovement: 1 } },
-  { prefix: 'SL', attrs: { maxHealth: 1, splashAttack: 1, limbMovement: 1 } },
-  { prefix: 'RW', attrs: { maxHealth: 1, rangeAttack: 1, wheeledMovement: 1 } },
-  { prefix: 'RW', attrs: { maxHealth: 1, rangeAttack: 1, wheeledMovement: 1 } },
-  { prefix: 'RL', attrs: { maxHealth: 1, rangeAttack: 1, limbMovement: 1 } },
+  { attrs: { maxHealth: 1, attack: 1, splashAttack: 1, wheeledMovement: 1 } },
+  { attrs: { maxHealth: 1, attack: 1, splashAttack: 1, wheeledMovement: 1 } },
+  { attrs: { maxHealth: 1, attack: 1, splashAttack: 1, limbMovement: 1 } },
+  { attrs: { maxHealth: 1, attack: 1, rangeAttack: 1, wheeledMovement: 1 } },
+  { attrs: { maxHealth: 1, attack: 1, rangeAttack: 1, wheeledMovement: 1 } },
+  { attrs: { maxHealth: 1, attack: 1, rangeAttack: 1, limbMovement: 1 } },
 ];
 
 /**
@@ -62,20 +61,22 @@ export function spawnInitialUnits(
 
       units.push({
         id: `unit_${unitCounter++}`,
-        label: `${t1.prefix}${unitCounter}`,
+        label: generateUnitName(t1.attrs),
         ownerId: city.id,
         tileIndex,
         segment: seg1,
+        facing: seg1,
         attributes: { ...t1.attrs },
         currentHealth: t1.attrs.maxHealth!,
       });
 
       units.push({
         id: `unit_${unitCounter++}`,
-        label: `${t2.prefix}${unitCounter}`,
+        label: generateUnitName(t2.attrs),
         ownerId: city.id,
         tileIndex,
         segment: seg2,
+        facing: seg2,
         attributes: { ...t2.attrs },
         currentHealth: t2.attrs.maxHealth!,
       });

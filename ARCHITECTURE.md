@@ -15,13 +15,16 @@ Machine-readable reference for AI code generators working on this project.
 
 ```
 client/           → Browser entry (loaded by index.html via Vite)
-  main.ts           Entry point — initializes GlobeView + LocalMapView
+  main.ts           Entry point — initializes GlobeView + LocalMapView + DetailPanel
   globe.ts          Three.js OrbitControls globe (class GlobeView)
   localMap.ts       Canvas 2D hex map (class LocalMapView)
+  detailPanel.ts    Right-curtain detail view (terrain, units, city info)
   worldData.ts      Loads world JSON, caches in memory/sessionStorage
   newWorldModal.ts  Modal UI for world generation config
-  factionColors.ts  Faction color palette + assignment logic
-  terrainColors.ts  Terrain → color mapping
+  saveLoad.ts       Save/Load game state via localStorage
+  colors.ts         Faction color palette + terrain color mapping (combined)
+  unitIcons.ts      Canvas 2D rendering of unit icons (attribute-driven)
+  debug.ts          Centralized debug logging (toggle via localStorage)
 
 server/           → API layer (Vite SSR in dev, Lambda in prod)
   generate.ts       handleGenerate(config) → GenerateResult (framework-agnostic)
@@ -32,14 +35,15 @@ src/              → Shared core logic (server + CLI)
   validate.ts       CLI: validate data/world.json
   world/            World module (barrel: index.ts)
     types.ts          Tile, City, World, Vec3, TerrainType
-    units.ts          Unit, UnitAttributes, HexSegment, validation
+    units.ts          Unit, UnitAttributes, HexSegment, validation helpers
     generate.ts       generateWorld(seed) → World
     goldberg.ts       generateGeodesicSphere(freq), computeDual(mesh)
     terrain.ts        generateTerrain(positions, seed) → TerrainData[]
     cities.ts         placeCities(tiles, seed) → City[]
+    spawn.ts          spawnInitialUnits(tiles, cities) → Unit[]
+    compact.ts        toCompactWorld/toCompactTile/toCompactUnit (wire format)
     pathfinding.ts    graphDistance(), tilesWithinRadius(), findPath() (A*)
     validate.ts       validateWorld(world) → ValidationResult
-    peeledView.ts     Flat projection for 2D map
     vec3.ts           Vec3 math utilities
 
 data/             → Generated world files (Vite publicDir, served at /)
@@ -49,65 +53,12 @@ data/             → Generated world files (Vite publicDir, served at /)
 
 ## Data Flow
 
-```
-[Browser]                           [Server]
-    │                                   │
-    │  POST /api/generate {enemies,     │
-    │       spacing}                    │
-    │ ─────────────────────────────────►│
-    │                                   │  generateWorld(seed)
-    │                                   │    → geodesic sphere
-    │                                   │    → dual polyhedron (tiles)
-    │                                   │    → terrain assignment
-    │                                   │    → city placement
-    │                                   │    → enemy selection by spacing
-    │                                   │    → compact JSON
-    │  ◄─────────────────────────────── │
-    │  {success, world}                 │
-    │                                   │
-    │  worldData.ts caches in           │
-    │  sessionStorage, reloads page     │
-    │                                   │
-    │  On load: fetch /world.json       │
-    │  (static fallback if no session)  │
-```
-
-## Key Types
-
-```typescript
-interface World {
-  tiles: Tile[];
-  cities: City[];
-  units: Unit[];
-  seed: number;
-  pentagonIndices: number[];
-}
-
-interface Tile {
-  id: string; index: number; sides: 5 | 6;
-  neighbours: number[];        // adjacency by tile index
-  position3d: Vec3;            // unit sphere
-  boundary: Vec3[];            // polygon vertices
-  terrainType: TerrainType;    // plains|forest|mountain|desert|ocean|tundra|grassland|hills
-  elevation: number;           // 0–1
-  ownerId?: string; cityId?: string;
-  buildingIds?: string[];      // future: buildings on the tile
-  unitIds?: string[];
-  resourceType?: string;       // future: resource on the tile
-}
-
-interface City {
-  id: string; label: string; tileIndex: number;
-  neighbourCityIds: string[];
-}
-
-interface Unit {
-  id: string; label: string; ownerId: string;
-  tileIndex: number; segment: HexSegment; // 0–5
-  attributes: UnitAttributes;
-  currentHealth: number;
-}
-```
+1. Client → `POST /api/generate {enemies, spacing}` → Server
+2. Server: `generateWorld(seed)` → geodesic sphere → dual → terrain → cities → spawn units → compact JSON
+3. Server → `{success, world}` → Client
+4. Client: `worldData.ts` caches in sessionStorage, reloads page
+5. On fresh load: fetch `/world.json` (static fallback)
+6. Save/Load: localStorage (`saveLoad.ts`)
 
 ## World Generation Pipeline
 
@@ -117,21 +68,7 @@ interface Unit {
 4. `generateTerrain(positions, seed)` — noise-based terrain + elevation
 5. `placeCities(tiles, seed)` — 12 cities on non-ocean tiles, spaced apart (avoiding polar caps)
 6. `selectEnemyCities(world, player, count, targetSpacing)` — picks enemies closest to target graph distance
-
-## Compact Wire Format
-
-The API and `data/world.json` use a minified format:
-
-| Field | Full name | Note |
-|-------|-----------|------|
-| `idx` | index | Tile index |
-| `s` | sides | 5 or 6 |
-| `n` | neighbours | Array of tile indices |
-| `pos` | position3d | `[x, y, z]` rounded to 6 decimals |
-| `b` | boundary | `[[x,y,z], ...]` rounded to 5 decimals |
-| `terrain` | terrainType | String literal |
-| `elev` | elevation | Rounded to 3 decimals |
-| `city` | cityId | Optional |
+7. `spawnInitialUnits(tiles, cities)` — 6 units per city (3 splash + 3 ranged, placed in alternating neighbour tiles)
 
 ## API
 
@@ -142,7 +79,7 @@ Request body:
 { "enemies": 5, "spacing": 25 }
 ```
 
-- `enemies`: 1–13 (clamped)
+- `enemies`: 1–11 (clamped to MAX_CITIES - 1)
 - `spacing`: 20–45, target graph distance from player home to enemies
 
 Response (200):
@@ -173,11 +110,6 @@ Each tile is divided into 6 triangular segments (0–5, clockwise from neighbour
 | `tsconfig.json` | Strict, ESM, target ES2022, outDir `dist/` |
 | `tsconfig.client.json` | Client-specific TS config |
 
-## Conventions
+## Constants
 
-- All imports use `.js` extension (ESM resolution)
-- No default exports — named exports only
-- Barrel re-exports in `src/world/index.ts`
-- World data is immutable once generated; UI reads only
-- Server handler is pure function (no side effects, no framework deps)
-- Constants: `CITY_COUNT = 12` (src/world/cities.ts), `MIN_SPACING = 20`, `MAX_SPACING = 45`, `FREQUENCY = 24`
+`CITY_COUNT = 12` (src/world/cities.ts), `MIN_SPACING = 20`, `MAX_SPACING = 45`, `FREQUENCY = 24`

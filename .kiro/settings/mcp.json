@@ -9,7 +9,7 @@
       "env": {
         "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS": "1"
       },
-      "disabled": false,
+      "disabled": true,
       "autoApprove": [
         "navigate_page",
         "take_screenshot",

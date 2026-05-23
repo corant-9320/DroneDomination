@@ -25,21 +25,12 @@ Opens at http://localhost:3000. Hot-reloads client changes.
 
 ## Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start dev server with hot reload |
-| `npm run build` | Compile TypeScript to `dist/` |
-| `npm run generate` | Generate a static world file (`data/world.json`) |
-| `npm run validate` | Validate an existing `data/world.json` |
-
-## Generating a Static World (offline)
-
 ```bash
-npm run build
-npm run generate
+npm run dev        # Vite dev server with hot reload
+npm run build      # Compile TypeScript to dist/
+npm run generate   # Generate data/world.json (run build first)
+npm run validate   # Validate existing data/world.json
 ```
-
-Writes `data/world.json` and `data/world-summary.json`.
 
 ## In-Game World Generation
 
@@ -75,17 +66,9 @@ Units have no fixed types — each is defined by its attributes:
 | limbMovement | 0–5 | Infantry/creature traversal speed |
 | flightMovement | 0–5 | Aerial traversal speed |
 | repair | 0–5 | Health restored per action |
-| initiative | 0–5 | Turn order priority |
 
 Every unit must have at least 1 movement point (wheeled, limb, or flight). Each hex holds up to 5 units in triangular segments (one segment stays free).
 
-## Project Layout
+## Architecture
 
-```
-client/     Browser code (Three.js globe + Canvas 2D local map)
-server/     API handlers (Vite SSR in dev, will port to Lambda)
-src/        Core game logic (shared between server + CLI)
-data/       Generated world files (served as static assets)
-```
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed module breakdown, data flow, types, and conventions.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for module map, data flow, types, and conventions.

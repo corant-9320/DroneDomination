@@ -168,10 +168,135 @@
       background: rgba(70, 70, 70, 0.9);
     }
 
-    #next-turn-btn {
+    /* Combat log panel — bottom of local map, avoids right curtain */
+    #combat-log-panel {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 280px; /* stop before the detail curtain */
+      height: calc(12 * 1.4em + 16px); /* ~12 lines deep */
+      background: rgba(10, 10, 10, 0.85);
+      border-top: 1px solid rgba(80, 80, 80, 0.5);
+      padding: 6px 10px;
+      font-size: 11px;
+      color: #ddd;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      pointer-events: auto;
+    }
+
+    #combat-log-panel .cl-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+      margin-bottom: 4px;
+      border-bottom: 1px solid rgba(80, 80, 80, 0.3);
+      padding-bottom: 4px;
+    }
+
+    #combat-log-panel .cl-nav {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    #combat-log-panel .cl-nav button {
+      background: rgba(40, 40, 40, 0.85);
+      border: 1px solid #555;
+      color: #eee;
+      font-size: 13px;
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+    #combat-log-panel .cl-nav button:hover {
+      background: rgba(70, 70, 70, 0.9);
+    }
+    #combat-log-panel .cl-nav button:disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+
+    #combat-log-panel .cl-counter {
+      color: #555;
+      font-size: 10px;
+      flex-shrink: 0;
+    }
+
+    #combat-log-panel .cl-header {
+      font-weight: bold;
+      font-size: 12px;
+    }
+
+    #combat-log-panel .cl-body {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    #combat-log-panel .cl-empty {
+      color: #666;
+      font-style: italic;
+      padding-top: 4px;
+    }
+
+    #combat-log-panel .cl-step {
+      padding: 2px 0;
+      border-bottom: 1px solid rgba(50, 50, 50, 0.4);
+    }
+    #combat-log-panel .cl-step:last-child {
+      border-bottom: none;
+    }
+    #combat-log-panel .cl-step-title {
+      color: #aaa;
+      font-weight: bold;
+    }
+    #combat-log-panel .cl-step-desc {
+      color: #999;
+      margin-left: 8px;
+    }
+    #combat-log-panel .cl-step-formula {
+      color: #777;
+      margin-left: 8px;
+      font-family: monospace;
+      font-size: 10px;
+    }
+    #combat-log-panel .cl-step-result {
+      margin-left: 8px;
+      font-weight: bold;
+    }
+
+    #combat-log-panel .cl-splash-header {
+      color: #fa0;
+      font-weight: bold;
+      margin-top: 4px;
+      padding-top: 4px;
+      border-top: 1px solid rgba(100, 100, 100, 0.3);
+    }
+
+    #combat-log-panel .cl-preview {
+      color: #fa0;
+      font-style: italic;
+      padding-top: 4px;
+    }
+
+    #turn-controls {
       position: absolute;
       bottom: 16px;
       right: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 30;
+    }
+    #next-turn-btn {
       background: rgba(40, 40, 40, 0.9);
       border: 1px solid #555;
       color: #eee;
@@ -181,7 +306,6 @@
       border-radius: 14px;
       cursor: pointer;
       transition: background 0.15s;
-      z-index: 30;
     }
     #next-turn-btn:hover {
       background: rgba(70, 70, 70, 0.95);
@@ -205,22 +329,28 @@
   <div id="loading">Loading world...</div>
   <div id="app">
     <div id="globe-panel">
-      <div class="panel-label">Globe View</div>
+
       <canvas id="globe-canvas"></canvas>
       <div id="strategy-panel" class="curtain">
         <div class="section"><h3>Strategy</h3><div class="empty-msg">Strategic info will appear here</div></div>
       </div>
     </div>
     <div id="local-panel">
-      <div class="panel-label">Local Map (Peeled View)</div>
+
       <canvas id="local-canvas"></canvas>
+      <div id="combat-log-panel"></div>
       <div id="detail-panel" class="curtain">
         <div id="curtain-menu-bar">
           <button id="new-world-btn" title="Generate a new world (N)">+ New</button>
           <button id="home-btn" title="Centre on home city (Home)">⌂ Home</button>
+          <button id="save-btn" title="Save game (Ctrl+S)">💾 Save</button>
+          <button id="load-btn" title="Load game (Ctrl+L)">📂 Load</button>
+          <button id="test-units-btn" title="Open 3D unit model test grid" onclick="window.open('/test-units.html','_blank')">🤖 Unit Models</button>
         </div>
         <div id="detail-content"></div>
-        <button id="next-turn-btn" title="End turn (Space)">Next ▶</button>
+        <div id="turn-controls">
+          <button id="next-turn-btn" title="End turn (Space)">Next ▶</button>
+        </div>
       </div>
     </div>
   </div>
