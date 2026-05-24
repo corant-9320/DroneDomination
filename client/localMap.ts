@@ -34,6 +34,9 @@ export class LocalMapView {
   private onHoverEnemy: ((attacker: UnitData | null, target: UnitData | null) => void) | null = null;
   /** Track last hovered enemy to avoid redundant callbacks. */
   private lastHoveredEnemyId: string | null = null;
+  /** Active AI combat highlight (attacker → target). */
+  private highlightAttackerId: string | null = null;
+  private highlightTargetId: string | null = null;
 
   // Movement system
   /** Units currently selected for movement (by unit id). */
@@ -52,6 +55,7 @@ export class LocalMapView {
   private offsetY: number = 0;
   private scale: number = 0.3;
   private dragging: boolean = false;
+  private mouseDownPos: { x: number; y: number } | null = null;
   private lastMouse: { x: number; y: number } = { x: 0, y: 0 };
   private dragEmitPending: boolean = false;
   private lastEmittedCentreTile: number = -1;
@@ -127,6 +131,12 @@ export class LocalMapView {
   /** Register a callback for enemy hover (attack preview). */
   setOnHoverEnemy(cb: (attacker: UnitData | null, target: UnitData | null) => void) {
     this.onHoverEnemy = cb;
+  }
+
+  /** Highlight an attacker → target pair on the map (used during AI turns). */
+  setHighlightCombat(attackerId: string | null, targetId: string | null): void {
+    this.highlightAttackerId = attackerId;
+    this.highlightTargetId = targetId;
   }
 
   /**
@@ -329,6 +339,9 @@ export class LocalMapView {
     // Draw units at all zoom levels
     this.drawUnits();
 
+    // Draw AI combat highlights (attacker ring + target ring + connecting line)
+    this.drawCombatHighlight();
+
     // HUD: zoom factor (top-left)
     this.ctx.save();
     this.ctx.font = '12px sans-serif';
@@ -431,6 +444,75 @@ export class LocalMapView {
         this.ctx.stroke();
       }
     }
+  }
+
+  /**
+   * Draw pulsing rings on the attacker (red) and target (blue) plus an
+   * arrow line between them during AI combat actions.
+   */
+  private drawCombatHighlight(): void {
+    if (!this.highlightAttackerId || !this.highlightTargetId) return;
+
+    const attacker = this.world.units.find((u) => u.id === this.highlightAttackerId);
+    const target = this.world.units.find((u) => u.id === this.highlightTargetId);
+    if (!attacker || !target) return;
+
+    const ftByTile = new Map<number, FlatTile>();
+    for (const ft of this.flatTiles) ftByTile.set(ft.tileIndex, ft);
+
+    const ftA = ftByTile.get(attacker.tileIndex);
+    const ftT = ftByTile.get(target.tileIndex);
+    if (!ftA || !ftT) return;
+
+    const segA = this.getSegmentCentroid(ftA, attacker.segment);
+    const segT = this.getSegmentCentroid(ftT, target.segment);
+    if (!segA || !segT) return;
+
+    const [ax, ay] = this.worldToScreen(segA.x, segA.y);
+    const [tx, ty] = this.worldToScreen(segT.x, segT.y);
+    const sizeA = this.getSegmentIconSize(ftA, attacker.segment);
+    const sizeT = this.getSegmentIconSize(ftT, target.segment);
+
+    this.ctx.save();
+
+    // Attacker ring — pulsing red
+    this.ctx.beginPath();
+    this.ctx.arc(ax, ay, sizeA * 2.2, 0, Math.PI * 2);
+    this.ctx.strokeStyle = '#f44';
+    this.ctx.lineWidth = 3;
+    this.ctx.setLineDash([6, 4]);
+    this.ctx.stroke();
+
+    // Target ring — pulsing cyan
+    this.ctx.beginPath();
+    this.ctx.arc(tx, ty, sizeT * 2.2, 0, Math.PI * 2);
+    this.ctx.strokeStyle = '#4cf';
+    this.ctx.lineWidth = 3;
+    this.ctx.stroke();
+
+    // Arrow line from attacker to target
+    this.ctx.beginPath();
+    this.ctx.moveTo(ax, ay);
+    this.ctx.lineTo(tx, ty);
+    this.ctx.strokeStyle = 'rgba(255, 100, 100, 0.6)';
+    this.ctx.lineWidth = 2;
+    this.ctx.setLineDash([8, 6]);
+    this.ctx.stroke();
+
+    // Arrowhead at target end
+    const angle = Math.atan2(ty - ay, tx - ax);
+    const headLen = 12;
+    this.ctx.setLineDash([]);
+    this.ctx.beginPath();
+    this.ctx.moveTo(tx, ty);
+    this.ctx.lineTo(tx - headLen * Math.cos(angle - 0.4), ty - headLen * Math.sin(angle - 0.4));
+    this.ctx.moveTo(tx, ty);
+    this.ctx.lineTo(tx - headLen * Math.cos(angle + 0.4), ty - headLen * Math.sin(angle + 0.4));
+    this.ctx.strokeStyle = '#f66';
+    this.ctx.lineWidth = 2.5;
+    this.ctx.stroke();
+
+    this.ctx.restore();
   }
 
   /**
@@ -545,6 +627,17 @@ export class LocalMapView {
   }
 
   private onClick(event: MouseEvent) {
+    // Suppress click if the user dragged before releasing
+    if (this.mouseDownPos) {
+      const dx = event.clientX - this.mouseDownPos.x;
+      const dy = event.clientY - this.mouseDownPos.y;
+      if (dx * dx + dy * dy > 9) { // > 3px movement = drag, not click
+        this.mouseDownPos = null;
+        return;
+      }
+    }
+    this.mouseDownPos = null;
+
     const rect = this.canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
@@ -684,6 +777,7 @@ export class LocalMapView {
   private onMouseDown(event: MouseEvent) {
     if (event.button === 0) {
       this.dragging = true;
+      this.mouseDownPos = { x: event.clientX, y: event.clientY };
       this.lastMouse = { x: event.clientX, y: event.clientY };
     }
   }
@@ -697,17 +791,58 @@ export class LocalMapView {
    *
    * WHOLE HEX selected (selectedSegment === -1):
    *   L/R        → All units rotate but stay in their triangle (facing rotates ±1).
-   *   Shift+L/R  → All units rotate triangles (segment ±1). Facing points outward
-   *                (set to the segment the unit lands in).
+   *   Shift+L/R  → All units rotate triangles (segment ±1).
+   *                Facing remains unchanged (preserves current orientation).
+   *   Down       → Defensive orientation: units spread evenly across segments,
+   *                each facing outward toward the nearest hex face.
+   *   Up         → All units face North (facing = 0), segments unchanged.
    *
    * SINGLE UNIT selected (selectedSegment >= 0):
    *   L/R        → Rotate that single unit's facing ±1 (stays in its triangle).
    *   Shift+L/R  → All units on the hex rotate triangles (segment ±1).
-   *                Facing remains unchanged (preserves current orientation).
+   *                Facing of all units copies the selected unit's facing.
    */
   private onKeyDown(event: KeyboardEvent) {
     if (this.selectedTile < 0) return;
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+
+    // ArrowUp with whole hex: all units face North (facing = 0)
+    if (event.key === 'ArrowUp') {
+      if (this.selectedSegment >= 0) return; // only works with whole hex selected
+      const units = this.world.units;
+      if (!units) return;
+      const tileUnits = units.filter((u) => u.tileIndex === this.selectedTile);
+      if (tileUnits.length === 0) return;
+      event.preventDefault();
+      for (const unit of tileUnits) {
+        unit.facing = 0 as 0 | 1 | 2 | 3 | 4 | 5;
+      }
+      dbg.localMap.log('All units face North');
+      this.onTileSelect(this.selectedTile, undefined);
+      this.render();
+      return;
+    }
+
+    // ArrowDown with whole hex: defensive orientation — spread units evenly, face outward
+    if (event.key === 'ArrowDown') {
+      if (this.selectedSegment >= 0) return; // only works with whole hex selected
+      const units = this.world.units;
+      if (!units) return;
+      const tileUnits = units.filter((u) => u.tileIndex === this.selectedTile);
+      if (tileUnits.length === 0) return;
+      event.preventDefault();
+      // Distribute units evenly around the hex segments, each facing outward
+      const step = Math.floor(6 / tileUnits.length);
+      for (let i = 0; i < tileUnits.length; i++) {
+        const seg = (i * step) % 6;
+        tileUnits[i].segment = seg as 0 | 1 | 2 | 3 | 4 | 5;
+        tileUnits[i].facing = seg as 0 | 1 | 2 | 3 | 4 | 5;
+      }
+      dbg.localMap.log('Defensive orientation: units spread outward');
+      this.onTileSelect(this.selectedTile, undefined);
+      this.render();
+      return;
+    }
 
     const units = this.world.units;
     if (!units) return;
@@ -722,12 +857,11 @@ export class LocalMapView {
 
     if (wholeHexSelected) {
       if (event.shiftKey) {
-        // Shift+L/R with whole hex: rotate segments, facing = outward (segment direction)
+        // Shift+L/R with whole hex: rotate segments, facing preserved
         for (const unit of tileUnits) {
           unit.segment = ((unit.segment + direction + 6) % 6) as 0 | 1 | 2 | 3 | 4 | 5;
-          unit.facing = unit.segment;
         }
-        dbg.localMap.log('Whole-hex Shift-rotate segments (outward facing), dir:', direction);
+        dbg.localMap.log('Whole-hex Shift-rotate segments (facing preserved), dir:', direction);
       } else {
         // L/R with whole hex: rotate facing only, segments unchanged
         for (const unit of tileUnits) {
@@ -738,13 +872,16 @@ export class LocalMapView {
     } else {
       // Single unit selected
       if (event.shiftKey) {
-        // Shift+L/R with single unit: rotate all segments, facing unchanged
+        // Shift+L/R with single unit: rotate all segments, facing copies selected unit's facing
+        const selectedUnit = tileUnits.find((u) => u.segment === this.selectedSegment);
+        const selectedFacing = selectedUnit ? selectedUnit.facing : 0;
         for (const unit of tileUnits) {
           unit.segment = ((unit.segment + direction + 6) % 6) as 0 | 1 | 2 | 3 | 4 | 5;
+          unit.facing = selectedFacing;
         }
         // Update selected segment to follow the rotation
         this.selectedSegment = ((this.selectedSegment + direction + 6) % 6);
-        dbg.localMap.log('Single-unit Shift-rotate segments (facing preserved), dir:', direction);
+        dbg.localMap.log('Single-unit Shift-rotate segments (facing copies selected), dir:', direction);
       } else {
         // L/R with single unit: rotate only that unit's facing
         const selectedUnit = tileUnits.find((u) => u.segment === this.selectedSegment);
@@ -755,6 +892,7 @@ export class LocalMapView {
       }
     }
 
+    this.onTileSelect(this.selectedTile, this.selectedSegment >= 0 ? this.selectedSegment : undefined);
     this.render();
   }
 

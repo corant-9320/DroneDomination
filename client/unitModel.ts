@@ -41,13 +41,13 @@ export function initMaterials(): void {
     matArmour.needsUpdate = true;
   });
 
-  matHull = new THREE.MeshStandardMaterial({ color: 0x7a9a7a, roughness: 0.7, metalness: 0.3 });
-  matDark = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.8, metalness: 0.4 });
-  matMetal = new THREE.MeshStandardMaterial({ color: 0x8a8a9a, roughness: 0.4, metalness: 0.7 });
-  matArmour = new THREE.MeshStandardMaterial({ color: 0x5a6a4a, roughness: 0.6, metalness: 0.5 });
-  matAntenna = new THREE.MeshStandardMaterial({ color: 0x8a8a9a, roughness: 0.3, metalness: 0.8 });
-  matRotor = new THREE.MeshStandardMaterial({ color: 0x5a5a6a, roughness: 0.5, metalness: 0.6 });
-  matLeg = new THREE.MeshStandardMaterial({ color: 0x6a6a6a, roughness: 0.6, metalness: 0.5 });
+  matHull = new THREE.MeshStandardMaterial({ color: 0x9aba9a, roughness: 0.6, metalness: 0.2 });
+  matDark = new THREE.MeshStandardMaterial({ color: 0x5a5a5a, roughness: 0.7, metalness: 0.3 });
+  matMetal = new THREE.MeshStandardMaterial({ color: 0xa8b0b0, roughness: 0.35, metalness: 0.6 });
+  matArmour = new THREE.MeshStandardMaterial({ color: 0x7a8a6a, roughness: 0.55, metalness: 0.4 });
+  matAntenna = new THREE.MeshStandardMaterial({ color: 0xa8b0b0, roughness: 0.3, metalness: 0.7 });
+  matRotor = new THREE.MeshStandardMaterial({ color: 0x788080, roughness: 0.45, metalness: 0.5 });
+  matLeg = new THREE.MeshStandardMaterial({ color: 0x8a8a8a, roughness: 0.5, metalness: 0.4 });
 }
 
 // ---------------------------------------------------------------------------
@@ -61,11 +61,11 @@ function hexToColor(hex: string): THREE.Color {
 
 /**
  * Blend a base grey color with a faction color.
- * Mix ratio: 45% faction, 55% base — gives a clear tint without losing detail.
+ * Mix ratio: 55% faction, 45% base — strong tint for visibility at small sizes.
  */
 function tintColor(baseHex: number, factionColor: THREE.Color): THREE.Color {
   const base = new THREE.Color(baseHex);
-  return base.lerp(factionColor, 0.45);
+  return base.lerp(factionColor, 0.55);
 }
 
 /**
@@ -75,9 +75,9 @@ function tintColor(baseHex: number, factionColor: THREE.Color): THREE.Color {
 function createTintedMaterials(factionHex: string) {
   const fc = hexToColor(factionHex);
   return {
-    metal: new THREE.MeshStandardMaterial({ color: tintColor(0x8a8a9a, fc), roughness: 0.4, metalness: 0.7 }),
-    antenna: new THREE.MeshStandardMaterial({ color: tintColor(0x8a8a9a, fc), roughness: 0.3, metalness: 0.8 }),
-    rotor: new THREE.MeshStandardMaterial({ color: tintColor(0x5a5a6a, fc), roughness: 0.5, metalness: 0.6 }),
+    metal: new THREE.MeshStandardMaterial({ color: tintColor(0x889090, fc), roughness: 0.4, metalness: 0.7 }),
+    antenna: new THREE.MeshStandardMaterial({ color: tintColor(0x889090, fc), roughness: 0.3, metalness: 0.8 }),
+    rotor: new THREE.MeshStandardMaterial({ color: tintColor(0x586060, fc), roughness: 0.5, metalness: 0.6 }),
     leg: new THREE.MeshStandardMaterial({ color: tintColor(0x6a6a6a, fc), roughness: 0.6, metalness: 0.5 }),
   };
 }
@@ -340,14 +340,14 @@ function buildLimbedChassis(group: THREE.Group, movement: number, bom: BoltOnMat
   dome.position.set(0, 0.95, -0.05);
   group.add(dome);
 
-  const legThick = 0.04 + m * 0.04;
-  const legScale = 0.7 + m * 0.5;
-  const footSize = 0.04 + m * 0.04;
-  const hipJointSize = 0.06 + m * 0.05; // ball joint at hip
-  const kneeSize = 0.05 + m * 0.04;     // smaller joint at knee
+  const legThick = 0.04 + m * 0.06;
+  const legScale = 0.7 + m * 0.9;
+  const footSize = 0.04 + m * 0.06;
+  const hipJointSize = 0.06 + m * 0.07; // ball joint at hip
+  const kneeSize = 0.05 + m * 0.06;     // smaller joint at knee
 
-  // Ant-like legs: upper leg 45° UP and outward, lower leg at right angles
-  // (90° knee bend) angling 45° down to ground.
+  // Ant-like legs: upper leg angled UP and outward from hull bottom,
+  // lower leg drops steeply (~60° from horizontal) to the ground.
   const legPositions = [
     { x: -0.5, z: -0.4, zLean: -0.25 },  // front-left
     { x: 0.5, z: -0.4, zLean: -0.25 },   // front-right
@@ -356,11 +356,11 @@ function buildLimbedChassis(group: THREE.Group, movement: number, bom: BoltOnMat
   ];
 
   for (const lp of legPositions) {
-    const upperLen = 0.25 * legScale;
+    const upperLen = 0.35 * legScale;
 
-    // Hip attachment on body edge
+    // Hip attachment at bottom edge of hull so upper leg is visible
     const hipX = lp.x;
-    const hipY = 0.65;
+    const hipY = 0.42;
     const hipZ = lp.z;
 
     // Ball joint at hip (where leg joins hull)
@@ -370,9 +370,9 @@ function buildLimbedChassis(group: THREE.Group, movement: number, bom: BoltOnMat
     hipJoint.position.set(hipX, hipY, hipZ);
     group.add(hipJoint);
 
-    // Upper leg: 45° UP and OUTWARD from hull (ant-like raised knee)
-    // Angle from vertical (straight down) = 135° = 3π/4
-    const upperAngleZ = lp.x > 0 ? (3 * Math.PI / 4) : -(3 * Math.PI / 4);
+    // Upper leg: angled outward and slightly upward from hull bottom
+    // Angle from vertical = 100° (~nearly horizontal outward) so it's clearly visible
+    const upperAngleZ = lp.x > 0 ? (100 * Math.PI / 180) : -(100 * Math.PI / 180);
     const upperAngleX = lp.zLean * 0.4; // forward/backward lean
 
     const upperDx = (upperLen / 2) * Math.sin(upperAngleZ);
@@ -399,13 +399,12 @@ function buildLimbedChassis(group: THREE.Group, movement: number, bom: BoltOnMat
     kneeJoint.position.set(kneeX, kneeY, kneeZ);
     group.add(kneeJoint);
 
-    // Lower leg: at right angles to upper (90° bend), 45° down to ground
-    // Angle from vertical = 45° = π/4, going outward and down
-    const lowerAngleZ = lp.x > 0 ? (Math.PI / 4) : -(Math.PI / 4);
+    // Lower leg: steep angle down — 30° from vertical (60° knee bend)
+    const lowerAngleZ = lp.x > 0 ? (Math.PI / 6) : -(Math.PI / 6);
     const lowerAngleX = -upperAngleX * 0.3;
 
     // Calculate lower leg length to reach the ground (Y=0)
-    const lowerLen = Math.max(0.4, kneeY / Math.cos(Math.PI / 4));
+    const lowerLen = Math.max(0.4, kneeY / Math.cos(Math.PI / 6));
 
     const lowerDx = (lowerLen / 2) * Math.sin(lowerAngleZ);
     const lowerDy = -(lowerLen / 2) * Math.cos(lowerAngleZ);
@@ -421,7 +420,7 @@ function buildLimbedChassis(group: THREE.Group, movement: number, bom: BoltOnMat
 
     // Foot at bottom of lower leg
     const footX = kneeX + lowerLen * Math.sin(lowerAngleZ);
-    const footY = Math.max(0, kneeY - lowerLen * Math.cos(lowerAngleZ));
+    const footY = Math.max(0, kneeY - lowerLen * Math.cos(Math.PI / 6));
     const footZ = kneeZ + lowerLen * Math.sin(lowerAngleX);
 
     const foot = new THREE.Mesh(new THREE.SphereGeometry(footSize, 6, 4), matDark);
@@ -435,7 +434,7 @@ function buildLimbedChassis(group: THREE.Group, movement: number, bom: BoltOnMat
 function buildFlightChassis(group: THREE.Group, movement: number, bom: BoltOnMaterials): TurretInfo {
   const m = movement / 5;
 
-  const beamLen = 1.6;
+  const beamLen = 2.2;
   const beamGeo = new THREE.BoxGeometry(0.06, 0.04, beamLen);
 
   const beam1 = new THREE.Mesh(beamGeo, matDark);
@@ -458,13 +457,15 @@ function buildFlightChassis(group: THREE.Group, movement: number, bom: BoltOnMat
   group.add(sensor);
 
   const bladeLen = 0.4 + m * 0.5;
+  const bladeThick = 0.02 + m * 0.02;   // rotor thickness scales with movement
+  const bladeWidth = 0.06 + m * 0.04;   // rotor width scales with movement
   const motorSize = 0.04 + m * 0.03;
 
   const armTips = [
-    { x: -0.55, z: -0.55 },
-    { x: 0.55, z: -0.55 },
-    { x: -0.55, z: 0.55 },
-    { x: 0.55, z: 0.55 },
+    { x: -0.78, z: -0.78 },
+    { x: 0.78, z: -0.78 },
+    { x: -0.78, z: 0.78 },
+    { x: 0.78, z: 0.78 },
   ];
 
   for (const tip of armTips) {
@@ -472,14 +473,15 @@ function buildFlightChassis(group: THREE.Group, movement: number, bom: BoltOnMat
     motor.position.set(tip.x, 0.83, tip.z);
     group.add(motor);
 
-    const bladeGeo = new THREE.BoxGeometry(bladeLen, 0.01, 0.04);
+    const bladeGeo = new THREE.BoxGeometry(bladeLen, bladeThick, bladeWidth);
     const blade1 = new THREE.Mesh(bladeGeo, bom.rotor);
     blade1.position.set(tip.x, 0.87, tip.z);
+    blade1.rotation.y = Math.PI / 4;
     group.add(blade1);
 
     const blade2 = new THREE.Mesh(bladeGeo, bom.rotor);
     blade2.position.set(tip.x, 0.87, tip.z);
-    blade2.rotation.y = Math.PI / 2;
+    blade2.rotation.y = -Math.PI / 4;
     group.add(blade2);
   }
 
@@ -586,42 +588,111 @@ function addSplashAttack(group: THREE.Group, level: number, turretY: number, tur
   group.add(collar);
 }
 
-function addArmour(group: THREE.Group, level: number, chassisType: ChassisType): void {
+function addArmour(group: THREE.Group, level: number, chassisType: ChassisType, factionHex?: string): void {
   if (level === 0) return;
-  const yBase = chassisType === 'limbed' ? 0.7 : chassisType === 'flight' ? 0.55 : 0.35;
-  const width = chassisType === 'limbed' ? 1.0 : chassisType === 'flight' ? 0.6 : 1.4;
-  const height = chassisType === 'limbed' ? 0.5 : chassisType === 'flight' ? 0.25 : 0.45;
-  const depth = chassisType === 'limbed' ? 1.1 : chassisType === 'flight' ? 1.3 : 1.9;
-  const t = level / 5;
-  const thickness = 0.04 + t * 0.1;
 
-  // Side plates run the full depth so they meet front and rear plates at the corners
-  for (const side of [-1, 1]) {
-    const plate = new THREE.Mesh(new THREE.BoxGeometry(thickness, height * 0.8, depth), matArmour);
-    plate.position.set(side * (width / 2 + thickness / 2), yBase + height * 0.1, 0);
-    group.add(plate);
+  // Faction-coloured spike material (falls back to a default tint if no faction)
+  const spikeColor = factionHex ? hexToColor(factionHex) : new THREE.Color(0x7a8a6a);
+  const spikeMat = new THREE.MeshStandardMaterial({ color: spikeColor, roughness: 0.5, metalness: 0.45 });
+
+  // Hull dimensions per chassis (matching the actual geometry sizes)
+  const width = chassisType === 'limbed' ? 1.0 : chassisType === 'flight' ? 0.6 : 1.4;
+  const depth = chassisType === 'limbed' ? 1.1 : chassisType === 'flight' ? 0.7 : 1.9;
+  const t = level / 5;
+
+  // Spike dimensions scale with armour level (doubled for visibility)
+  let spikeHeight = 0.16 + t * 0.44;   // how tall spikes protrude outward
+  const spikeRadius = 0.06 + t * 0.08;   // base radius of each spike cone
+  const spikeCount = Math.max(3, level + 2); // more spikes at higher levels
+
+  // For flight chassis, cap spike height so vertical spikes can't reach rotor plane (Y=0.87)
+  if (chassisType === 'flight') {
+    const maxSpikeH = 0.87 - 0.62 - spikeRadius - 0.02; // leave 0.02 clearance
+    spikeHeight = Math.min(spikeHeight, maxSpikeH);
   }
 
-  // Front and rear plates span the full outer width (side-plate edge to side-plate edge)
-  const outerWidth = width + thickness * 2;
+  // Y position: flush against the hull, must not overlap locomotion components.
+  // Wheeled: hull top ~0.55, immediately above tracks
+  // Limbed: body bottom ~0.45, immediately above leg hip joints (0.42)
+  // Flight: lowered to 0.62 so spikes (top = spikeY + spikeRadius ≤ 0.76)
+  //         stay clear of rotor blades at Y=0.87 even at max armour/movement.
+  let spikeY: number;
+  switch (chassisType) {
+    case 'wheeled': spikeY = 0.55; break;
+    case 'limbed': spikeY = 0.48 + spikeRadius * 2; break;
+    case 'flight': spikeY = 0.62; break;
+  }
 
-  const frontPlate = new THREE.Mesh(new THREE.BoxGeometry(outerWidth, height * 0.6, thickness), matArmour);
-  frontPlate.position.set(0, yBase + height * 0.15, -(depth / 2 + thickness / 2));
-  frontPlate.rotation.x = -0.15;
-  group.add(frontPlate);
+  const spacing = depth / (spikeCount + 1);
 
-  const rearPlate = new THREE.Mesh(new THREE.BoxGeometry(outerWidth, height * 0.7, thickness), matArmour);
-  rearPlate.position.set(0, yBase + height * 0.1, depth / 2 + thickness / 2);
-  group.add(rearPlate);
+  // Side spikes — along left and right hull edges, pointing outward
+  for (const side of [-1, 1]) {
+    const spikeX = side * (width / 2 + spikeHeight / 2);
 
-  if (level >= 4) {
-    const blockCount = Math.floor(level / 2) + 1;
-    for (let i = 0; i < blockCount; i++) {
-      for (const side of [-1, 1]) {
-        const block = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.15), matDark);
-        block.position.set(side * (width / 2 + thickness + 0.04), yBase + height * 0.1, -0.4 + i * 0.35);
-        group.add(block);
+    for (let i = 1; i <= spikeCount; i++) {
+      const spikeZ = -depth / 2 + i * spacing;
+
+      // For wheeled chassis, follow the bonnet slope downward at the front.
+      // The hull bonnet drops 35% of hull height (0.5*0.35=0.175) over the front 55% of length.
+      // Hull length = 2.0 centred at Z=0 → front at Z=-1.0, rear at Z=+1.0.
+      // Slope zone: Z < +0.1 (front 55% of 2.0 = 1.1, so threshold = 1.0 - 1.1 = -0.1… 
+      // actually measured from the rear: rear is +depth/2, front zone starts at rear - 45% of depth).
+      let spikePosY = spikeY;
+      if (chassisType === 'wheeled') {
+        const halfDepth = depth / 2;
+        const slopeStart = halfDepth * 0.1; // Z threshold where slope begins (towards -Z)
+        if (spikeZ < slopeStart) {
+          const t_slope = (slopeStart - spikeZ) / (slopeStart + halfDepth); // 0 at threshold, 1 at front tip
+          const bonnetDrop = 0.5 * 0.35; // hull height * drop fraction
+          spikePosY = spikeY - bonnetDrop * t_slope;
+        }
       }
+
+      const spikeGeo = new THREE.ConeGeometry(spikeRadius, spikeHeight, 6);
+      const spike = new THREE.Mesh(spikeGeo, spikeMat);
+
+      // Rotate cone so it points outward (left spikes point -X, right point +X)
+      spike.rotation.z = side * -Math.PI / 2;
+      spike.position.set(spikeX, spikePosY, spikeZ);
+      group.add(spike);
+    }
+  }
+
+  // Front edge spikes — pointing forward (-Z), spread across the hull width
+  if (level >= 3) {
+    const frontSpikeCount = Math.max(2, Math.floor(spikeCount * 0.6));
+    const frontSpacing = width / (frontSpikeCount + 1);
+    const frontZ = -(depth / 2 + spikeHeight / 2);
+    // Wheeled front spikes sit one spike diameter lower to clear the bonnet slope
+    const frontSpikeY = chassisType === 'wheeled' ? spikeY - spikeRadius * 2 : spikeY;
+
+    for (let i = 1; i <= frontSpikeCount; i++) {
+      const sx = -width / 2 + i * frontSpacing;
+      const spikeGeo = new THREE.ConeGeometry(spikeRadius * 0.9, spikeHeight * 0.85, 6);
+      const spike = new THREE.Mesh(spikeGeo, spikeMat);
+
+      // Tip points -Z (outward from front face)
+      spike.rotation.x = -Math.PI / 2;
+      spike.position.set(sx, frontSpikeY, frontZ);
+      group.add(spike);
+    }
+  }
+
+  // Rear edge spikes — pointing backward (+Z)
+  if (level >= 5) {
+    const rearSpikeCount = Math.max(2, Math.floor(spikeCount * 0.5));
+    const rearSpacing = width / (rearSpikeCount + 1);
+    const rearZ = depth / 2 + spikeHeight / 2;
+
+    for (let i = 1; i <= rearSpikeCount; i++) {
+      const sx = -width / 2 + i * rearSpacing;
+      const spikeGeo = new THREE.ConeGeometry(spikeRadius * 0.85, spikeHeight * 0.75, 6);
+      const spike = new THREE.Mesh(spikeGeo, spikeMat);
+
+      // Tip points +Z (outward from rear face)
+      spike.rotation.x = Math.PI / 2;
+      spike.position.set(sx, spikeY, rearZ);
+      group.add(spike);
     }
   }
 }
@@ -701,11 +772,14 @@ function addRepair(group: THREE.Group, level: number, chassisType: ChassisType, 
   const yBase = chassisType === 'limbed' ? 0.7 : chassisType === 'flight' ? 0.8 : 0.35;
   const t = level / 5;
 
-  // Flagpole — height and thickness scale with repair level
+  // Hull rear Z per chassis (back edge of the body)
+  const hullRearZ = chassisType === 'limbed' ? 0.55 : chassisType === 'flight' ? 0.35 : 0.95;
+
+  // Flagpole — centred (X=0), at the very back of the hull
   const poleHeight = 0.4 + t * 0.3;
   const poleRadius = 0.02 + t * 0.01;
-  const poleX = 0.35;
-  const poleZ = 0.4;
+  const poleX = 0;
+  const poleZ = hullRearZ;
 
   const pole = new THREE.Mesh(
     new THREE.CylinderGeometry(poleRadius * 0.7, poleRadius, poleHeight, 6), bom.metal
@@ -766,7 +840,7 @@ export function buildUnitModel(attrs: UnitModelAttrs, factionHex?: string): THRE
 
   addGunBarrel(group, attrs.attack, attrs.rangeAttack, turretY, turretZ, turretFrontZ, bom);
   addSplashAttack(group, attrs.splashAttack, turretY, turretFrontZ, bom);
-  addArmour(group, attrs.armour, attrs.chassis);
+  addArmour(group, attrs.armour, attrs.chassis, factionHex);
   addDefence(group, attrs.defence, turretY, attrs.chassis, bom);
   addRepair(group, attrs.repair, attrs.chassis, bom);
 

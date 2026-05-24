@@ -15,15 +15,21 @@ Machine-readable reference for AI code generators working on this project.
 
 ```
 client/           → Browser entry (loaded by index.html via Vite)
-  main.ts           Entry point — initializes GlobeView + LocalMapView + DetailPanel
+  main.ts           Entry point — initializes GlobeView + LocalMapView + panels + AI playback
   globe.ts          Three.js OrbitControls globe (class GlobeView)
   localMap.ts       Canvas 2D hex map (class LocalMapView)
-  detailPanel.ts    Right-curtain detail view (terrain, units, city info)
+  detailPanel.ts    Bottom bar detail view (terrain, units, city info)
+  combatPanel.ts    Right-curtain combat log (history nav, attack preview)
+  aiTurn.ts         AI faction turn logic (move toward enemy, attack when in range)
+  aiPlayback.ts     Video-style playback controller (play/pause/fast-forward for enemy turns)
   worldData.ts      Loads world JSON, caches in memory/sessionStorage
   newWorldModal.ts  Modal UI for world generation config
   saveLoad.ts       Save/Load game state via localStorage
   colors.ts         Faction color palette + terrain color mapping (combined)
   unitIcons.ts      Canvas 2D rendering of unit icons (attribute-driven)
+  unitNames.ts      Generates readable names from unit attributes
+  unitModel.ts      3D unit model rendering
+  unitRenderer.ts   Pre-renders 3D unit sprites for all configurations
   debug.ts          Centralized debug logging (toggle via localStorage)
 
 server/           → API layer (Vite SSR in dev, Lambda in prod)

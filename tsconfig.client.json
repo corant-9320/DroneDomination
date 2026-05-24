@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "types": ["three"]
   },
-  "include": ["client/**/*"]
+  "include": ["client/**/*", "shared/**/*"]
 }

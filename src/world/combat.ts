@@ -10,7 +10,6 @@
 import { Tile } from './types.js';
 import { Unit, HexSegment } from './units.js';
 import { graphDistance } from './pathfinding.js';
-import { TurnState, canMove, canPivot, recordMove, recordPivot } from './turnState.js';
 
 // ---------------------------------------------------------------------------
 // Attack arc classification
@@ -491,82 +490,10 @@ export function resolveReactionFire(
 }
 
 // ---------------------------------------------------------------------------
-// Movement with facing update
+// Movement with facing update (re-exported from movement.ts)
 // ---------------------------------------------------------------------------
 
-/**
- * Move a unit to a new hex, updating facing to the direction of movement.
- * Does NOT resolve reaction fire — call resolveReactionFire separately
- * if reaction fire is desired.
- *
- * If a TurnState is provided, enforces movement rules:
- *  - Inter-hex move requires available movement points.
- *  - Records the move (locks pivot for the rest of the turn).
- * Returns false if the move was rejected by turn-state rules.
- */
-export function moveUnit(
-  unit: Unit,
-  toTileIndex: number,
-  tiles: Tile[],
-  segment?: HexSegment,
-  turnState?: TurnState,
-): boolean {
-  const fromIndex = unit.tileIndex;
-  const isInterHex = fromIndex !== toTileIndex;
-
-  if (turnState) {
-    if (isInterHex) {
-      if (!canMove(unit, turnState)) return false;
-    } else if (segment !== undefined || segment === undefined) {
-      // Same-hex reposition is a pivot — check pivot rules
-      // (only applies if facing/segment will actually change, but we
-      //  gate on the guard regardless to keep API simple)
-      if (!canPivot(unit, turnState)) return false;
-    }
-  }
-
-  if (isInterHex) {
-    const dir = getApproachDirection(tiles, fromIndex, toTileIndex);
-    if (dir >= 0) {
-      unit.facing = dir as HexSegment;
-    }
-    unit.tileIndex = toTileIndex;
-    if (turnState) {
-      recordMove(unit, turnState);
-    }
-  }
-
-  if (segment !== undefined) {
-    unit.segment = segment;
-  }
-
-  return true;
-}
-
-/**
- * Pivot a unit within its current hex (change facing and/or segment).
- * Free action but requires movement points remaining and no prior move.
- *
- * If no TurnState is provided, always succeeds (legacy/test usage).
- * Returns false if turn-state rules reject the pivot.
- */
-export function pivotUnit(
-  unit: Unit,
-  newFacing: HexSegment,
-  newSegment?: HexSegment,
-  turnState?: TurnState,
-): boolean {
-  if (turnState) {
-    if (!canPivot(unit, turnState)) return false;
-    recordPivot(unit, turnState, newFacing, newSegment);
-  } else {
-    unit.facing = newFacing;
-    if (newSegment !== undefined) {
-      unit.segment = newSegment;
-    }
-  }
-  return true;
-}
+export { moveUnit, pivotUnit } from './movement.js';
 
 // ---------------------------------------------------------------------------
 // Simultaneous resolution helpers

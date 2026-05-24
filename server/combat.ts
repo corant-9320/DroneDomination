@@ -24,6 +24,12 @@ import {
   type AttackArc,
   type CombatResult,
 } from '../src/world/combat.js';
+import type {
+  ExplanationStep,
+  SplashExplanation,
+  ExplainedCombat,
+  CombatResponse,
+} from '../shared/combatTypes.js';
 
 // ---------------------------------------------------------------------------
 // Request / Response types
@@ -78,65 +84,11 @@ export interface CombatRequest {
   tiles: WireTile[];
 }
 
-/** Step-by-step explanation entry. */
-export interface ExplanationStep {
-  /** Short title for this step (e.g. "Range Check"). */
-  title: string;
-  /** Human-readable description. */
-  description: string;
-  /** Formula shown to the player (e.g. "3 + 1 − 2 − 1 = 1"). */
-  formula?: string;
-  /** Result value (numeric or label). */
-  result: string;
-  /** Visual emphasis: 'positive', 'negative', 'neutral', 'critical'. */
-  tone: 'positive' | 'negative' | 'neutral' | 'critical';
-}
-
-/** Splash explanation for one victim. */
-export interface SplashExplanation {
-  victimId: string;
-  victimLabel: string;
-  steps: ExplanationStep[];
-  damage: number;
-  victimDestroyed: boolean;
-  victimHealthBefore: number;
-  victimHealthAfter: number;
-}
-
-/** Full explained combat result for one attack. */
-export interface ExplainedCombat {
-  attackerId: string;
-  attackerLabel: string;
-  targetId: string;
-  targetLabel: string;
-  wasValid: boolean;
-  reasonInvalid?: string;
-  steps: ExplanationStep[];
-  directDamage: number;
-  targetHealthBefore: number;
-  targetHealthAfter: number;
-  targetDestroyed: boolean;
-  splash: SplashExplanation[];
-  destroyedUnitIds: string[];
-}
-
-/** Response from the combat endpoint. */
-export interface CombatResponse {
-  success: boolean;
-  error?: string;
-  /** Primary combat explanations (one per attack resolved). */
-  combats: ExplainedCombat[];
-  /** Reaction fire explanations triggered during movement. */
-  reactions: ExplainedCombat[];
-  /** Updated units array (with new health/facing/position values). */
-  updatedUnits: WireUnit[];
-}
-
 // ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
 
-export function handleCombat(req: CombatRequest): CombatResponse {
+export function handleCombat(req: CombatRequest): CombatResponse<WireUnit> {
   console.log('[DD][combat] handleCombat action=%s', req.action);
 
   // Rebuild minimal Tile[] for pathfinding/adjacency (we only need neighbours)
@@ -158,7 +110,7 @@ export function handleCombat(req: CombatRequest): CombatResponse {
 // Attack handler
 // ---------------------------------------------------------------------------
 
-function handleAttack(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatResponse {
+function handleAttack(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatResponse<WireUnit> {
   const { attackerId, targetId, activeFaction } = req;
   if (!attackerId || !targetId) {
     return { success: false, error: 'attackerId and targetId required', combats: [], reactions: [], updatedUnits: [] };
@@ -201,7 +153,7 @@ function handleAttack(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatR
 // Preview handler (explanation only, no state mutation)
 // ---------------------------------------------------------------------------
 
-function handlePreview(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatResponse {
+function handlePreview(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatResponse<WireUnit> {
   const { attackerId, targetId } = req;
   if (!attackerId || !targetId) {
     return { success: false, error: 'attackerId and targetId required', combats: [], reactions: [], updatedUnits: [] };
@@ -228,7 +180,7 @@ function handlePreview(req: CombatRequest, tiles: Tile[], units: Unit[]): Combat
 // Move handler (with reaction fire)
 // ---------------------------------------------------------------------------
 
-function handleMove(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatResponse {
+function handleMove(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatResponse<WireUnit> {
   const { unitId, path, activeFaction } = req;
   if (!unitId || !path || path.length < 2) {
     return { success: false, error: 'unitId and path (2+ tiles) required', combats: [], reactions: [], updatedUnits: [] };

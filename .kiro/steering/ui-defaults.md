@@ -18,12 +18,13 @@ players while adapting to our dual-panel globe/local-map layout.
 ## Layout Deviations from Civ6
 
 - Globe view (left panel) replaces the mini-map
-- Right curtain replaces the small unit/city info box — needed for up to 5 unit cards + terrain + city info
+- Right curtain (`#combat-log-panel`) shows combat log, menu bar, AI playback controls, and Next Turn
+- Bottom bar (`#detail-panel`) shows hex/unit detail — terrain, city, up to 5 unit cards side-by-side
 - Menu bar lives at top of right curtain (not top-of-screen)
 
-## Right Curtain Menu Bar
+## Right Curtain (Combat Panel)
 
-The right curtain (`#detail-panel`) has a **menu bar** (`#curtain-menu-bar`)
+The right curtain (`#combat-log-panel.curtain`) has a **menu bar** (`#curtain-menu-bar`)
 pinned at its top. This bar holds pill-shaped buttons for global actions:
 
 - **+ New** — opens the New World generation modal
@@ -31,11 +32,31 @@ pinned at its top. This bar holds pill-shaped buttons for global actions:
 - **💾 Save** — saves game state to localStorage
 - **📂 Load** — opens load-game modal (pick from saved slots)
 
-A **Next ▶** button is positioned at the bottom-right of the curtain
-(outside the menu bar) for ending the turn.
+Below the menu bar, `#combat-log-content` renders:
+- Combat history (◀/▶ navigation through past engagements)
+- Attack previews (when hovering an enemy with a unit selected)
+- AI playback bar (during enemy turns: ▶/⏸ Play/Pause + ⏩ Fast Forward)
 
-The menu bar uses a horizontal flex layout, dark background slightly lighter
-than the curtain, with compact pill-shaped buttons.
+A **Next ▶** button is positioned at the bottom of the curtain
+(inside `#turn-controls`) for ending the turn.
+
+## Bottom Detail Bar
+
+The bottom bar (`#detail-panel`) spans the local map width minus the right
+curtain (280px). It shows:
+- Tile info (index, shape, neighbours)
+- Terrain type + elevation
+- City ownership
+- Up to 5 unit cards displayed inline (sections are `display: inline-block`)
+
+## AI Turn Playback
+
+During enemy turns, `#ai-playback-bar` appears in the combat panel with:
+- **▶ / ⏸** — auto-play at ~1.5s intervals or pause for manual stepping
+- **⏩** — fast-forward (skip current wait, advance immediately)
+
+The local map draws combat highlights (red attacker ring, cyan target ring,
+dashed arrow) so the player can see which unit is attacking which.
 
 ## Keyboard Shortcuts (implemented)
 

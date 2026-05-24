@@ -49,22 +49,24 @@ function ensureRenderer(): void {
 
   scene = new THREE.Scene();
 
-  // Top-down camera with slight perspective tilt for 3D feel.
-  // Looking down at the model from above-front.
+  // 45° isometric camera offset to the side so north/south units show their flank.
   const frustum = 1.8;
   camera = new THREE.OrthographicCamera(-frustum, frustum, frustum, -frustum, 0.1, 50);
-  // Position: above and slightly in front, looking down at centre
-  camera.position.set(0, 4, 2.5);
+  camera.position.set(2.5, 3.5, 2.5);
   camera.lookAt(0, 0, 0);
 
-  // Lighting
-  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  // Lighting — bright enough that models read clearly even at small sprite sizes
+  scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
   dirLight.position.set(2, 5, 3);
   scene.add(dirLight);
-  const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
+  const fillLight = new THREE.DirectionalLight(0xaabbff, 0.6);
   fillLight.position.set(-2, 3, -2);
   scene.add(fillLight);
+  // Rim light from behind to separate the silhouette from the background
+  const rimLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  rimLight.position.set(0, 2, -4);
+  scene.add(rimLight);
 }
 
 // ---------------------------------------------------------------------------
@@ -149,7 +151,9 @@ async function renderAllFacings(attrs: UnitModelAttrs, key: string, factionHex?:
     // Rotate model around Y to face the correct direction.
     // Facing 0 = north (up on screen) = model front (-Z) points toward camera-up.
     // Each facing step is 60° clockwise (when viewed top-down = -Y rotation).
-    model.rotation.y = -(facing * Math.PI) / 3;
+    // +π/4 compensates for the 45° isometric camera azimuth so that on-screen
+    // bearings match expected hex directions: N=0°, NE=60°, SE=120°, S=180°, etc.
+    model.rotation.y = -(facing * Math.PI) / 3 + Math.PI / 4;
 
     scene.add(model);
     renderer!.setRenderTarget(null);

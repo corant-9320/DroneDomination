@@ -10,4 +10,5 @@ export * from './units.js';
 export * from './spawn.js';
 export * from './compact.js';
 export * from './combat.js';
+export * from './movement.js';
 export * from './turnState.js';

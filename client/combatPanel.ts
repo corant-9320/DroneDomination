@@ -1,5 +1,5 @@
 /**
- * Combat Log Panel — positioned at the bottom of the tactical (local) map.
+ * Combat Log Panel — positioned in the right curtain of the tactical (local) map.
  *
  * Shows one combat entry at a time with ◀/▶ navigation through history.
  * When the player hovers over an enemy while a unit is selected, shows
@@ -8,52 +8,14 @@
 
 import { WorldData, UnitData, TileData } from './worldData.js';
 import { dbg } from './debug.js';
+import type {
+  ExplanationStep,
+  SplashExplanation,
+  ExplainedCombat,
+  CombatResponse as CombatResponseBase,
+} from '../shared/combatTypes.js';
 
-// ---------------------------------------------------------------------------
-// Types (mirrors server/combat.ts response shapes)
-// ---------------------------------------------------------------------------
-
-interface ExplanationStep {
-  title: string;
-  description: string;
-  formula?: string;
-  result: string;
-  tone: 'positive' | 'negative' | 'neutral' | 'critical';
-}
-
-interface SplashExplanation {
-  victimId: string;
-  victimLabel: string;
-  steps: ExplanationStep[];
-  damage: number;
-  victimDestroyed: boolean;
-  victimHealthBefore: number;
-  victimHealthAfter: number;
-}
-
-interface ExplainedCombat {
-  attackerId: string;
-  attackerLabel: string;
-  targetId: string;
-  targetLabel: string;
-  wasValid: boolean;
-  reasonInvalid?: string;
-  steps: ExplanationStep[];
-  directDamage: number;
-  targetHealthBefore: number;
-  targetHealthAfter: number;
-  targetDestroyed: boolean;
-  splash: SplashExplanation[];
-  destroyedUnitIds: string[];
-}
-
-interface CombatResponse {
-  success: boolean;
-  error?: string;
-  combats: ExplainedCombat[];
-  reactions: ExplainedCombat[];
-  updatedUnits: UnitData[];
-}
+type CombatResponse = CombatResponseBase<UnitData>;
 
 // ---------------------------------------------------------------------------
 // Panel

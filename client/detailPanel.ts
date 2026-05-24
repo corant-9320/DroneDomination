@@ -1,6 +1,6 @@
 /**
  * Detail Panel — shows terrain, units, and building info for the selected hex.
- * Renders into #detail-panel on the right side of the local map.
+ * Renders into #detail-panel at the bottom of the local map.
  */
 
 import { WorldData, TileData, UnitData } from './worldData.js';
@@ -112,7 +112,7 @@ export class DetailPanel {
       ? 'border:1px solid #fff; background:rgba(255,255,255,0.08);'
       : '';
     let html = `<div class="unit-card" style="${focusStyle}">`;
-    const facing = FACING_LABELS[unit.segment] ?? `seg ${unit.segment}`;
+    const facing = FACING_LABELS[unit.facing] ?? `seg ${unit.facing}`;
     html += `<div class="unit-label" style="color:${color};">${readableName} <span style="font-weight:normal;color:#888;">(${facing})</span></div>`;
 
     if (focused) {

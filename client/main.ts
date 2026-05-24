@@ -11,6 +11,7 @@ import { CombatPanel } from './combatPanel.js';
 import { showNewWorldModal } from './newWorldModal.js';
 import { saveGame, showLoadModal } from './saveLoad.js';
 import { executeAiTurn } from './aiTurn.js';
+import { AiPlaybackController } from './aiPlayback.js';
 import { preRenderUnits } from './unitRenderer.js';
 import { dbg } from './debug.js';
 
@@ -39,9 +40,13 @@ async function main() {
     // Detail panel — shows terrain, units, city info for selected tile
     const detailPanel = new DetailPanel(detailEl, world);
 
-    // Combat panel — bottom bar on local map, shows one combat at a time with nav
-    const combatLogEl = document.getElementById('combat-log-panel') as HTMLElement;
+    // Combat panel — right curtain on local map, shows one combat at a time with nav
+    const combatLogEl = document.getElementById('combat-log-content') as HTMLElement;
     const combatPanel = new CombatPanel(combatLogEl, world);
+
+    // AI playback controller — video-style buttons for enemy turn pacing
+    const playbackContainer = document.getElementById('combat-log-content') as HTMLElement;
+    const aiPlayback = new AiPlaybackController(playbackContainer);
 
     // ─── Turn Management ─────────────────────────────────────────────────
     // Derive factions from cities (each city id is a faction/owner id)
@@ -82,6 +87,20 @@ async function main() {
       if (!isPlayerTurn()) return; // Only the player triggers this
 
       dbg.input.log('Player ending turn — processing AI factions');
+      aiPlayback.begin();
+
+      // Callbacks for visual feedback during AI turns
+      const aiCallbacks = {
+        highlightCombat(attackerId: string, targetId: string) {
+          localMap.setHighlightCombat(attackerId, targetId);
+        },
+        clearHighlight() {
+          localMap.setHighlightCombat(null, null);
+        },
+        renderMap() {
+          localMap.render();
+        },
+      };
 
       // Cycle through all non-player factions
       for (let i = 1; i < factions.length; i++) {
@@ -90,8 +109,10 @@ async function main() {
         if (faction === playerFaction) break; // Back to the player
 
         dbg.input.log('AI faction turn:', faction);
-        await executeAiTurn(world, faction, combatPanel);
+        await executeAiTurn(world, faction, combatPanel, aiPlayback, aiCallbacks);
       }
+
+      aiPlayback.end();
 
       // Ensure we land back on the player faction
       activeFactionIndex = factions.indexOf(playerFaction);

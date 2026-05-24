@@ -6,11 +6,28 @@
  *
  * All moves/attacks go through the same server endpoint as the player
  * (via CombatPanel) so the rules stay consistent.
+ *
+ * The AiPlaybackController gates each action so the player can follow
+ * along in Play mode, or step through manually in Paused mode.
  */
 
 import { WorldData, UnitData, TileData } from './worldData.js';
 import { CombatPanel } from './combatPanel.js';
+import { AiPlaybackController } from './aiPlayback.js';
 import { dbg } from './debug.js';
+
+// ---------------------------------------------------------------------------
+// Callback types for visual feedback during AI turns
+// ---------------------------------------------------------------------------
+
+export interface AiTurnCallbacks {
+  /** Highlight attacker and target on the map before the attack resolves. */
+  highlightCombat(attackerId: string, targetId: string): void;
+  /** Clear any combat highlight. */
+  clearHighlight(): void;
+  /** Re-render the local map (after movement/attacks). */
+  renderMap(): void;
+}
 
 // ---------------------------------------------------------------------------
 // Lightweight client-side pathfinding (BFS on tile neighbours)
@@ -90,11 +107,14 @@ function findPath(
 /**
  * Execute a single AI faction's turn.
  * Moves units toward nearest enemies and attacks when in range.
+ * Uses the playback controller to pace actions visually.
  */
 export async function executeAiTurn(
   world: WorldData,
   factionId: string,
   combatPanel: CombatPanel,
+  playback: AiPlaybackController,
+  callbacks: AiTurnCallbacks,
 ): Promise<void> {
   const aliveUnits = world.units.filter(
     (u) => u.ownerId === factionId && u.currentHealth > 0,
@@ -145,10 +165,18 @@ export async function executeAiTurn(
     // If already in attack range, attack immediately
     if (nearestDist <= attackRange && nearestDist > 0) {
       dbg.input.log(`AI ${unit.label} attacks ${nearestEnemy.label} (dist=${nearestDist})`);
+
+      // Highlight and wait for player to acknowledge
+      callbacks.highlightCombat(unit.id, nearestEnemy.id);
+      callbacks.renderMap();
+      await playback.waitForNext();
+
       const updated = await combatPanel.resolveAttack(unit.id, nearestEnemy.id);
       if (updated) {
         world.units = updated;
       }
+      callbacks.clearHighlight();
+      callbacks.renderMap();
       continue;
     }
 
@@ -168,12 +196,17 @@ export async function executeAiTurn(
           dbg.input.log(
             `AI ${unit.label} moves ${movePath.length - 1} steps toward ${nearestEnemy.label}`,
           );
+
+          // Wait before move so player sees the unit about to act
+          await playback.waitForNext();
+
           const updated = await combatPanel.resolveMove(unit.id, movePath);
           if (updated) {
             world.units = updated;
             // Update occupied tiles
             occupiedTiles.add(movePath[movePath.length - 1]);
           }
+          callbacks.renderMap();
 
           // After moving, check if now in attack range
           const newDist = bfsDistance(
@@ -188,10 +221,16 @@ export async function executeAiTurn(
             );
             if (target) {
               dbg.input.log(`AI ${unit.label} attacks after moving`);
+              callbacks.highlightCombat(unit.id, target.id);
+              callbacks.renderMap();
+              await playback.waitForNext();
+
               const updated2 = await combatPanel.resolveAttack(unit.id, target.id);
               if (updated2) {
                 world.units = updated2;
               }
+              callbacks.clearHighlight();
+              callbacks.renderMap();
             }
           }
         } else {
@@ -204,6 +243,8 @@ export async function executeAiTurn(
       }
     }
   }
+
+  callbacks.clearHighlight();
 }
 
 // ---------------------------------------------------------------------------

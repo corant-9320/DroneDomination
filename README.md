@@ -47,9 +47,30 @@ Click **+ New World** in the local map panel:
 | Scroll wheel | Zoom in/out |
 | Click + drag | Pan (local map) / Rotate (globe) |
 | Click tile | Select tile, show info |
+| Right-click tile | Move selected units / Attack enemy |
 | Home key / ⌂ button | Pan to player home city |
+| Space / Next ▶ | End turn |
+| Ctrl+S | Save game |
+| Ctrl+L | Load game |
 
 Zooming past 1.5× reveals hex segments and units. Past 2.5× shows attribute bars.
+
+## HUD Layout
+
+- **Left panel** — Globe view (strategic overview)
+- **Right panel** — Combat log curtain with menu bar, playback controls, and Next Turn button
+- **Bottom bar** — Hex/unit detail panel (shows terrain, city, and up to 5 unit cards)
+
+### AI Turn Playback
+
+When enemy factions take their turn, the right panel shows video-style controls:
+
+| Button | Function |
+|--------|----------|
+| ▶ / ⏸ | Play (auto-advance at readable pace) or Pause |
+| ⏩ | Fast Forward — skip to next action immediately |
+
+During enemy attacks, the map highlights the attacker (red ring) and target (cyan ring) with a connecting arrow so the player can follow the action.
 
 ## Units
 

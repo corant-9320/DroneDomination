@@ -42,10 +42,84 @@
       pointer-events: auto;
     }
 
-    /* Right curtain (unit/detail panel) */
+    /* Detail panel — bottom of local map */
     #detail-panel {
-      right: 0;
-      border-left: 1px solid rgba(80, 80, 80, 0.5);
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 280px; /* stop before the combat curtain */
+      height: calc(20 * 1.4em + 16px);
+      background: rgba(10, 10, 10, 0.85);
+      border-top: 1px solid rgba(80, 80, 80, 0.5);
+      padding: 6px 10px;
+      font-size: 12px;
+      color: #ddd;
+      z-index: 20;
+      overflow-y: auto;
+      pointer-events: auto;
+    }
+
+    #detail-panel .section {
+      display: inline-block;
+      vertical-align: top;
+      margin-right: 16px;
+    }
+
+    #detail-panel h3 {
+      margin: 0 0 8px 0;
+      font-size: 13px;
+      color: #fff;
+      border-bottom: 1px solid rgba(100, 100, 100, 0.5);
+      padding-bottom: 4px;
+    }
+
+    #detail-panel .unit-card {
+      background: rgba(30, 30, 30, 0.6);
+      border: 1px solid rgba(100, 100, 100, 0.4);
+      border-radius: 4px;
+      padding: 6px 8px;
+      margin-bottom: 6px;
+    }
+
+    #detail-panel .unit-card .unit-label {
+      font-weight: bold;
+      color: #fff;
+      margin-bottom: 2px;
+    }
+
+    #detail-panel .unit-card .unit-attr {
+      color: #ccc;
+      font-size: 11px;
+    }
+
+    #detail-panel .unit-card .unit-attr-detail {
+      margin-top: 4px;
+      font-size: 11px;
+    }
+
+    #detail-panel .unit-card .unit-attr-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 2px 0;
+      border-bottom: 1px solid rgba(80, 80, 80, 0.3);
+    }
+
+    #detail-panel .unit-card .unit-attr-row:last-child {
+      border-bottom: none;
+    }
+
+    #detail-panel .unit-card .unit-attr-key {
+      color: #aaa;
+    }
+
+    #detail-panel .unit-card .unit-attr-val {
+      color: #fff;
+      font-weight: bold;
+    }
+
+    #detail-panel .empty-msg {
+      color: #999;
+      font-style: italic;
     }
 
     /* Left curtain (strategy panel) */
@@ -168,22 +242,20 @@
       background: rgba(70, 70, 70, 0.9);
     }
 
-    /* Combat log panel — bottom of local map, avoids right curtain */
+    /* Combat log panel — right curtain */
     #combat-log-panel {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 280px; /* stop before the detail curtain */
-      height: calc(12 * 1.4em + 16px); /* ~12 lines deep */
-      background: rgba(10, 10, 10, 0.85);
-      border-top: 1px solid rgba(80, 80, 80, 0.5);
-      padding: 6px 10px;
-      font-size: 11px;
-      color: #ddd;
-      z-index: 20;
+      right: 0;
+      border-left: 1px solid rgba(80, 80, 80, 0.5);
       display: flex;
       flex-direction: column;
-      pointer-events: auto;
+      overflow-y: hidden;
+    }
+
+    #combat-log-content {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      font-size: 11px;
     }
 
     #combat-log-panel .cl-toolbar {
@@ -287,14 +359,56 @@
       padding-top: 4px;
     }
 
-    #turn-controls {
-      position: absolute;
-      bottom: 16px;
-      right: 16px;
+    /* AI Playback bar */
+    #ai-playback-bar {
+      flex-shrink: 0;
       display: flex;
       align-items: center;
+      justify-content: space-between;
+      padding: 6px 0;
+      margin-bottom: 6px;
+      border-bottom: 1px solid rgba(100, 100, 100, 0.4);
+    }
+
+    #ai-playback-bar .ai-pb-label {
+      font-size: 12px;
+      font-weight: bold;
+      color: #fa0;
+    }
+
+    #ai-playback-bar .ai-pb-buttons {
+      display: flex;
+      gap: 6px;
+    }
+
+    #ai-playback-bar .ai-pb-btn {
+      background: rgba(40, 40, 40, 0.85);
+      border: 1px solid #555;
+      color: #eee;
+      font-size: 14px;
+      width: 30px;
+      height: 26px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+    #ai-playback-bar .ai-pb-btn:hover {
+      background: rgba(70, 70, 70, 0.9);
+      border-color: #888;
+    }
+
+    #turn-controls {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
       gap: 12px;
-      z-index: 30;
+      padding: 8px 0;
+      margin-top: auto;
+      border-top: 1px solid rgba(80, 80, 80, 0.4);
     }
     #next-turn-btn {
       background: rgba(40, 40, 40, 0.9);
@@ -338,8 +452,10 @@
     <div id="local-panel">
 
       <canvas id="local-canvas"></canvas>
-      <div id="combat-log-panel"></div>
-      <div id="detail-panel" class="curtain">
+      <div id="detail-panel">
+        <div id="detail-content"></div>
+      </div>
+      <div id="combat-log-panel" class="curtain">
         <div id="curtain-menu-bar">
           <button id="new-world-btn" title="Generate a new world (N)">+ New</button>
           <button id="home-btn" title="Centre on home city (Home)">⌂ Home</button>
@@ -347,7 +463,7 @@
           <button id="load-btn" title="Load game (Ctrl+L)">📂 Load</button>
           <button id="test-units-btn" title="Open 3D unit model test grid" onclick="window.open('/test-units.html','_blank')">🤖 Unit Models</button>
         </div>
-        <div id="detail-content"></div>
+        <div id="combat-log-content"></div>
         <div id="turn-controls">
           <button id="next-turn-btn" title="End turn (Space)">Next ▶</button>
         </div>
