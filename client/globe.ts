@@ -18,6 +18,7 @@ export class GlobeView {
   private raycaster: THREE.Raycaster;
   private mouse: THREE.Vector2;
   private tileMesh: THREE.Mesh;
+  private cliffMesh: THREE.Mesh;
   private edgeMesh: THREE.LineSegments;
   private cityMarkers: THREE.Points;
   private world: WorldData;
@@ -68,12 +69,14 @@ export class GlobeView {
 
     // Build the tile mesh (all polygons as triangulated faces)
     dbg.globe.time('buildTileMesh');
-    const { mesh, edgeLines, faceToTile } = this.buildTileMesh();
+    const { mesh, cliffMesh, edgeLines, faceToTile } = this.buildTileMesh();
     dbg.globe.timeEnd('buildTileMesh');
     this.tileMesh = mesh;
+    this.cliffMesh = cliffMesh;
     this.edgeMesh = edgeLines;
     this.tileIdByFace = faceToTile;
     this.scene.add(this.tileMesh);
+    this.scene.add(this.cliffMesh);
     this.scene.add(this.edgeMesh);
 
     // City markers
@@ -113,9 +116,39 @@ export class GlobeView {
     this.animate();
   }
 
+  /**
+   * Radial scale factor per elevation type.
+   * Tiles are pushed outward from the unit sphere by this amount,
+   * giving a subtle raised appearance proportional to terrain height.
+   */
+  private static readonly ELEVATION_SCALE: Record<string, number> = {
+    flat:     1.000,
+    rolling:  1.006,
+    hills:    1.013,
+    mountain: 1.022,
+  };
+
+  /** Darken an RGB triple — scales toward black while preserving hue. */
+  private static darken(r: number, g: number, b: number, factor: number): [number, number, number] {
+    return [r * factor, g * factor, b * factor];
+  }
+
   private buildTileMesh() {
     const tiles = this.world.tiles;
     const tileCount = tiles.length;
+
+    // Pre-compute elevation scale and color for every tile
+    const elevScales = new Float32Array(tileCount);
+    const tileRGB: Array<[number, number, number]> = new Array(tileCount);
+    for (let ti = 0; ti < tileCount; ti++) {
+      const tile = tiles[ti];
+      elevScales[ti] = tile.terrain === 'ocean'
+        ? 1.0
+        : (GlobeView.ELEVATION_SCALE[tile.elevType] ?? 1.0);
+      tileRGB[ti] = tile.city
+        ? factionColorRGB(this.world, tile.city)
+        : tileColorRGB(tile);
+    }
 
     // Count total triangles needed: each N-sided tile = N-2 triangles (fan)
     let totalTriangles = 0;
@@ -123,113 +156,162 @@ export class GlobeView {
       totalTriangles += tile.s - 2;
     }
 
-    const positions = new Float32Array(totalTriangles * 3 * 3);
-    const colors = new Float32Array(totalTriangles * 3 * 3);
-    const normals = new Float32Array(totalTriangles * 3 * 3);
+    // Count cliff quads: for each neighbour pair where elevScale differs,
+    // process each pair once (ti < nj). Each cliff edge = 1 quad = 2 triangles.
+    let cliffTriangles = 0;
+    for (let ti = 0; ti < tileCount; ti++) {
+      for (const nj of tiles[ti].n) {
+        if (nj <= ti) continue;
+        if (elevScales[ti] !== elevScales[nj]) cliffTriangles += 2;
+      }
+    }
+
+    // ── Tile top buffers (unlit) ─────────────────────────────────────────────
+    const tPositions = new Float32Array(totalTriangles * 9);
+    const tColors    = new Float32Array(totalTriangles * 9);
     const faceToTile = new Uint16Array(totalTriangles);
 
-    // Edge lines: each tile has `sides` edges, but each edge is shared by 2 tiles
-    // We'll just draw all edges per tile (duplicates get hidden by z-buffer)
+    // ── Cliff wall buffers (unlit — MeshBasicMaterial) ──────────────────────
+    const cPositions = new Float32Array(cliffTriangles * 9);
+    const cColors    = new Float32Array(cliffTriangles * 9);
+
+    // ── Edge line buffers ────────────────────────────────────────────────────
     let totalEdgeVerts = 0;
-    for (const tile of tiles) {
-      totalEdgeVerts += tile.s * 2; // 2 verts per edge segment
-    }
+    for (const tile of tiles) totalEdgeVerts += tile.s * 2;
     const edgePositions = new Float32Array(totalEdgeVerts * 3);
 
-    let triIdx = 0;
+    let triIdx  = 0;
+    let cTriIdx = 0;
     let edgeIdx = 0;
 
+    // ── Pass 1: tile top faces ───────────────────────────────────────────────
     for (let ti = 0; ti < tileCount; ti++) {
       const tile = tiles[ti];
       const boundary = tile.b;
       const sides = tile.s;
+      const elevScale = elevScales[ti];
+      const [r, g, b] = tileRGB[ti];
 
-      // Color for this tile — use faction color for city tiles, terrain color otherwise
-      const [r, g, b] = tile.city
-        ? factionColorRGB(this.world, tile.city)
-        : tileColorRGB(tile);
-
-      // Normal = tile centre (on unit sphere, points outward)
-      const nx = tile.pos[0];
-      const ny = tile.pos[1];
-      const nz = tile.pos[2];
-
-      // Fan triangulation from first boundary vertex
       for (let i = 1; i < sides - 1; i++) {
         const v0 = boundary[0];
         const v1 = boundary[i];
         const v2 = boundary[i + 1];
-
         const base = triIdx * 9;
-        positions[base] = v0[0];
-        positions[base + 1] = v0[1];
-        positions[base + 2] = v0[2];
-        positions[base + 3] = v1[0];
-        positions[base + 4] = v1[1];
-        positions[base + 5] = v1[2];
-        positions[base + 6] = v2[0];
-        positions[base + 7] = v2[1];
-        positions[base + 8] = v2[2];
 
-        // Same color for all 3 vertices
-        colors[base] = r;     colors[base + 1] = g; colors[base + 2] = b;
-        colors[base + 3] = r; colors[base + 4] = g; colors[base + 5] = b;
-        colors[base + 6] = r; colors[base + 7] = g; colors[base + 8] = b;
+        tPositions[base]     = v0[0] * elevScale; tPositions[base + 1] = v0[1] * elevScale; tPositions[base + 2] = v0[2] * elevScale;
+        tPositions[base + 3] = v1[0] * elevScale; tPositions[base + 4] = v1[1] * elevScale; tPositions[base + 5] = v1[2] * elevScale;
+        tPositions[base + 6] = v2[0] * elevScale; tPositions[base + 7] = v2[1] * elevScale; tPositions[base + 8] = v2[2] * elevScale;
 
-        // Normal
-        normals[base] = nx;     normals[base + 1] = ny; normals[base + 2] = nz;
-        normals[base + 3] = nx; normals[base + 4] = ny; normals[base + 5] = nz;
-        normals[base + 6] = nx; normals[base + 7] = ny; normals[base + 8] = nz;
+        tColors[base]     = r; tColors[base + 1] = g; tColors[base + 2] = b;
+        tColors[base + 3] = r; tColors[base + 4] = g; tColors[base + 5] = b;
+        tColors[base + 6] = r; tColors[base + 7] = g; tColors[base + 8] = b;
 
         faceToTile[triIdx] = ti;
         triIdx++;
       }
 
-      // Edge lines
+      const edgePush = elevScale * 1.001;
       for (let i = 0; i < sides; i++) {
         const v0 = boundary[i];
         const v1 = boundary[(i + 1) % sides];
-        // Push slightly outward so edges render above faces
-        const push = 1.001;
-
         const eBase = edgeIdx * 3;
-        edgePositions[eBase] = v0[0] * push;
-        edgePositions[eBase + 1] = v0[1] * push;
-        edgePositions[eBase + 2] = v0[2] * push;
-        edgePositions[eBase + 3] = v1[0] * push;
-        edgePositions[eBase + 4] = v1[1] * push;
-        edgePositions[eBase + 5] = v1[2] * push;
+        edgePositions[eBase]     = v0[0] * edgePush; edgePositions[eBase + 1] = v0[1] * edgePush; edgePositions[eBase + 2] = v0[2] * edgePush;
+        edgePositions[eBase + 3] = v1[0] * edgePush; edgePositions[eBase + 4] = v1[1] * edgePush; edgePositions[eBase + 5] = v1[2] * edgePush;
         edgeIdx += 2;
       }
     }
 
-    // Tile faces
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+    // ── Pass 2: cliff side faces (unlit) ─────────────────────────────────────
+    // Fill the gap between adjacent tiles at different elevations with a quad
+    // coloured as a darkened version of the higher tile's colour.
+    // Uses MeshBasicMaterial so lighting cannot darken them further.
+    const CLIFF_DARKEN = 0.72;
+    const snap = (v: [number, number, number]) =>
+      `${Math.round(v[0] * 4096)},${Math.round(v[1] * 4096)},${Math.round(v[2] * 4096)}`;
 
-    const material = new THREE.MeshLambertMaterial({
-      vertexColors: true,
-      side: THREE.FrontSide,
-    });
+    for (let ti = 0; ti < tileCount; ti++) {
+      const tile = tiles[ti];
+      for (const nj of tile.n) {
+        if (nj <= ti) continue;
 
-    const mesh = new THREE.Mesh(geometry, material);
+        const scaleA = elevScales[ti];
+        const scaleB = elevScales[nj];
+        if (scaleA === scaleB) continue;
 
-    // Edge lines
+        const hiIdx   = scaleA > scaleB ? ti : nj;
+        const loIdx   = scaleA > scaleB ? nj : ti;
+        const hiScale = elevScales[hiIdx];
+        const loScale = elevScales[loIdx];
+        const hiTile  = tiles[hiIdx];
+        const loTile  = tiles[loIdx];
+
+        const [hr, hg, hb] = tileRGB[hiIdx];
+        const [cr, cg, cb] = GlobeView.darken(hr, hg, hb, CLIFF_DARKEN);
+
+        const hiB = hiTile.b;
+        const loB = loTile.b;
+        const hiSides = hiTile.s;
+        const loSides = loTile.s;
+
+        const loSet = new Set<string>();
+        for (let k = 0; k < loSides; k++) loSet.add(snap(loB[k]));
+
+        for (let k = 0; k < hiSides; k++) {
+          const vA = hiB[k];
+          const vB = hiB[(k + 1) % hiSides];
+          if (!loSet.has(snap(vA)) || !loSet.has(snap(vB))) continue;
+
+          const hiAx = vA[0] * hiScale, hiAy = vA[1] * hiScale, hiAz = vA[2] * hiScale;
+          const hiBx = vB[0] * hiScale, hiBy = vB[1] * hiScale, hiBz = vB[2] * hiScale;
+          const loAx = vA[0] * loScale, loAy = vA[1] * loScale, loAz = vA[2] * loScale;
+          const loBx = vB[0] * loScale, loBy = vB[1] * loScale, loBz = vB[2] * loScale;
+
+          // Triangle 1: hiA, loB, hiB
+          let base = cTriIdx * 9;
+          cPositions[base]     = hiAx; cPositions[base + 1] = hiAy; cPositions[base + 2] = hiAz;
+          cPositions[base + 3] = loBx; cPositions[base + 4] = loBy; cPositions[base + 5] = loBz;
+          cPositions[base + 6] = hiBx; cPositions[base + 7] = hiBy; cPositions[base + 8] = hiBz;
+          cColors[base]     = cr; cColors[base + 1] = cg; cColors[base + 2] = cb;
+          cColors[base + 3] = cr; cColors[base + 4] = cg; cColors[base + 5] = cb;
+          cColors[base + 6] = cr; cColors[base + 7] = cg; cColors[base + 8] = cb;
+          cTriIdx++;
+
+          // Triangle 2: hiA, loA, loB
+          base = cTriIdx * 9;
+          cPositions[base]     = hiAx; cPositions[base + 1] = hiAy; cPositions[base + 2] = hiAz;
+          cPositions[base + 3] = loAx; cPositions[base + 4] = loAy; cPositions[base + 5] = loAz;
+          cPositions[base + 6] = loBx; cPositions[base + 7] = loBy; cPositions[base + 8] = loBz;
+          cColors[base]     = cr; cColors[base + 1] = cg; cColors[base + 2] = cb;
+          cColors[base + 3] = cr; cColors[base + 4] = cg; cColors[base + 5] = cb;
+          cColors[base + 6] = cr; cColors[base + 7] = cg; cColors[base + 8] = cb;
+          cTriIdx++;
+
+          break;
+        }
+      }
+    }
+
+    // ── Tile top mesh (Basic — flat colour, consistent with cliff shading) ────
+    const tileGeometry = new THREE.BufferGeometry();
+    tileGeometry.setAttribute('position', new THREE.BufferAttribute(tPositions, 3));
+    tileGeometry.setAttribute('color',    new THREE.BufferAttribute(tColors, 3));
+    const tileMaterial = new THREE.MeshBasicMaterial({ vertexColors: true });
+    const mesh = new THREE.Mesh(tileGeometry, tileMaterial);
+
+    // ── Cliff wall mesh (Basic — flat colour, immune to lighting) ────────────
+    const cliffGeometry = new THREE.BufferGeometry();
+    cliffGeometry.setAttribute('position', new THREE.BufferAttribute(cPositions.slice(0, cTriIdx * 9), 3));
+    cliffGeometry.setAttribute('color',    new THREE.BufferAttribute(cColors.slice(0, cTriIdx * 9), 3));
+    const cliffMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    const cliffMesh = new THREE.Mesh(cliffGeometry, cliffMaterial);
+
+    // ── Edge lines ────────────────────────────────────────────────────────────
     const edgeGeometry = new THREE.BufferGeometry();
-    edgeGeometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(edgePositions.slice(0, edgeIdx * 3), 3)
-    );
-    const edgeMaterial = new THREE.LineBasicMaterial({
-      color: 0x000000,
-      opacity: 0.02,
-      transparent: true,
-    });
+    edgeGeometry.setAttribute('position', new THREE.BufferAttribute(edgePositions.slice(0, edgeIdx * 3), 3));
+    const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.02, transparent: true });
     const edgeLines = new THREE.LineSegments(edgeGeometry, edgeMaterial);
 
-    return { mesh, edgeLines, faceToTile };
+    return { mesh, cliffMesh, edgeLines, faceToTile };
   }
 
   private buildCityMarkers(): THREE.Points {

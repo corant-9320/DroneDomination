@@ -61,26 +61,25 @@ export function tileIdentity(tile: Pick<TileData, 'terrain' | 'elevType' | 'f'>)
  *   mountain → white, hills → grey, rolling → dark brown, flat → terrain colour
  */
 export const TILE_COLORS: Record<string, string> = {
-  // --- elevation type overrides (apply to all terrain at that elevation) ---
-  'mountain': '#ffffff', // white
-  'hills':    '#808080', // grey
-  'rolling':  '#4a3728', // dark brown
-  // flat: no override — falls through to terrain colour
+  // --- elevation type overrides ---
+  // Only mountain gets a colour override (snow-capped white).
+  // Hills and rolling use the base terrain colour so the landscape reads clearly.
+  'mountain': '#ffffff', // white / snow-capped
 
-  // --- base terrain colours (used for flat elevation, and ocean) ---
+  // --- base terrain colours (used for all non-mountain elevations, and ocean) ---
   'ocean':     '#1a5276',
   'grassland': '#6b9b37',
   'plains':    '#a8c686',
   'desert':    '#d4a843',
   'tundra':    '#b8c9d4',
 
-  // --- forested variants (override the elevation colour with a green tint) ---
+  // --- forested variants ---
   'grassland:flat:forested':    '#3a7a1a',
   'plains:flat:forested':       '#5a8a3a',
-  'grassland:rolling:forested': '#3a5a1a',
-  'plains:rolling:forested':    '#4a6a2a',
-  'grassland:hills:forested':   '#4a6a4a',
-  'plains:hills:forested':      '#5a7a5a',
+  'grassland:rolling:forested': '#3a6a1a',
+  'plains:rolling:forested':    '#4a7a2a',
+  'grassland:hills:forested':   '#3a6a1a',
+  'plains:hills:forested':      '#4a7a2a',
 };
 
 /**
