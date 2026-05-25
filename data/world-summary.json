@@ -9,7 +9,7 @@
       "id": "city_0",
       "label": "C01",
       "tileIndex": 12,
-      "neighbourCount": 5,
+      "neighbourCount": 4,
       "terrain": "plains"
     },
     {
@@ -24,34 +24,34 @@
       "label": "C03",
       "tileIndex": 1202,
       "neighbourCount": 5,
-      "terrain": "plains"
+      "terrain": "grassland"
     },
     {
       "id": "city_3",
       "label": "C04",
       "tileIndex": 1767,
       "neighbourCount": 6,
-      "terrain": "plains"
+      "terrain": "grassland"
     },
     {
       "id": "city_4",
       "label": "C05",
       "tileIndex": 2329,
       "neighbourCount": 7,
-      "terrain": "plains"
+      "terrain": "grassland"
     },
     {
       "id": "city_5",
       "label": "C06",
       "tileIndex": 2874,
       "neighbourCount": 7,
-      "terrain": "plains"
+      "terrain": "grassland"
     },
     {
       "id": "city_6",
       "label": "C07",
-      "tileIndex": 1923,
-      "neighbourCount": 5,
+      "tileIndex": 1904,
+      "neighbourCount": 6,
       "terrain": "grassland"
     },
     {
@@ -65,8 +65,8 @@
       "id": "city_8",
       "label": "C09",
       "tileIndex": 4187,
-      "neighbourCount": 5,
-      "terrain": "plains"
+      "neighbourCount": 6,
+      "terrain": "grassland"
     },
     {
       "id": "city_9",
@@ -78,23 +78,23 @@
     {
       "id": "city_10",
       "label": "C11",
-      "tileIndex": 5400,
-      "neighbourCount": 8,
-      "terrain": "grassland"
+      "tileIndex": 5399,
+      "neighbourCount": 7,
+      "terrain": "plains"
     },
     {
       "id": "city_11",
       "label": "C12",
-      "tileIndex": 4457,
+      "tileIndex": 4479,
       "neighbourCount": 8,
-      "terrain": "grassland"
+      "terrain": "plains"
     }
   ],
   "terrainDistribution": {
-    "plains": 1897,
-    "grassland": 1883,
-    "ocean": 1687,
-    "tundra": 217,
-    "desert": 78
+    "grassland": 3461,
+    "plains": 1216,
+    "ocean": 551,
+    "desert": 313,
+    "tundra": 221
   }
 }

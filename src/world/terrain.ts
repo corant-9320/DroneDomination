@@ -7,8 +7,16 @@
  *   ElevationType — flat | rolling | hills | mountain  (always set, including ocean tiles)
  *   forested      — boolean                            (false for ocean/tundra/desert)
  *
- * Ocean is determined by a separate noise ranking (bottom 30% by rank),
- * independent of ElevationType — so flat land tiles exist.
+ * Target proportions (out of ~5762 tiles):
+ *   ocean    ≈ 500 tiles  (~8.7%)
+ *   mountain ≈ 500 tiles  (~8.7%)
+ *   desert   ≈ 300 tiles  (contiguous patches, flat or rolling elevation)
+ *   tundra   ≈ polar caps
+ *   grassland/plains — remainder
+ *
+ * Mountain ranges: elongated chains 3–20 hexes long, 1–3 hexes wide.
+ * Mountains are surrounded by hills; hills are surrounded by rolling.
+ * Desert forms contiguous patches seeded by noise.
  */
 
 import { Vec3, TerrainType, ElevationType } from './types.js';
@@ -94,7 +102,6 @@ function gradientNoise3D(
  * BFS from each polar pentagon outward.
  * Returns an array where poleDistance[i] is the minimum hop count from tile i
  * to either polar pentagon (0 = the pentagon itself, 1 = immediate neighbours, …).
- * Tiles with no polar pentagon reachable within maxDepth get Infinity.
  */
 function computePoleDistances(
   positions: Vec3[],
@@ -104,17 +111,13 @@ function computePoleDistances(
   const n = positions.length;
   const dist = new Array<number>(n).fill(Infinity);
 
-  // The two polar pentagons are the pentagons with the highest and lowest y.
-  // An icosahedron has exactly 12 pentagons; the top and bottom vertices are
-  // the ones at y ≈ +1 and y ≈ -1.
   const pentagonIndices: number[] = [];
   for (let i = 0; i < n; i++) {
     if (sides[i] === 5) pentagonIndices.push(i);
   }
   pentagonIndices.sort((a, b) => Math.abs(positions[b].y) - Math.abs(positions[a].y));
-  const polarPentagons = pentagonIndices.slice(0, 2); // top + bottom
+  const polarPentagons = pentagonIndices.slice(0, 2);
 
-  // Multi-source BFS from both polar pentagons simultaneously
   const queue: number[] = [];
   for (const src of polarPentagons) {
     dist[src] = 0;
@@ -134,6 +137,158 @@ function computePoleDistances(
   }
 
   return dist;
+}
+
+// ---------------------------------------------------------------------------
+// Mountain range generation
+// ---------------------------------------------------------------------------
+
+/**
+ * Grow mountain ranges as elongated chains.
+ * Each range starts at a seed tile and extends in a dominant direction,
+ * with occasional width (1–3 hexes wide) and length 3–20 hexes.
+ * Returns a Set of tile indices that are mountain.
+ */
+function growMountainRanges(
+  numTiles: number,
+  neighbours: number[][],
+  poleDistances: number[],
+  targetCount: number,
+  rng: () => number,
+): Set<number> {
+  const mountains = new Set<number>();
+
+  // Candidate seeds: tiles not too close to poles
+  const candidates: number[] = [];
+  for (let i = 0; i < numTiles; i++) {
+    if (poleDistances[i] > 8) candidates.push(i);
+  }
+
+  // Shuffle candidates for random seed selection
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+
+  let seedIdx = 0;
+
+  while (mountains.size < targetCount && seedIdx < candidates.length) {
+    const seed = candidates[seedIdx++];
+    if (mountains.has(seed)) continue;
+    if (poleDistances[seed] <= 8) continue;
+
+    // Range parameters
+    const rangeLength = 3 + Math.floor(rng() * 18); // 3–20
+    const rangeWidth  = 1 + Math.floor(rng() * 3);  // 1–3
+
+    // Build the spine: walk in a consistent direction by preferring
+    // neighbours that continue the current heading.
+    const spine: number[] = [seed];
+    let current = seed;
+    let prevDir = -1; // index into current tile's neighbour list
+
+    for (let step = 1; step < rangeLength; step++) {
+      const nbrs = neighbours[current];
+      if (nbrs.length === 0) break;
+
+      // Score each neighbour: prefer continuing in same direction,
+      // avoid poles, avoid already-mountain (keeps ranges distinct)
+      let best = -1;
+      let bestScore = -Infinity;
+      for (let d = 0; d < nbrs.length; d++) {
+        const nb = nbrs[d];
+        if (poleDistances[nb] <= 8) continue;
+        // Directional continuity: same or adjacent direction index scores higher
+        const dirScore = prevDir < 0 ? 0 : (d === prevDir ? 2 : (Math.abs(d - prevDir) <= 1 ? 1 : 0));
+        // Small random jitter so ranges aren't perfectly straight
+        const score = dirScore + rng() * 0.5;
+        if (score > bestScore) {
+          bestScore = score;
+          best = d;
+        }
+      }
+      if (best < 0) break;
+
+      prevDir = best;
+      current = nbrs[best];
+      spine.push(current);
+    }
+
+    // Add spine tiles as mountains
+    for (const t of spine) mountains.add(t);
+
+    // Widen the range: for each spine tile, add 0 to (rangeWidth-1) side tiles
+    if (rangeWidth > 1) {
+      for (const t of spine) {
+        const nbrs = neighbours[t];
+        // Pick side neighbours perpendicular to the spine direction
+        // (just pick random non-spine neighbours for simplicity)
+        const sideNbrs = nbrs.filter((nb) => !spine.includes(nb) && poleDistances[nb] > 8);
+        const sidesNeeded = rangeWidth - 1;
+        for (let s = 0; s < sidesNeeded && s < sideNbrs.length; s++) {
+          mountains.add(sideNbrs[s]);
+        }
+      }
+    }
+  }
+
+  return mountains;
+}
+
+// ---------------------------------------------------------------------------
+// Desert patch generation
+// ---------------------------------------------------------------------------
+
+/**
+ * Grow desert patches as contiguous blobs seeded by noise.
+ * Seeds are tiles with high desert noise value, far from poles.
+ * Each patch flood-fills outward to a random size.
+ */
+function growDesertPatches(
+  numTiles: number,
+  neighbours: number[][],
+  poleDistances: number[],
+  desertNoise: number[],
+  targetCount: number,
+  rng: () => number,
+): Set<number> {
+  const desert = new Set<number>();
+
+  // Sort candidates by desert noise (highest first) — these become patch seeds
+  const candidates = Array.from({ length: numTiles }, (_, i) => i)
+    .filter((i) => poleDistances[i] > 15 && desertNoise[i] > 0)
+    .sort((a, b) => desertNoise[b] - desertNoise[a]);
+
+  for (const seed of candidates) {
+    if (desert.size >= targetCount) break;
+    if (desert.has(seed)) continue;
+
+    // Patch size: 5–40 tiles
+    const patchSize = 5 + Math.floor(rng() * 36);
+    const patch: number[] = [seed];
+    const frontier: number[] = [seed];
+    const inPatch = new Set<number>([seed]);
+
+    while (frontier.length > 0 && patch.length < patchSize) {
+      // Pick a random frontier tile
+      const fi = Math.floor(rng() * frontier.length);
+      const current = frontier[fi];
+      frontier.splice(fi, 1);
+
+      for (const nb of neighbours[current]) {
+        if (inPatch.has(nb)) continue;
+        if (poleDistances[nb] <= 15) continue;
+        inPatch.add(nb);
+        patch.push(nb);
+        frontier.push(nb);
+        if (patch.length >= patchSize) break;
+      }
+    }
+
+    for (const t of patch) desert.add(t);
+  }
+
+  return desert;
 }
 
 // ---------------------------------------------------------------------------
@@ -175,78 +330,163 @@ export function generateTerrain(
     });
   }
 
-  // --- Pole distances (hop count from nearest polar pentagon) ---
+  const numTiles = positions.length;
+
+  // --- Pole distances ---
   const poleDistances = computePoleDistances(positions, neighbours, sides);
 
-  // --- Pass 1: noise ranking used for two independent purposes ---
-  // The same noise field drives both ElevationType (quartiles) and the ocean
-  // flag (bottom 30% by rank). These are separate outputs — a flat tile is
-  // not necessarily ocean, and an ocean tile can be any elevation type.
-  const numTiles = positions.length;
-  const rawElevations = positions.map((pos) => {
+  // ---------------------------------------------------------------------------
+  // Step 1: Ocean — target ~500 tiles
+  // Use noise ranking: bottom ~8.7% by rank become ocean.
+  // ---------------------------------------------------------------------------
+  const OCEAN_TARGET = 500;
+  const oceanFraction = OCEAN_TARGET / numTiles;
+
+  const oceanNoise = positions.map((pos) => {
     let e = 0;
     e += gradientNoise3D(pos, 3,  gradients, permutation) * 0.5;
     e += gradientNoise3D(pos, 6,  gradients, permutation) * 0.25;
     e += gradientNoise3D(pos, 12, gradients, permutation) * 0.125;
     e += gradientNoise3D(pos, 24, gradients, permutation) * 0.0625;
-    return e; // raw value — only the rank matters
+    return e;
   });
 
-  const sortedIndices = rawElevations
+  const sortedByOcean = oceanNoise
     .map((e, i) => ({ e, i }))
     .sort((a, b) => a.e - b.e);
 
-  // ElevationType: four equal quartiles across all tiles
-  const elevationTypeMap = new Array<ElevationType>(numTiles);
-  const q = Math.floor(numTiles / 4);
-  sortedIndices.forEach(({ i }, rank) => {
-    if (rank < q)           elevationTypeMap[i] = 'flat';
-    else if (rank < q * 2)  elevationTypeMap[i] = 'rolling';
-    else if (rank < q * 3)  elevationTypeMap[i] = 'hills';
-    else                    elevationTypeMap[i] = 'mountain';
+  const oceanCutoff = Math.floor(numTiles * oceanFraction);
+  const isOceanMap = new Array<boolean>(numTiles).fill(false);
+  sortedByOcean.slice(0, oceanCutoff).forEach(({ i }) => { isOceanMap[i] = true; });
+
+  // ---------------------------------------------------------------------------
+  // Step 2: Mountain ranges — target ~500 mountain tiles
+  // Grown as elongated chains, then surrounded by hills/rolling buffers.
+  // ---------------------------------------------------------------------------
+  const MOUNTAIN_TARGET = 500;
+
+  const mountainSet = growMountainRanges(
+    numTiles, neighbours, poleDistances, MOUNTAIN_TARGET, rng
+  );
+
+  // Hills buffer: all non-mountain neighbours of mountain tiles
+  const hillsSet = new Set<number>();
+  for (const mt of mountainSet) {
+    for (const nb of neighbours[mt]) {
+      if (!mountainSet.has(nb)) hillsSet.add(nb);
+    }
+  }
+
+  // Rolling buffer: all non-mountain, non-hills neighbours of hills tiles
+  const rollingSet = new Set<number>();
+  for (const ht of hillsSet) {
+    for (const nb of neighbours[ht]) {
+      if (!mountainSet.has(nb) && !hillsSet.has(nb)) rollingSet.add(nb);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Step 3: Desert patches — target ~300 tiles, contiguous, far from poles
+  // Desert can be flat or rolling elevation.
+  // ---------------------------------------------------------------------------
+  const DESERT_TARGET = 300;
+
+  const desertNoise = positions.map((pos) =>
+    gradientNoise3D(pos, 4, gradients, permutation) * 0.6 +
+    gradientNoise3D(pos, 8, gradients, permutation) * 0.4
+  );
+
+  const desertSet = growDesertPatches(
+    numTiles, neighbours, poleDistances, desertNoise, DESERT_TARGET, rng
+  );
+
+  // ---------------------------------------------------------------------------
+  // Step 4: Assign ElevationType per tile
+  //
+  // Priority:
+  //   mountainSet → 'mountain'
+  //   hillsSet    → 'hills'
+  //   rollingSet  → 'rolling'
+  //   desertSet   → 'flat' or 'rolling' (random 50/50)
+  //   ocean       → use noise-based quartile (visual variety under water)
+  //   remainder   → noise-based quartile (flat/rolling/hills distributed)
+  //
+  // For non-special tiles we still use a noise field for natural variation,
+  // but we cap it at 'hills' (mountains are only from the range algorithm).
+  // ---------------------------------------------------------------------------
+  const elevNoise = positions.map((pos) => {
+    let e = 0;
+    e += gradientNoise3D(pos, 5,  gradients, permutation) * 0.5;
+    e += gradientNoise3D(pos, 10, gradients, permutation) * 0.25;
+    e += gradientNoise3D(pos, 20, gradients, permutation) * 0.125;
+    return e;
   });
 
-  // Ocean flag: bottom 30% by noise rank (independent of elevation quartile)
-  const oceanCutoff = Math.floor(numTiles * 0.30);
-  const isOceanMap = new Array<boolean>(numTiles).fill(false);
-  sortedIndices.slice(0, oceanCutoff).forEach(({ i }) => { isOceanMap[i] = true; });
+  // Rank non-special land tiles for flat/rolling/hills distribution
+  const normalLandIndices = Array.from({ length: numTiles }, (_, i) => i)
+    .filter((i) => !mountainSet.has(i) && !hillsSet.has(i) && !rollingSet.has(i) && !desertSet.has(i));
 
-  // --- Pass 2: classify each tile across all three dimensions ---
+  const sortedNormal = normalLandIndices
+    .map((i) => ({ e: elevNoise[i], i }))
+    .sort((a, b) => a.e - b.e);
+
+  const normalElevMap = new Map<number, ElevationType>();
+  const nq = Math.floor(sortedNormal.length / 3);
+  sortedNormal.forEach(({ i }, rank) => {
+    if (rank < nq)           normalElevMap.set(i, 'flat');
+    else if (rank < nq * 2)  normalElevMap.set(i, 'rolling');
+    else                     normalElevMap.set(i, 'hills');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Step 5: Tundra — polar caps (same logic as before)
+  // ---------------------------------------------------------------------------
+
+  // ---------------------------------------------------------------------------
+  // Step 6: Assemble final terrain data
+  // ---------------------------------------------------------------------------
   return positions.map((pos, i) => {
-    const elevationType = elevationTypeMap[i];
-    const poleDist      = poleDistances[i];
-    const isOcean       = isOceanMap[i];
+    const poleDist = poleDistances[i];
+    const isOcean  = isOceanMap[i];
 
-    const terrainType = classifyTerrain(isOcean, elevationType, poleDist, rng);
-    const forested    = classifyForested(terrainType, elevationType,
-                          gradientNoise3D(pos, 5, gradients, permutation));
+    // --- ElevationType ---
+    let elevationType: ElevationType;
+    if (mountainSet.has(i)) {
+      elevationType = 'mountain';
+    } else if (hillsSet.has(i)) {
+      elevationType = 'hills';
+    } else if (rollingSet.has(i)) {
+      elevationType = 'rolling';
+    } else if (desertSet.has(i)) {
+      // Desert can be flat or rolling
+      elevationType = rng() < 0.5 ? 'flat' : 'rolling';
+    } else {
+      elevationType = normalElevMap.get(i) ?? 'flat';
+    }
+
+    // --- TerrainType ---
+    const terrainType = classifyTerrain(
+      isOcean, elevationType, poleDist, mountainSet.has(i), desertSet.has(i), rng
+    );
+
+    // --- Forested ---
+    const forestNoise = gradientNoise3D(pos, 5, gradients, permutation);
+    const forested = classifyForested(terrainType, elevationType, forestNoise);
 
     return { terrainType, elevationType, forested };
   });
 }
 
 // ---------------------------------------------------------------------------
-// Terrain classification — returns one of the 5 terrain types
+// Terrain classification
 // ---------------------------------------------------------------------------
 
-/**
- * Pole distance zones (hop count from the polar pentagon):
- *
- *   0          — the polar pentagon itself          (1 tile)
- *   1          — first hex ring                     (5 tiles)
- *   2          — second hex ring                    (10 tiles)
- *   ─────────────────────────────────────────────── total: 16 tiles of tundra
- *   3          — ocean buffer ring
- *   4          — ocean buffer ring
- *   ───────────────────────────────────────────────
- *   5+         — normal terrain classification
- *
- * The near-polar band (dist 5–9) blends tundra into plains with rising probability.
- */
 function classifyTerrain(
   isOcean: boolean,
   elevationType: ElevationType,
   poleDist: number,
+  isMountain: boolean,
+  isDesert: boolean,
   rng: () => number,
 ): TerrainType {
   // --- Hard tundra cap: pentagon + 2 hex rings ---
@@ -255,45 +495,38 @@ function classifyTerrain(
   // --- Ocean buffer just outside the tundra cap ---
   if (poleDist <= 4) return 'ocean';
 
-  // --- Near-polar band (dist 5–9): tundra probability fades with distance.
-  //     Evaluated before the ocean flag so polar land isn't swallowed by water. ---
+  // --- Near-polar band (dist 5–9): tundra probability fades with distance ---
   if (poleDist <= 9) {
-    const tundraChance = (10 - poleDist) / 5; // 1.0 at dist 5 → 0.2 at dist 9
+    const tundraChance = (10 - poleDist) / 5;
     if (rng() < tundraChance) return 'tundra';
   }
 
-  // --- Ocean: bottom 30% of tiles by noise rank ---
+  // --- Ocean ---
   if (isOcean) return 'ocean';
 
-  // --- Equatorial desert: small patches (far from poles, rolling elevation) ---
-  if (poleDist > 30 && elevationType === 'rolling' && rng() > 0.7) {
-    return 'desert';
+  // --- Desert patches (pre-computed) ---
+  if (isDesert) return 'desert';
+
+  // --- Mountain tiles → plains (high altitude, sparse vegetation) ---
+  if (isMountain) return 'plains';
+
+  // --- Grassland for flat/rolling/hills land ---
+  if (elevationType === 'flat' || elevationType === 'rolling') {
+    return poleDist > 12 ? 'grassland' : 'plains';
   }
 
-  // --- Mid-latitude grassland (most common land type) ---
-  if (elevationType === 'flat' || elevationType === 'rolling' ||
-      (elevationType === 'hills' && poleDist < 28)) {
-    return 'grassland';
+  // hills → grassland near equator, plains further out
+  if (elevationType === 'hills') {
+    return poleDist > 20 ? 'grassland' : 'plains';
   }
 
-  // --- Plains: hills far from equator and all mountains ---
   return 'plains';
 }
 
 // ---------------------------------------------------------------------------
-// Vegetation classification — forested or clear
+// Vegetation classification
 // ---------------------------------------------------------------------------
 
-/**
- * Determine whether a tile has forest cover.
- *
- * Rules:
- *   ocean   → always clear
- *   tundra  → always clear
- *   desert  → always clear
- *   mountain elevation → always clear (too high)
- *   otherwise → noise threshold (~42% forested)
- */
 function classifyForested(
   terrain: TerrainType,
   elevationType: ElevationType,

@@ -373,6 +373,11 @@ export class LocalMapView {
         this.drawSegmentLines(ft);
       }
 
+      // Draw tree icons in each corner of forested hexes
+      if (tile.f && tile.s === 6) {
+        this.drawForestCornerTrees(ft);
+      }
+
       // Highlight selected segment (triangle overlay)
       if (ft.tileIndex === this.selectedTile && this.selectedSegment >= 0 && tile.s === 6) {
         this.drawSegmentHighlight(ft, this.selectedSegment);
@@ -424,6 +429,72 @@ export class LocalMapView {
     this.ctx.textBaseline = 'top';
     this.ctx.fillText(`Zoom: ${this.scale.toFixed(1)}×`, 8, 8);
     this.ctx.restore();
+  }
+
+  /**
+   * Draw a small tree icon at a given screen position.
+   * The tree is a simple triangle (canopy) over a short trunk.
+   * `size` controls the overall scale.
+   */
+  private drawTreeIcon(sx: number, sy: number, size: number): void {
+    const ctx = this.ctx;
+    const trunkH = size * 0.4;
+    const trunkW = size * 0.18;
+    const canopyH = size * 1.1;
+    const canopyW = size * 0.85;
+
+    ctx.save();
+
+    // Trunk
+    ctx.fillStyle = '#5a3a1a';
+    ctx.fillRect(sx - trunkW / 2, sy - trunkH, trunkW, trunkH);
+
+    // Canopy (triangle)
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - trunkH - canopyH);
+    ctx.lineTo(sx - canopyW / 2, sy - trunkH);
+    ctx.lineTo(sx + canopyW / 2, sy - trunkH);
+    ctx.closePath();
+    ctx.fillStyle = '#1a5c1a';
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  /**
+   * Draw a small tree icon in each corner (boundary vertex) of a forested hex.
+   * Trees are placed slightly inward from each vertex toward the hex centre,
+   * scaled to fit without overlapping the segment dividers.
+   */
+  private drawForestCornerTrees(ft: FlatTile): void {
+    if (ft.poly.length < 6) return;
+
+    // Compute hex radius in screen pixels (average distance from centre to vertex)
+    const [csx, csy] = this.worldToScreen(ft.cx, ft.cy);
+    let avgRadius = 0;
+    for (const v of ft.poly) {
+      const [vx, vy] = this.worldToScreen(v.x, v.y);
+      const dx = vx - csx;
+      const dy = vy - csy;
+      avgRadius += Math.sqrt(dx * dx + dy * dy);
+    }
+    avgRadius /= ft.poly.length;
+
+    // Only draw trees when the hex is large enough to be legible
+    if (avgRadius < 8) return;
+
+    const treeSize = Math.max(2, avgRadius * 0.22);
+    // Inset factor: pull the tree position toward the centre so it sits
+    // inside the hex rather than on the edge
+    const inset = 0.62;
+
+    for (const v of ft.poly) {
+      const [vx, vy] = this.worldToScreen(v.x, v.y);
+      // Interpolate between vertex and centre
+      const tx = vx + (csx - vx) * (1 - inset);
+      const ty = vy + (csy - vy) * (1 - inset);
+      this.drawTreeIcon(tx, ty, treeSize);
+    }
   }
 
   /**
