@@ -15,7 +15,6 @@ function makeHexTile(index: number, neighbours: number[]): Tile {
     position3d: { x: 0, y: 0, z: 0 },
     boundary: [],
     terrainType: 'plains',
-    elevation: 0,
   } as unknown as Tile;
 }
 
@@ -120,13 +119,13 @@ describe('spawn', () => {
       expect(rangedUnits).toHaveLength(3);
     });
 
-    it('all units have maxHealth = 1 and currentHealth = 1', () => {
+    it('all units have maxHealth = 1 and currentHealth = 10', () => {
       const tiles = buildSimpleMap();
       const cities = [{ id: 'city_0', tileIndex: 0 }];
       const units = spawnInitialUnits(tiles, cities);
       for (const unit of units) {
         expect(unit.attributes.maxHealth).toBe(1);
-        expect(unit.currentHealth).toBe(1);
+        expect(unit.currentHealth).toBe(10);
       }
     });
 

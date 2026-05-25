@@ -1,55 +1,150 @@
 /**
  * AI Playback Controller — video-style controls for enemy turn execution.
  *
- * Modes:
- *  - 'play'    — actions play with a timed delay so the player can follow
- *  - 'paused'  — waits for the player to click ⏩ (Fast Forward / Next)
- *  - 'fastForward' — skips the current delay and advances to the next action
+ * Buttons (left to right):
+ *  ⏪  Fast Rewind   — return to the beginning of the enemy round
+ *  ⏮  Step Rewind   — return to the previous enemy move
+ *  ▶/⏸ Play         — auto-play enemy moves with a 3-second gap (toggle)
+ *  ⏭  Step Forward  — show next enemy move (recorded replay or live)
+ *  ⏩  Fast Forward  — auto-play enemy moves with a 1-second gap (toggle)
  *
- * The controller renders a small toolbar into the combat panel area
- * and exposes a `waitForNext()` promise that AI turn logic awaits
- * between each action.
+ * The controller records unit-state snapshots after each AI action so the
+ * player can rewind through already-executed moves without recomputing them.
+ * Forward navigation either replays a recorded snapshot or triggers the next
+ * live AI computation (by resolving the waitForNext promise).
  */
 
-export type PlaybackMode = 'play' | 'paused' | 'fastForward';
+import type { WorldData, UnitData } from './worldData.js';
+
+export type PlaybackMode = 'paused' | 'play' | 'fastForward';
 
 export class AiPlaybackController {
-  private mode: PlaybackMode = 'play';
+  private mode: PlaybackMode = 'paused';
   private active: boolean = false;
   private el: HTMLElement;
-  private resolve: (() => void) | null = null;
-  private timer: number | null = null;
-  /** Delay (ms) between actions in 'play' mode. */
-  private playDelay: number = 1500;
 
-  constructor(container: HTMLElement) {
+  /** Promise resolve for the currently pending waitForNext() call. */
+  private pendingResolve: (() => void) | null = null;
+  /** Auto-play timer handle. */
+  private timer: number | null = null;
+
+  // Timing
+  private readonly PLAY_DELAY = 3000;
+  private readonly FF_DELAY = 1000;
+
+  // Recording & navigation
+  /** Snapshots of world.units at each step. Index 0 is the state before any AI action. */
+  private snapshots: UnitData[][] = [];
+  /** Current viewing position in the snapshots array. */
+  private cursor: number = 0;
+  /** Reference to the world object for snapshotting and restoring state. */
+  private world: WorldData | null = null;
+  /** Callback to re-render the map after restoring a snapshot. */
+  private renderCallback: (() => void) | null = null;
+  /** True once all AI actions for this round have been computed. */
+  private computationDone: boolean = false;
+  /** Resolve for waitUntilDone() — called when the user reaches the final snapshot. */
+  private doneResolve: (() => void) | null = null;
+
+  constructor(container: HTMLElement, insertBefore?: HTMLElement) {
     this.el = document.createElement('div');
     this.el.id = 'ai-playback-bar';
     this.el.style.display = 'none';
-    container.appendChild(this.el);
+    if (insertBefore) {
+      container.insertBefore(this.el, insertBefore);
+    } else {
+      container.appendChild(this.el);
+    }
     this.renderBar();
   }
 
-  /** Show the playback bar and reset state — call at the start of the AI turn. */
-  begin(): void {
+  // ─── Public API ────────────────────────────────────────────
+
+  /**
+   * Show the playback bar and start recording — call at the start of the AI round.
+   * @param world    Reference to the live world object (units will be snapshotted/restored).
+   * @param renderCb Callback to re-render the map after a snapshot restore.
+   */
+  begin(world: WorldData, renderCb: () => void): void {
     this.active = true;
-    this.mode = 'play';
+    this.mode = 'paused';
+    this.world = world;
+    this.renderCallback = renderCb;
+    this.computationDone = false;
+    this.doneResolve = null;
+
+    // Snapshot the initial state (before any AI moves)
+    this.snapshots = [structuredClone(world.units)];
+    this.cursor = 0;
+
     this.el.style.display = '';
     this.renderBar();
   }
 
-  /** Hide the bar — call when all AI turns are done. */
+  /**
+   * Record the current world.units as a new snapshot.
+   * Call this after each AI action resolves (move or attack).
+   */
+  recordSnapshot(): void {
+    if (!this.world) return;
+    this.snapshots.push(structuredClone(this.world.units));
+    this.cursor = this.snapshots.length - 1;
+    this.renderBar();
+
+    // If auto-playing, schedule the next advance
+    if (this.mode === 'play' || this.mode === 'fastForward') {
+      this.scheduleAutoAdvance();
+    }
+  }
+
+  /**
+   * Signal that all AI actions for this round have been computed.
+   * If the cursor is already at the final snapshot, resolves immediately.
+   * Otherwise the bar stays visible until the user catches up.
+   */
+  markComplete(): void {
+    this.computationDone = true;
+    this.renderBar();
+
+    // If already at the end, auto-finish
+    if (this.cursor === this.snapshots.length - 1) {
+      this.finishPlayback();
+    }
+  }
+
+  /**
+   * Returns a promise that resolves once the player has viewed all AI moves
+   * (cursor reaches the final snapshot after computation is done).
+   */
+  waitUntilDone(): Promise<void> {
+    if (!this.active) return Promise.resolve();
+    if (this.computationDone && this.cursor === this.snapshots.length - 1) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      this.doneResolve = resolve;
+    });
+  }
+
+  /** Hide the bar and clean up — call after waitUntilDone resolves. */
   end(): void {
     this.active = false;
     this.el.style.display = 'none';
-    if (this.timer !== null) {
-      clearTimeout(this.timer);
-      this.timer = null;
+    this.clearTimer();
+
+    // If AI turn is still waiting (e.g. forced end), unblock it
+    if (this.pendingResolve) {
+      this.pendingResolve();
+      this.pendingResolve = null;
     }
-    if (this.resolve) {
-      this.resolve();
-      this.resolve = null;
+    if (this.doneResolve) {
+      this.doneResolve();
+      this.doneResolve = null;
     }
+
+    this.snapshots = [];
+    this.world = null;
+    this.renderCallback = null;
   }
 
   /** Whether the controller is actively managing an AI turn. */
@@ -58,96 +153,199 @@ export class AiPlaybackController {
   }
 
   /**
-   * Await this between each AI action. Resolves based on the current mode:
-   *  - play: after `playDelay` ms
-   *  - paused: when the player clicks ⏩
-   *  - fastForward: immediately (then resets to play mode for next action)
+   * Await this between each AI action.
+   * Resolves when the controller decides the next live action should execute
+   * (via Step Forward, Play timer, or Fast Forward timer).
    */
   waitForNext(): Promise<void> {
     if (!this.active) return Promise.resolve();
 
-    if (this.mode === 'fastForward') {
-      // Immediately advance, then revert to play for next action
-      this.mode = 'play';
-      this.renderBar();
-      return Promise.resolve();
-    }
-
     return new Promise<void>((resolve) => {
-      this.resolve = resolve;
+      this.pendingResolve = resolve;
+      this.renderBar();
 
-      if (this.mode === 'play') {
-        this.timer = window.setTimeout(() => {
-          this.timer = null;
-          this.resolve = null;
-          resolve();
-        }, this.playDelay);
+      // If in auto-play and at the live edge, schedule the timer
+      if (this.mode === 'play' || this.mode === 'fastForward') {
+        this.scheduleAutoAdvance();
       }
-      // If paused, just wait — resolve is called by button click
     });
   }
 
-  // ─── Internal ──────────────────────────────────────────────
+  // ─── Navigation Actions ────────────────────────────────────
 
-  private setMode(mode: PlaybackMode): void {
-    this.mode = mode;
-    this.renderBar();
+  /** ⏪ Fast Rewind — jump to the start of the enemy round. */
+  private rewindAll(): void {
+    if (this.cursor === 0) return;
+    this.stopAutoPlay();
+    this.cursor = 0;
+    this.restoreSnapshot();
+  }
 
-    // If switching to fastForward or play while waiting, resolve now
-    if (mode === 'fastForward' && this.resolve) {
-      if (this.timer !== null) {
-        clearTimeout(this.timer);
-        this.timer = null;
-      }
-      const r = this.resolve;
-      this.resolve = null;
-      r();
-    }
-    if (mode === 'play' && this.resolve && this.timer === null) {
-      // Was paused, now playing — start a delay
-      this.timer = window.setTimeout(() => {
-        this.timer = null;
-        if (this.resolve) {
-          const r = this.resolve;
-          this.resolve = null;
-          r();
-        }
-      }, this.playDelay);
+  /** ⏮ Step Rewind — go back one move. */
+  private rewindStep(): void {
+    if (this.cursor <= 0) return;
+    this.stopAutoPlay();
+    this.cursor--;
+    this.restoreSnapshot();
+  }
+
+  /** ▶/⏸ Play toggle — auto-play at 3s intervals. */
+  private togglePlay(): void {
+    if (this.mode === 'play') {
+      this.stopAutoPlay();
+    } else {
+      this.mode = 'play';
+      this.renderBar();
+      this.scheduleAutoAdvance();
     }
   }
 
+  /** ⏭ Step Forward — advance one move (replay or live). */
+  private stepForward(): void {
+    this.stopAutoPlay();
+    this.advanceOne();
+  }
+
+  /** ⏩ Fast Forward toggle — auto-play at 1s intervals. */
+  private toggleFastForward(): void {
+    if (this.mode === 'fastForward') {
+      this.stopAutoPlay();
+    } else {
+      this.mode = 'fastForward';
+      this.renderBar();
+      this.scheduleAutoAdvance();
+    }
+  }
+
+  // ─── Internal Logic ────────────────────────────────────────
+
+  /** Advance the cursor by one step. Either replays a recorded snapshot or triggers live computation. */
+  private advanceOne(): void {
+    // Case 1: There are recorded snapshots ahead — replay
+    if (this.cursor < this.snapshots.length - 1) {
+      this.cursor++;
+      this.restoreSnapshot();
+
+      // Check if we reached the end after computation is done
+      if (this.computationDone && this.cursor === this.snapshots.length - 1) {
+        this.stopAutoPlay();
+        this.finishPlayback();
+      }
+      return;
+    }
+
+    // Case 2: At the live edge with a pending computation — trigger it
+    if (this.pendingResolve && !this.computationDone) {
+      const r = this.pendingResolve;
+      this.pendingResolve = null;
+      r();
+      // recordSnapshot() will be called after the action completes
+      return;
+    }
+
+    // Case 3: At the end and computation is done — nothing to do
+    if (this.computationDone) {
+      this.stopAutoPlay();
+      this.finishPlayback();
+    }
+  }
+
+  /** Restore world.units from the snapshot at `cursor` and re-render. */
+  private restoreSnapshot(): void {
+    if (!this.world || this.cursor >= this.snapshots.length) return;
+    this.world.units = structuredClone(this.snapshots[this.cursor]);
+    if (this.renderCallback) this.renderCallback();
+    this.renderBar();
+  }
+
+  /** Schedule the next auto-advance based on the current mode. */
+  private scheduleAutoAdvance(): void {
+    this.clearTimer();
+
+    if (this.mode === 'paused') return;
+    if (!this.canAdvance()) {
+      this.stopAutoPlay();
+      return;
+    }
+
+    const delay = this.mode === 'play' ? this.PLAY_DELAY : this.FF_DELAY;
+
+    // If we can replay (cursor behind live edge), use the timer directly
+    // If at the live edge, the timer triggers a live computation
+    this.timer = window.setTimeout(() => {
+      this.timer = null;
+      this.advanceOne();
+    }, delay);
+  }
+
+  /** Whether forward navigation is possible. */
+  private canAdvance(): boolean {
+    // Can replay a recorded snapshot
+    if (this.cursor < this.snapshots.length - 1) return true;
+    // Can trigger a live computation
+    if (!this.computationDone && this.pendingResolve) return true;
+    // Can trigger a live computation (pending hasn't arrived yet but will)
+    if (!this.computationDone) return true;
+    return false;
+  }
+
+  /** Stop any auto-play mode and clear timer. */
+  private stopAutoPlay(): void {
+    this.mode = 'paused';
+    this.clearTimer();
+    this.renderBar();
+  }
+
+  /** Clear the auto-play timer. */
+  private clearTimer(): void {
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+  }
+
+  /** Called when the user has reached the final snapshot and computation is done. */
+  private finishPlayback(): void {
+    if (this.doneResolve) {
+      this.doneResolve();
+      this.doneResolve = null;
+    }
+  }
+
+  // ─── Rendering ─────────────────────────────────────────────
+
   private renderBar(): void {
+    const canRewind = this.cursor > 0;
+    const canForward = this.canAdvance();
     const isPlaying = this.mode === 'play';
-    const isPaused = this.mode === 'paused';
+    const isFF = this.mode === 'fastForward';
 
     this.el.innerHTML = `
       <div class="ai-pb-label">⚙ Enemy Turn</div>
       <div class="ai-pb-buttons">
-        <button class="ai-pb-btn" id="ai-pb-play" title="${isPlaying ? 'Pause' : 'Play'}">${isPlaying ? '⏸' : '▶'}</button>
-        <button class="ai-pb-btn" id="ai-pb-ff" title="Next action (Fast Forward)">⏩</button>
+        <button class="ai-pb-btn" id="ai-pb-rewind-all" title="Fast Rewind (start of round)" ${canRewind ? '' : 'disabled'}>⏪</button>
+        <button class="ai-pb-btn" id="ai-pb-rewind-step" title="Step Rewind (previous move)" ${canRewind ? '' : 'disabled'}>⏮</button>
+        <button class="ai-pb-btn${isPlaying ? ' ai-pb-active' : ''}" id="ai-pb-play" title="${isPlaying ? 'Pause' : 'Play (3s interval)'}" ${!isPlaying && !canForward ? 'disabled' : ''}>${isPlaying ? '⏸' : '▶'}</button>
+        <button class="ai-pb-btn" id="ai-pb-step-fwd" title="Step Forward (next move)" ${canForward ? '' : 'disabled'}>⏭</button>
+        <button class="ai-pb-btn${isFF ? ' ai-pb-active' : ''}" id="ai-pb-ff" title="${isFF ? 'Pause' : 'Fast Forward (1s interval)'}" ${!isFF && !canForward ? 'disabled' : ''}>${isFF ? '⏸' : '⏩'}</button>
       </div>
+      <div class="ai-pb-counter">${this.cursor}/${this.snapshots.length - 1}</div>
     `;
 
-    const playBtn = this.el.querySelector('#ai-pb-play') as HTMLButtonElement;
-    const ffBtn = this.el.querySelector('#ai-pb-ff') as HTMLButtonElement;
+    this.bindButtons();
+  }
 
-    playBtn.addEventListener('click', () => {
-      if (this.mode === 'play') {
-        // Pause
-        if (this.timer !== null) {
-          clearTimeout(this.timer);
-          this.timer = null;
-        }
-        this.mode = 'paused';
-        this.renderBar();
-      } else {
-        // Resume playing
-        this.setMode('play');
-      }
-    });
+  private bindButtons(): void {
+    const rewindAllBtn = this.el.querySelector('#ai-pb-rewind-all') as HTMLButtonElement | null;
+    const rewindStepBtn = this.el.querySelector('#ai-pb-rewind-step') as HTMLButtonElement | null;
+    const playBtn = this.el.querySelector('#ai-pb-play') as HTMLButtonElement | null;
+    const stepFwdBtn = this.el.querySelector('#ai-pb-step-fwd') as HTMLButtonElement | null;
+    const ffBtn = this.el.querySelector('#ai-pb-ff') as HTMLButtonElement | null;
 
-    ffBtn.addEventListener('click', () => {
-      this.setMode('fastForward');
-    });
+    rewindAllBtn?.addEventListener('click', () => this.rewindAll());
+    rewindStepBtn?.addEventListener('click', () => this.rewindStep());
+    playBtn?.addEventListener('click', () => this.togglePlay());
+    stepFwdBtn?.addEventListener('click', () => this.stepForward());
+    ffBtn?.addEventListener('click', () => this.toggleFastForward());
   }
 }

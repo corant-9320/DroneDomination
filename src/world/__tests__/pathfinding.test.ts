@@ -19,7 +19,8 @@ function linearGraph(n: number): Tile[] {
       position3d: { x: Math.cos((i / n) * Math.PI), y: Math.sin((i / n) * Math.PI), z: 0 },
       boundary: [],
       terrainType: 'plains' as const,
-      elevation: 0.5,
+      elevationType: 'rolling' as const,
+      forested: false,
     };
   });
 }
@@ -40,7 +41,8 @@ function ringGraph(n: number): Tile[] {
       position3d: { x: Math.cos(angle), y: Math.sin(angle), z: 0 },
       boundary: [],
       terrainType: 'plains' as const,
-      elevation: 0.5,
+      elevationType: 'rolling' as const,
+      forested: false,
     };
   });
 }
@@ -76,12 +78,12 @@ describe('pathfinding', () => {
         {
           id: 'a', index: 0, sides: 5, neighbours: [],
           position3d: { x: 1, y: 0, z: 0 }, boundary: [],
-          terrainType: 'plains', elevation: 0.5,
+          terrainType: 'plains', elevationType: 'rolling', forested: false,
         },
         {
           id: 'b', index: 1, sides: 5, neighbours: [],
           position3d: { x: -1, y: 0, z: 0 }, boundary: [],
-          terrainType: 'plains', elevation: 0.5,
+          terrainType: 'plains', elevationType: 'rolling', forested: false,
         },
       ];
       expect(graphDistance(tiles, 0, 1)).toBe(-1);
@@ -172,15 +174,16 @@ describe('pathfinding', () => {
         {
           id: 'a', index: 0, sides: 5, neighbours: [],
           position3d: { x: 1, y: 0, z: 0 }, boundary: [],
-          terrainType: 'plains', elevation: 0.5,
+          terrainType: 'plains', elevationType: 'rolling', forested: false,
         },
         {
           id: 'b', index: 1, sides: 5, neighbours: [],
           position3d: { x: -1, y: 0, z: 0 }, boundary: [],
-          terrainType: 'plains', elevation: 0.5,
+          terrainType: 'plains', elevationType: 'rolling', forested: false,
         },
       ];
       expect(findPath(tiles, 0, 1)).toBeNull();
     });
   });
 });
+

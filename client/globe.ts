@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { WorldData, TileData } from './worldData.js';
-import { terrainColorRGB, factionColorRGB } from './colors.js';
+import { tileColorRGB, factionColorRGB } from './colors.js';
 import { dbg } from './debug.js';
 
 export class GlobeView {
@@ -147,7 +147,7 @@ export class GlobeView {
       // Color for this tile — use faction color for city tiles, terrain color otherwise
       const [r, g, b] = tile.city
         ? factionColorRGB(this.world, tile.city)
-        : terrainColorRGB(tile.terrain);
+        : tileColorRGB(tile);
 
       // Normal = tile centre (on unit sphere, points outward)
       const nx = tile.pos[0];

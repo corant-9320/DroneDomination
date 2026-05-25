@@ -5,16 +5,26 @@ export interface Vec3 {
   z: number;
 }
 
-/** Terrain types for tiles */
+/** Elevation layers for terrain height */
+export type ElevationType = 'flat' | 'rolling' | 'hills' | 'mountain';
+
+/**
+ * Terrain types — the 5 base surface types.
+ * Elevation and vegetation are separate dimensions on the Tile.
+ *
+ * Constraints:
+ *   ocean   — no elevation, no vegetation
+ *   tundra  — has elevation, no vegetation
+ *   desert  — has elevation, no vegetation
+ *   plains  — has elevation, has vegetation (clear or forested)
+ *   grassland — has elevation, has vegetation (clear or forested)
+ */
 export type TerrainType =
-  | 'plains'
-  | 'forest'
-  | 'mountain'
-  | 'desert'
-  | 'ocean'
-  | 'tundra'
   | 'grassland'
-  | 'hills';
+  | 'plains'
+  | 'tundra'
+  | 'desert'
+  | 'ocean';
 
 /** A single authoritative tile in the Goldberg graph */
 export interface Tile {
@@ -26,7 +36,15 @@ export interface Tile {
   /** Ordered polygon boundary vertices on the unit sphere */
   boundary: Vec3[];
   terrainType: TerrainType;
-  elevation: number;
+  /**
+   * Elevation layer. Always set, but semantically ignored for ocean tiles.
+   */
+  elevationType: ElevationType;
+  /**
+   * Whether this tile has forest cover.
+   * Always false for ocean, tundra, and desert.
+   */
+  forested: boolean;
   ownerId?: string;
   cityId?: string;
   buildingIds?: string[];

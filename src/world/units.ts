@@ -24,6 +24,9 @@ export type HexSegment = 0 | 1 | 2 | 3 | 4 | 5;
 /** Maximum number of units that can occupy a single tile (one segment must stay free). */
 export const MAX_UNITS_PER_TILE = 5;
 
+/** Each maxHealth point equals this many health units for damage calculation. */
+export const HP_PER_POINT = 10;
+
 // ---------------------------------------------------------------------------
 // Unit attributes
 // ---------------------------------------------------------------------------
@@ -124,6 +127,11 @@ export function validateAttributes(attrs: UnitAttributes): string[] {
     );
   }
 
+  // Drones (flightMovement) cannot have armour.
+  if ((attrs.flightMovement ?? 0) >= 1 && (attrs.armour ?? 0) > 0) {
+    errors.push('Drones (flightMovement) cannot have armour points');
+  }
+
   return errors;
 }
 
@@ -147,7 +155,7 @@ export interface Unit {
   facing: HexSegment;
   /** The unit's attribute profile — defines what it can do. */
   attributes: UnitAttributes;
-  /** Current health (≤ attributes.maxHealth). */
+  /** Current health in health units (≤ attributes.maxHealth * HP_PER_POINT). */
   currentHealth: number;
 }
 

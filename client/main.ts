@@ -13,17 +13,24 @@ import { saveGame, showLoadModal } from './saveLoad.js';
 import { executeAiTurn } from './aiTurn.js';
 import { AiPlaybackController } from './aiPlayback.js';
 import { preRenderUnits } from './unitRenderer.js';
+import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
 
 async function main() {
   dbg.init.log('main() starting');
   const loadingEl = document.getElementById('loading')!;
+  const loadingStatus = loadingEl.querySelector('.loading-status') as HTMLElement;
+
+  function setLoadingStatus(text: string) {
+    if (loadingStatus) loadingStatus.textContent = text;
+  }
 
   try {
+    setLoadingStatus('Loading world data…');
     dbg.init.time('loadWorld');
     const world = await loadWorld();
     dbg.init.timeEnd('loadWorld');
-    loadingEl.style.display = 'none';
+    setLoadingStatus('Preparing renderers…');
 
     dbg.init.log(
       `World loaded: ${world.tileCount} tiles, ${world.pentagonCount} pentagons, ${world.cities.length} cities, ${world.units.length} units`
@@ -31,6 +38,7 @@ async function main() {
     dbg.init.log('Seed:', world.seed, '| playerColor:', world.playerColor);
 
     // Pre-render 3D unit sprites for all unique unit configurations
+    setLoadingStatus('Rendering unit sprites…');
     preRenderUnits(world.units, world);
 
     const globeCanvas = document.getElementById('globe-canvas') as HTMLCanvasElement;
@@ -45,8 +53,11 @@ async function main() {
     const combatPanel = new CombatPanel(combatLogEl, world);
 
     // AI playback controller — video-style buttons for enemy turn pacing
-    const playbackContainer = document.getElementById('combat-log-content') as HTMLElement;
-    const aiPlayback = new AiPlaybackController(playbackContainer);
+    // Mounted directly in the combat-log-panel (flex column) so it stays
+    // pinned on screen above the Next Turn button during all enemy moves.
+    const playbackContainer = document.getElementById('combat-log-panel') as HTMLElement;
+    const turnControlsEl = document.getElementById('turn-controls') as HTMLElement;
+    const aiPlayback = new AiPlaybackController(playbackContainer, turnControlsEl);
 
     // ─── Turn Management ─────────────────────────────────────────────────
     // Derive factions from cities (each city id is a faction/owner id)
@@ -87,7 +98,8 @@ async function main() {
       if (!isPlayerTurn()) return; // Only the player triggers this
 
       dbg.input.log('Player ending turn — processing AI factions');
-      aiPlayback.begin();
+      const renderMap = () => localMap.render();
+      aiPlayback.begin(world, renderMap);
 
       // Callbacks for visual feedback during AI turns
       const aiCallbacks = {
@@ -97,8 +109,15 @@ async function main() {
         clearHighlight() {
           localMap.setHighlightCombat(null, null);
         },
-        renderMap() {
-          localMap.render();
+        renderMap,
+        async playAttackAnimation(
+          attackerId: string,
+          targetId: string,
+          factionColorHex: string,
+          damage: number,
+          targetDestroyed: boolean,
+        ) {
+          await localMap.playAttackAnimation(attackerId, targetId, factionColorHex, damage, targetDestroyed);
         },
       };
 
@@ -112,6 +131,11 @@ async function main() {
         await executeAiTurn(world, faction, combatPanel, aiPlayback, aiCallbacks);
       }
 
+      // Signal that all AI computation is done — player can still rewind/replay
+      aiPlayback.markComplete();
+
+      // Wait for the player to reach the final snapshot before ending the round
+      await aiPlayback.waitUntilDone();
       aiPlayback.end();
 
       // Ensure we land back on the player faction
@@ -141,19 +165,33 @@ async function main() {
       dbg.input.log('LocalMap tile selected:', tileIndex, 'segment:', segment);
       showTileInfo(tileIndex, segment);
       globe.panToTile(tileIndex);
+
+      // Update combat panel with selected unit (shows stats immediately)
+      const selected = localMap.getSelectedUnits();
+      if (selected.size > 0) {
+        const unit = world.units.find((u) => selected.has(u.id));
+        combatPanel.showSelectedUnit(unit ?? null);
+      } else {
+        combatPanel.showSelectedUnit(null);
+      }
     }
 
     // Initialize views
+    setLoadingStatus('Building globe view…');
     dbg.init.time('GlobeView');
     const globe = new GlobeView(globeCanvas, world, onTileSelected);
     dbg.init.timeEnd('GlobeView');
 
+    setLoadingStatus('Building local map…');
     dbg.init.time('LocalMapView');
     const localMap = new LocalMapView(localCanvas, world, onLocalTileSelected);
     dbg.init.timeEnd('LocalMapView');
 
     // Initialize localMap with the starting active faction
     localMap.setActiveFaction(getActiveFaction());
+
+    // All heavy initialisation complete — hide loading overlay
+    loadingEl.style.display = 'none';
 
     // When the user orbits the globe, auto-pan the peeled view to match
     globe.setOnViewCentreChange((tileIndex) => {
@@ -174,8 +212,21 @@ async function main() {
         return;
       }
       dbg.input.log('Attack initiated:', attackerId, '→', targetId);
+      const attacker = world.units.find((u) => u.id === attackerId);
       const updatedUnits = await combatPanel.resolveAttack(attackerId, targetId);
       if (updatedUnits) {
+        // Determine damage and destruction from the combat result
+        const oldTarget = world.units.find((u) => u.id === targetId);
+        const newTarget = updatedUnits.find((u) => u.id === targetId);
+        const damage = oldTarget && newTarget
+          ? oldTarget.currentHealth - newTarget.currentHealth
+          : oldTarget ? oldTarget.currentHealth : 10;
+        const targetDestroyed = newTarget ? newTarget.currentHealth <= 0 : true;
+        const attackerColor = attacker ? factionColor(world, attacker.ownerId) : '#ffffff';
+
+        // Play missile → explosion → smoke animation before syncing state
+        await localMap.playAttackAnimation(attackerId, targetId, attackerColor, damage, targetDestroyed);
+
         // Sync updated unit state back into the world
         world.units = updatedUnits;
         localMap.render();
@@ -192,6 +243,30 @@ async function main() {
     // Hover-over-enemy attack preview
     localMap.setOnHoverEnemy((attacker, target) => {
       combatPanel.showPreview(attacker, target);
+    });
+
+    // Repair handler: right-click friendly unit in same hex triggers repair via server
+    localMap.setOnRepair(async (repairerId, targetId) => {
+      if (!isPlayerTurn()) {
+        dbg.input.log('Repair blocked — not player turn');
+        return;
+      }
+      dbg.input.log('Repair initiated:', repairerId, '→', targetId);
+      const updatedUnits = await combatPanel.resolveRepair(repairerId, targetId);
+      if (updatedUnits) {
+        // Sync updated unit state back into the world
+        world.units = updatedUnits;
+        // Consume repairer's remaining movement points (repair uses the turn)
+        localMap.consumeMovement(repairerId);
+        localMap.render();
+        // Re-show detail for selected tile
+        if (localMap.getSelectedUnits().size > 0) {
+          const unit = world.units.find((u) => localMap.getSelectedUnits().has(u.id));
+          if (unit) {
+            detailPanel.showTile(unit.tileIndex, unit.segment);
+          }
+        }
+      }
     });
 
     // Start centred on the player's home city
@@ -293,7 +368,10 @@ async function main() {
     });
 
   } catch (err) {
-    loadingEl.textContent = `Error: ${err}`;
+    loadingEl.classList.add('error');
+    const loadingText = loadingEl.querySelector('.loading-text') as HTMLElement;
+    if (loadingText) loadingText.textContent = 'Failed to load';
+    if (loadingStatus) loadingStatus.textContent = `${err}`;
     dbg.init.error('Fatal error during startup:', err);
   }
 }

@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { segmentAngle, drawUnitIcon } from '../unitIcons.js';
+import * as unitRenderer from '../unitRenderer.js';
+
+// Mock getUnitSprite to return a null sprite (placeholder path) so tests don't depend on document/Three.js
+vi.mock('../unitRenderer.js', () => ({
+  getUnitSprite: vi.fn(() => null),
+}));
 
 /**
  * Minimal mock of UnitData matching the shape imported from worldData.
@@ -150,11 +156,11 @@ describe('unitIcons', () => {
       expect(ctx.translate).toHaveBeenCalledWith(42, 73);
     });
 
-    it('uses facingAngle override when provided', () => {
+    it('does not rotate when facingAngle override is provided', () => {
       const unit = makeUnit({ segment: 0 });
       const customAngle = Math.PI / 4;
       drawUnitIcon(ctx, unit, 0, 0, 10, '#f00', customAngle);
-      expect(ctx.rotate).toHaveBeenCalledWith(expect.closeTo(customAngle + Math.PI / 2, 10));
+      expect(ctx.rotate).not.toHaveBeenCalled();
     });
 
     it('handles unit with zero currentHealth gracefully', () => {
@@ -175,23 +181,10 @@ describe('unitIcons', () => {
       expect(() => drawUnitIcon(ctx, unit, 0, 0, 0, '#f00')).not.toThrow();
     });
 
-    it('draws wheels (arcs) when wheeledMovement > 0', () => {
-      const unit = makeUnit({
-        attributes: { maxHealth: 1, wheeledMovement: 3 },
-        currentHealth: 1,
-      });
+    it('draws a placeholder circle when sprite is not cached', () => {
+      const unit = makeUnit();
       drawUnitIcon(ctx, unit, 0, 0, 10, '#f00');
-      expect(ctx.arc).toHaveBeenCalled();
-    });
-
-    it('draws legs (lineTo) when limbMovement > 0 and no wheels', () => {
-      const unit = makeUnit({
-        attributes: { maxHealth: 1, limbMovement: 2 },
-        currentHealth: 1,
-      });
-      drawUnitIcon(ctx, unit, 0, 0, 10, '#f00');
-      expect(ctx.moveTo).toHaveBeenCalled();
-      expect(ctx.lineTo).toHaveBeenCalled();
+      expect(ctx.arc).toHaveBeenCalledWith(0, 0, expect.any(Number), 0, Math.PI * 2);
     });
   });
 });

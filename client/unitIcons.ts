@@ -97,11 +97,11 @@ function drawHealthBar(
   size: number,
   extent: number,
 ): void {
-  const maxHp = unit.attributes.maxHealth ?? 1;
+  const maxHp = (unit.attributes.maxHealth ?? 1) * 10;
   const curHp = unit.currentHealth;
 
   const barW = size * 1.2;
-  const barH = Math.max(2, size * 0.12 * maxHp);
+  const barH = Math.max(2, size * 0.12 * (unit.attributes.maxHealth ?? 1));
   const barX = sx - barW / 2;
   const barY = sy - extent - barH - Math.max(3, barH * 0.4);
 

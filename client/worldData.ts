@@ -12,7 +12,9 @@ export interface TileData {
   /** Boundary polygon vertices [[x,y,z], ...] */
   b: [number, number, number][];
   terrain: string;
-  elev: number;
+  elevType: string;
+  /** Whether this tile has forest cover. */
+  f?: boolean;
   city?: string;
 }
 
@@ -95,7 +97,7 @@ export async function loadWorld(): Promise<WorldData> {
   }
 
   dbg.world.log('Fetching /world.json from server');
-  const response = await fetch('/world.json');
+  const response = await fetch('/world.json?v=' + Date.now());
   if (!response.ok) {
     dbg.world.error('Failed to load /world.json, status:', response.status);
     throw new Error(`Failed to load world: ${response.status}`);

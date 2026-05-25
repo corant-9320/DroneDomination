@@ -14,6 +14,7 @@
 import { WorldData, UnitData, TileData } from './worldData.js';
 import { CombatPanel } from './combatPanel.js';
 import { AiPlaybackController } from './aiPlayback.js';
+import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
 
 // ---------------------------------------------------------------------------
@@ -27,6 +28,14 @@ export interface AiTurnCallbacks {
   clearHighlight(): void;
   /** Re-render the local map (after movement/attacks). */
   renderMap(): void;
+  /** Play the attack animation (missile → explosion → smoke). */
+  playAttackAnimation(
+    attackerId: string,
+    targetId: string,
+    factionColor: string,
+    damage: number,
+    targetDestroyed: boolean,
+  ): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -171,12 +180,26 @@ export async function executeAiTurn(
       callbacks.renderMap();
       await playback.waitForNext();
 
+      // Capture pre-attack health for damage calculation
+      const targetHealthBefore = nearestEnemy.currentHealth;
       const updated = await combatPanel.resolveAttack(unit.id, nearestEnemy.id);
       if (updated) {
+        // Calculate damage and destruction before syncing state
+        const newTarget = updated.find((u) => u.id === nearestEnemy.id);
+        const damage = newTarget
+          ? targetHealthBefore - newTarget.currentHealth
+          : targetHealthBefore;
+        const targetDestroyed = newTarget ? newTarget.currentHealth <= 0 : true;
+        const color = factionColor(world, unit.ownerId);
+
+        // Play attack animation (missile → explosion → smoke)
+        await callbacks.playAttackAnimation(unit.id, nearestEnemy.id, color, damage, targetDestroyed);
+
         world.units = updated;
       }
       callbacks.clearHighlight();
       callbacks.renderMap();
+      playback.recordSnapshot();
       continue;
     }
 
@@ -188,9 +211,11 @@ export async function executeAiTurn(
       const path = findPath(world.tiles, unit.tileIndex, nearestEnemy.tileIndex, occupiedTiles);
 
       if (path && path.length > 1) {
-        // Take up to `movement` steps (don't step onto the enemy's tile)
-        const stepsAvailable = Math.min(movement, path.length - 2); // -2: skip start, don't land on enemy
-        const movePath = path.slice(0, stepsAvailable + 1); // include start tile
+        // Calculate affordable steps considering terrain costs, reserving 1 MP for attack
+        const stepsWithAttack = affordableSteps(world.tiles, path, unit, true);
+        // Don't step onto the enemy's tile
+        const maxSteps = Math.min(path.length - 2, stepsWithAttack > 0 ? stepsWithAttack : affordableSteps(world.tiles, path, unit, false));
+        const movePath = path.slice(0, maxSteps + 1); // include start tile
 
         if (movePath.length >= 2) {
           dbg.input.log(
@@ -207,14 +232,17 @@ export async function executeAiTurn(
             occupiedTiles.add(movePath[movePath.length - 1]);
           }
           callbacks.renderMap();
+          playback.recordSnapshot();
 
-          // After moving, check if now in attack range
+          // After moving, check if now in attack range AND we have MP remaining for attack
           const newDist = bfsDistance(
             world.tiles,
             movePath[movePath.length - 1],
             nearestEnemy.tileIndex,
           );
-          if (newDist > 0 && newDist <= attackRange) {
+          // Can attack if we moved stepsWithAttack steps (reserved 1 MP)
+          const canStillAttack = (movePath.length - 1) <= stepsWithAttack;
+          if (canStillAttack && newDist > 0 && newDist <= attackRange) {
             // Re-check enemy is still alive
             const target = world.units.find(
               (u) => u.id === nearestEnemy!.id && u.currentHealth > 0,
@@ -225,12 +253,21 @@ export async function executeAiTurn(
               callbacks.renderMap();
               await playback.waitForNext();
 
+              const targetHpBefore = target.currentHealth;
               const updated2 = await combatPanel.resolveAttack(unit.id, target.id);
               if (updated2) {
+                const newTgt = updated2.find((u) => u.id === target.id);
+                const dmg = newTgt ? targetHpBefore - newTgt.currentHealth : targetHpBefore;
+                const destroyed = newTgt ? newTgt.currentHealth <= 0 : true;
+                const clr = factionColor(world, unit.ownerId);
+
+                await callbacks.playAttackAnimation(unit.id, target.id, clr, dmg, destroyed);
+
                 world.units = updated2;
               }
               callbacks.clearHighlight();
               callbacks.renderMap();
+              playback.recordSnapshot();
             }
           }
         } else {
@@ -259,6 +296,68 @@ function getMovement(unit: UnitData): number {
     a.limbMovement ?? 0,
     a.flightMovement ?? 0,
   );
+}
+
+/** Determine movement mode for cost calculation. */
+function getMovementMode(unit: UnitData): 'wheeled' | 'limb' | 'flight' {
+  if ((unit.attributes.flightMovement ?? 0) >= 1) return 'flight';
+  if ((unit.attributes.limbMovement ?? 0) >= 1) return 'limb';
+  return 'wheeled';
+}
+
+/** Whether a terrain type is impassable for ground units. */
+function isImpassableTerrain(terrain: string): boolean {
+  return terrain === 'mountain' || terrain === 'ocean';
+}
+
+/** Whether a tile counts as hill terrain for movement cost. */
+function isHillTerrain(terrain: string): boolean {
+  return terrain === 'hills';
+}
+
+/**
+ * Calculate MP cost to enter a tile.
+ * isFirstHex: whether this is the first hex the unit moves into this turn.
+ */
+function hexCost(tile: TileData, mode: 'wheeled' | 'limb' | 'flight', isFirstHex: boolean): number {
+  if (isImpassableTerrain(tile.terrain) && mode !== 'flight') return Infinity;
+  if (isFirstHex) return 1;
+  if (mode === 'flight') return 1;
+  if (mode === 'limb') return 3;
+
+  // Tank/wheeled
+  const hill = isHillTerrain(tile.terrain);
+  const forested = tile.f === true;
+  if (hill && forested) return 4;
+  if (hill || forested) return 3;
+  return 2;
+}
+
+/**
+ * Compute how many steps along a path the unit can afford, reserving
+ * 1 MP for attack if wantAttack is true.
+ */
+function affordableSteps(
+  tiles: TileData[],
+  path: number[],
+  unit: UnitData,
+  wantAttack: boolean,
+): number {
+  const totalMP = getMovement(unit);
+  const mode = getMovementMode(unit);
+  const reserve = wantAttack ? 1 : 0;
+  let spent = 0;
+  let steps = 0;
+
+  for (let i = 1; i < path.length; i++) {
+    const isFirst = (i - 1) === 0;
+    const cost = hexCost(tiles[path[i]], mode, isFirst);
+    if (cost === Infinity) break;
+    spent += cost;
+    if (spent + reserve > totalMP) break;
+    steps++;
+  }
+  return steps;
 }
 
 /** Effective attack range (ranged or melee). */

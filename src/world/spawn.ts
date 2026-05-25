@@ -6,7 +6,7 @@
  */
 
 import { Tile } from './types.js';
-import { Unit, HexSegment, generateUnitName } from './units.js';
+import { Unit, HexSegment, HP_PER_POINT, generateUnitName } from './units.js';
 
 /** Unit template used for initial spawning. */
 interface SpawnTemplate {
@@ -67,7 +67,7 @@ export function spawnInitialUnits(
         segment: seg1,
         facing: seg1,
         attributes: { ...t1.attrs },
-        currentHealth: t1.attrs.maxHealth!,
+        currentHealth: t1.attrs.maxHealth! * HP_PER_POINT,
       });
 
       units.push({
@@ -78,7 +78,7 @@ export function spawnInitialUnits(
         segment: seg2,
         facing: seg2,
         attributes: { ...t2.attrs },
-        currentHealth: t2.attrs.maxHealth!,
+        currentHealth: t2.attrs.maxHealth! * HP_PER_POINT,
       });
     }
   }

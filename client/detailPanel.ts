@@ -46,7 +46,7 @@ export class DetailPanel {
       : undefined;
     dbg.detail.log('showTile:', tileIndex, {
       terrain: tile.terrain,
-      elev: tile.elev,
+      elevType: tile.elevType,
       city: city?.label,
       units: units.length,
       focusedSegment: segment,
@@ -65,7 +65,7 @@ export class DetailPanel {
     html += `<div class="section">`;
     html += `<h3>Terrain</h3>`;
     html += `<div>${capitalize(tile.terrain)}</div>`;
-    html += `<div>Elevation: ${(tile.elev * 100).toFixed(0)}%</div>`;
+    html += `<div>Elevation: ${capitalize(tile.elevType)}</div>`;
     html += `</div>`;
 
     // City section
@@ -119,7 +119,7 @@ export class DetailPanel {
       // Detailed per-line view for selected unit — all attributes in parenthesis order
       const mov = attrs.wheeledMovement ?? attrs.limbMovement ?? attrs.flightMovement ?? 0;
       const lines: [string, string][] = [];
-      lines.push(['HP', `${unit.currentHealth}/${attrs.maxHealth ?? 1}`]);
+      lines.push(['HP', `${unit.currentHealth}/${(attrs.maxHealth ?? 1) * 10}`]);
       lines.push(['Movement', `${mov}`]);
       lines.push(['Attack', `${attrs.attack ?? 0}`]);
       lines.push(['Range', `${attrs.rangeAttack ?? 0}`]);
@@ -142,7 +142,7 @@ export class DetailPanel {
       const arm = attrs.armour ?? 0;
       const ew = attrs.defence ?? 0;
       const rep = attrs.repair ?? 0;
-      html += `<div class="unit-attr">HP ${unit.currentHealth}/${attrs.maxHealth ?? 1} (Mov ${mov}, Att ${att}, Rng ${rng}, Spl ${spl}, Arm ${arm}, EW ${ew}, Rep ${rep})</div>`;
+      html += `<div class="unit-attr">HP ${unit.currentHealth}/${(attrs.maxHealth ?? 1) * 10} (Mov ${mov}, Att ${att}, Rng ${rng}, Spl ${spl}, Arm ${arm}, EW ${ew}, Rep ${rep})</div>`;
     }
 
     html += `</div>`;
@@ -154,6 +154,7 @@ export class DetailPanel {
   }
 }
 
-function capitalize(s: string): string {
+function capitalize(s: string | undefined | null): string {
+  if (!s) return '—';
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

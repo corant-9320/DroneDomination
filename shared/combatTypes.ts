@@ -56,4 +56,20 @@ export interface CombatResponse<U = unknown> {
   reactions: ExplainedCombat[];
   /** Updated units array (with new health/facing/position values). */
   updatedUnits: U[];
+  /** Repair explanation (only present for repair actions). */
+  repair?: ExplainedRepair;
+}
+
+/** Full explained repair result for one repair action. */
+export interface ExplainedRepair {
+  repairerId: string;
+  repairerLabel: string;
+  targetId: string;
+  targetLabel: string;
+  wasValid: boolean;
+  reasonInvalid?: string;
+  steps: ExplanationStep[];
+  repairAmount: number;
+  targetHealthBefore: number;
+  targetHealthAfter: number;
 }

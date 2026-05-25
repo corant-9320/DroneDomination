@@ -23,6 +23,7 @@ let currentAttrs = {
   defence: 0,
   repair: 0,
   movement: 3,
+  health: 1,
 };
 
 // ---------------------------------------------------------------------------
@@ -113,6 +114,7 @@ function updateUI(): void {
   const chassisName: Record<ChassisType, string> = { wheeled: 'Tank', limbed: 'Spider', flight: 'Drone' };
   const parts: string[] = [];
   parts.push(`Mov${currentAttrs.movement}`);
+  parts.push(`HP${currentAttrs.health * 10}`);
   if (currentAttrs.attack) parts.push(`Att${currentAttrs.attack}`);
   if (currentAttrs.rangeAttack) parts.push(`Rng${currentAttrs.rangeAttack}`);
   if (currentAttrs.splashAttack) parts.push(`Spl${currentAttrs.splashAttack}`);
@@ -120,6 +122,78 @@ function updateUI(): void {
   if (currentAttrs.defence) parts.push(`Def${currentAttrs.defence}`);
   if (currentAttrs.repair) parts.push(`Rep${currentAttrs.repair}`);
   document.getElementById('unit-name')!.textContent = `${chassisName[currentChassis]}: ${parts.join(' / ')}`;
+
+  updateMovementHelp();
+}
+
+function updateMovementHelp(): void {
+  const el = document.getElementById('movement-help-text');
+  if (!el) return;
+
+  const mp = currentAttrs.movement;
+
+  const helpByType: Record<ChassisType, string> = {
+    wheeled: buildWheeledHelp(mp),
+    limbed: buildLimbedHelp(mp),
+    flight: buildFlightHelp(mp),
+  };
+
+  el.innerHTML = helpByType[currentChassis];
+}
+
+function buildWheeledHelp(mp: number): string {
+  const clearHexes = Math.floor((mp - 1) / 2);
+  const canAttackAfterClear = (mp - 1 - clearHexes * 2) >= 1;
+
+  return `
+    <p>Tanks are fastest on open ground but slow through rough terrain.</p>
+    <table class="cost-table">
+      <tr><th>Terrain</th><th>Cost</th></tr>
+      <tr><td>First hex (always)</td><td>1 MP</td></tr>
+      <tr><td>Clear / Flat</td><td>2 MP</td></tr>
+      <tr><td>Hill OR Forest</td><td>3 MP</td></tr>
+      <tr><td>Hill AND Forest</td><td>4 MP</td></tr>
+    </table>
+    <p>With <b>${mp} MP</b> on clear ground: move ${1 + clearHexes} hex${clearHexes !== 0 ? 'es' : ''}${canAttackAfterClear ? ' + attack' : ', no attack'}.</p>
+    <p class="impassable">⛔ Cannot enter Mountain or Ocean tiles.</p>
+    <p class="note">Attacking costs 1 MP. Units can move then attack in one turn.</p>
+  `;
+}
+
+function buildLimbedHelp(mp: number): string {
+  const hexes = Math.floor((mp - 1) / 3);
+  const canAttack = (mp - 1 - hexes * 3) >= 1;
+
+  return `
+    <p>Spiders ignore terrain difficulty — all non-first hexes cost the same.</p>
+    <table class="cost-table">
+      <tr><th>Terrain</th><th>Cost</th></tr>
+      <tr><td>First hex (always)</td><td>1 MP</td></tr>
+      <tr><td>Any traversable hex</td><td>3 MP</td></tr>
+    </table>
+    <p>With <b>${mp} MP</b>: move ${1 + hexes} hex${hexes !== 0 ? 'es' : ''}${canAttack ? ' + attack' : ', no attack'}.</p>
+    <p class="impassable">⛔ Cannot enter Mountain or Ocean tiles.</p>
+    <p class="note">Attacking costs 1 MP. Units can move then attack in one turn.</p>
+  `;
+}
+
+function buildFlightHelp(mp: number): string {
+  // First hex: 1 MP, subsequent hexes: 1 MP each
+  const hexes = mp; // 1 + (mp - 1) * 1 = mp hexes total
+  const canAttack = (mp - hexes) >= 1; // No leftover after moving max
+  const hexesWithAttack = mp - 1; // Leave 1 MP for attack
+
+  return `
+    <p>Drones fly over all terrain at minimal cost — including mountains and oceans.</p>
+    <table class="cost-table">
+      <tr><th>Terrain</th><th>Cost</th></tr>
+      <tr><td>First hex (always)</td><td>1 MP</td></tr>
+      <tr><td>Any hex (including mountain/ocean)</td><td>1 MP</td></tr>
+    </table>
+    <p>With <b>${mp} MP</b>: move ${hexes} hexes, or ${hexesWithAttack} hex${hexesWithAttack !== 1 ? 'es' : ''} + attack.</p>
+    <p class="note">⚠️ Drones cannot equip armour.</p>
+    <p class="note">Attacking costs 1 MP. Units can move then attack in one turn.</p>
+  `;
 }
 
 // Chassis buttons
@@ -129,9 +203,28 @@ chassisBtns.forEach(btn => {
     chassisBtns.forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     currentChassis = btn.dataset.chassis as ChassisType;
+    enforceChassisConstraints();
     rebuildUnit();
   });
 });
+
+/** Enforce attribute constraints based on chassis type (e.g. Drones cannot have armour). */
+function enforceChassisConstraints(): void {
+  const armourSlider = document.querySelector<HTMLInputElement>('input[data-attr="armour"]');
+  if (!armourSlider) return;
+
+  if (currentChassis === 'flight') {
+    // Drones cannot have armour — reset and disable the slider
+    currentAttrs.armour = 0;
+    armourSlider.value = '0';
+    (armourSlider.nextElementSibling as HTMLElement).textContent = '0';
+    armourSlider.disabled = true;
+    armourSlider.title = 'Drones cannot have armour';
+  } else {
+    armourSlider.disabled = false;
+    armourSlider.title = '';
+  }
+}
 
 // Attribute sliders
 const sliders = document.querySelectorAll<HTMLInputElement>('input[data-attr]');
@@ -141,6 +234,13 @@ sliders.forEach(slider => {
     const val = parseInt(slider.value);
     currentAttrs[attr] = val;
     (slider.nextElementSibling as HTMLElement).textContent = String(val);
+
+    // Update the "= XX HP" label next to the health slider
+    if (attr === 'health') {
+      const hpLabel = slider.parentElement?.querySelector('.health-total') as HTMLElement | null;
+      if (hpLabel) hpLabel.textContent = `= ${val * 10} HP`;
+    }
+
     rebuildUnit();
   });
 });

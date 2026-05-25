@@ -29,7 +29,7 @@ export function initMaterials(): void {
 
   // Load unit texture for hull/armour surfaces — adds visual detail at all zoom levels
   const loader = new THREE.TextureLoader();
-  loader.load('data/unit-texture.jpg', (tex) => {
+  loader.load('/unit-texture.jpg', (tex) => {
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(2, 2);

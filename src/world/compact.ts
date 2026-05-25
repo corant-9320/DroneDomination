@@ -17,7 +17,9 @@ export interface CompactTile {
   pos: [number, number, number];
   b: [number, number, number][];
   terrain: string;
-  elev: number;
+  elevType: string;
+  /** Whether this tile has forest cover. */
+  f?: boolean;
   city?: string;
 }
 
@@ -62,7 +64,8 @@ export function toCompactTile(t: Tile): CompactTile {
       Math.round(v.z * 1e5) / 1e5,
     ]),
     terrain: t.terrainType,
-    elev: Math.round(t.elevation * 1000) / 1000,
+    elevType: t.elevationType,
+    f: t.forested || undefined,
     city: t.cityId || undefined,
   };
 }

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
+    "postbuild": "node dist/generate.js",
     "generate": "node dist/generate.js",
     "validate": "node dist/validate.js",
     "dev": "vite",

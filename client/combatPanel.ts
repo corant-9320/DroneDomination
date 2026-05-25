@@ -7,11 +7,13 @@
  */
 
 import { WorldData, UnitData, TileData } from './worldData.js';
+import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
 import type {
   ExplanationStep,
   SplashExplanation,
   ExplainedCombat,
+  ExplainedRepair,
   CombatResponse as CombatResponseBase,
 } from '../shared/combatTypes.js';
 
@@ -31,6 +33,10 @@ export class CombatPanel {
   private activeFaction: string = '';
   /** Current attack preview (shown when hovering an enemy). */
   private preview: ExplainedCombat | null = null;
+  /** Currently selected attacker unit (shown immediately on selection). */
+  private selectedUnit: UnitData | null = null;
+  /** Currently hovered enemy unit (shown in VS section). */
+  private hoveredEnemy: UnitData | null = null;
 
   constructor(el: HTMLElement, world: WorldData) {
     this.el = el;
@@ -49,18 +55,39 @@ export class CombatPanel {
   }
 
   /**
+   * Show the currently selected player unit in the preview area.
+   * Pass null to clear it (unit deselected).
+   */
+  showSelectedUnit(unit: UnitData | null): void {
+    this.selectedUnit = unit;
+    if (!unit) {
+      this.hoveredEnemy = null;
+      this.preview = null;
+    }
+    this.render();
+  }
+
+  /**
    * Show an attack preview by fetching predicted combat from the server.
    * Pass null to clear the preview.
    */
   showPreview(attacker: UnitData | null, target: UnitData | null): void {
     if (!attacker || !target) {
+      this.hoveredEnemy = null;
       if (this.preview) {
         this.preview = null;
+        this.render();
+      } else if (this.selectedUnit) {
+        // Still showing selected unit, re-render to remove VS section
         this.render();
       }
       return;
     }
 
+    this.selectedUnit = attacker;
+    this.hoveredEnemy = target;
+    // Show the VS header immediately while fetching combat prediction
+    this.render();
     // Fetch prediction from server (fire-and-forget; update on response)
     this.fetchPreview(attacker.id, target.id);
   }
@@ -204,7 +231,79 @@ export class CombatPanel {
     this.history = [];
     this.viewIndex = 0;
     this.preview = null;
+    this.selectedUnit = null;
+    this.hoveredEnemy = null;
     this.render();
+  }
+
+  /**
+   * Request repair resolution from the server and display the breakdown.
+   * Returns the updated units array so the caller can sync local state.
+   */
+  async resolveRepair(repairerId: string, targetId: string): Promise<UnitData[] | null> {
+    dbg.detail.log('CombatPanel.resolveRepair:', repairerId, '→', targetId);
+
+    const payload = {
+      action: 'repair',
+      repairerId,
+      repairTargetId: targetId,
+      activeFaction: this.activeFaction,
+      units: this.world.units,
+      tiles: this.world.tiles.map(minimalTile),
+    };
+
+    try {
+      const resp = await fetch('/api/combat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data: CombatResponse = await resp.json();
+
+      if (!data.success) {
+        this.renderError(data.error ?? 'Unknown error');
+        return null;
+      }
+
+      // Show repair result in the panel
+      if (data.repair) {
+        this.renderRepairResult(data.repair);
+      }
+
+      return data.updatedUnits;
+    } catch (err) {
+      dbg.detail.error('CombatPanel repair error:', err);
+      this.renderError(`Network error: ${err}`);
+      return null;
+    }
+  }
+
+  /** Render repair result inline. */
+  private renderRepairResult(repair: ExplainedRepair): void {
+    let html = `<div class="cl-toolbar"><span class="cl-header" style="color:#4f8;">🔧 Repair</span></div>`;
+    html += `<div class="cl-body">`;
+
+    if (!repair.wasValid) {
+      html += `<div class="cl-step"><span style="color:#f66;">✗ ${esc(repair.reasonInvalid ?? 'Invalid')}</span></div>`;
+    } else {
+      html += `<div class="cl-step" style="color:#8f8;padding:2px 0;">`;
+      html += `<span class="cl-step-title">${esc(repair.repairerLabel)}</span>`;
+      html += ` → <span style="color:#4cf;">${esc(repair.targetLabel)}</span>`;
+      html += `</div>`;
+      for (const step of repair.steps) {
+        const col = toneColor(step.tone);
+        html += `<div class="cl-step" style="padding:1px 0;border:none;">`;
+        html += `<span class="cl-step-title">${esc(step.title)}</span> `;
+        html += `<span style="color:${col};">${esc(step.result)}</span>`;
+        if (step.formula) {
+          html += `<br><span class="cl-step-formula">${esc(step.formula)}</span>`;
+        }
+        html += `</div>`;
+      }
+    }
+
+    html += `</div>`;
+    this.el.innerHTML = html;
   }
 
   // -------------------------------------------------------------------------
@@ -215,6 +314,12 @@ export class CombatPanel {
     // If showing a preview, display that instead of history
     if (this.preview) {
       this.el.innerHTML = this.buildPreviewHtml();
+      return;
+    }
+
+    // If a unit is selected (with or without hovered enemy), show VS panel
+    if (this.selectedUnit) {
+      this.el.innerHTML = this.buildSelectionHtml();
       return;
     }
 
@@ -244,29 +349,97 @@ export class CombatPanel {
       <div class="cl-body"><div class="cl-empty">No combat yet — attack an enemy to see results</div></div>`;
   }
 
+  /**
+   * Build HTML showing the selected unit's stats (and optionally VS enemy stats).
+   * Shown as soon as a player unit is selected, before any server preview arrives.
+   */
+  private buildSelectionHtml(): string {
+    const unit = this.selectedUnit!;
+    const unitColor = factionColor(this.world, unit.ownerId);
+
+    let html = `<div class="cl-toolbar"><span class="cl-header" style="color:#fa0;">⚔ Targeting</span></div>`;
+    html += `<div class="cl-body" style="overflow:hidden;">`;
+
+    // Player unit stats
+    html += `<div class="cl-vs-unit" style="color:${esc(unitColor)};">`;
+    html += `<div class="cl-vs-name">${esc(unit.label)}</div>`;
+    html += this.buildUnitStats(unit);
+    html += `</div>`;
+
+    // VS + enemy stats (if hovering)
+    if (this.hoveredEnemy) {
+      const enemy = this.hoveredEnemy;
+      const enemyColor = factionColor(this.world, enemy.ownerId);
+      html += `<div class="cl-vs-divider">— VS —</div>`;
+      html += `<div class="cl-vs-unit" style="color:${esc(enemyColor)};">`;
+      html += `<div class="cl-vs-name">${esc(enemy.label)}</div>`;
+      html += this.buildUnitStats(enemy);
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+    return html;
+  }
+
+  /** Render compact stat block for a unit. */
+  private buildUnitStats(unit: UnitData): string {
+    const a = unit.attributes;
+    let s = `<div class="cl-vs-stats">`;
+    s += `<span>HP: ${unit.currentHealth}/${(a.maxHealth ?? 1) * 10}</span>`;
+    if (a.attack) s += ` <span>ATK: ${a.attack}</span>`;
+    if (a.rangeAttack) s += ` <span>RNG: ${a.rangeAttack}</span>`;
+    if (a.splashAttack) s += ` <span>SPL: ${a.splashAttack}</span>`;
+    if (a.defence) s += ` <span>DEF: ${a.defence}</span>`;
+    if (a.armour) s += ` <span>ARM: ${a.armour}</span>`;
+    if (a.wheeledMovement) s += ` <span>MOV: ${a.wheeledMovement}</span>`;
+    if (a.limbMovement) s += ` <span>MOV: ${a.limbMovement}</span>`;
+    if (a.flightMovement) s += ` <span>FLY: ${a.flightMovement}</span>`;
+    s += `</div>`;
+    return s;
+  }
+
   private buildPreviewHtml(): string {
     const c = this.preview!;
+    const attacker = this.selectedUnit;
+    const enemy = this.hoveredEnemy;
 
     let toolbar = `<div class="cl-toolbar">`;
-    toolbar += `<span class="cl-header" style="color:#fa0;">⚔ Preview: `;
-    toolbar += `<span style="color:#f88;">${esc(c.attackerLabel)}</span>`;
-    toolbar += `<span style="color:#666;"> → </span>`;
-    toolbar += `<span style="color:#8cf;">${esc(c.targetLabel)}</span>`;
-    if (c.targetDestroyed) toolbar += ` <span style="color:#f44;">☠</span>`;
-    toolbar += `</span></div>`;
+    toolbar += `<span class="cl-header" style="color:#fa0;">⚔ Preview</span>`;
+    toolbar += `</div>`;
 
     let body = `<div class="cl-body" style="overflow:hidden;">`;
 
+    // Show VS-style unit cards with faction colors
+    if (attacker) {
+      const unitColor = factionColor(this.world, attacker.ownerId);
+      body += `<div class="cl-vs-unit" style="color:${esc(unitColor)};">`;
+      body += `<div class="cl-vs-name">${esc(attacker.label)}</div>`;
+      body += this.buildUnitStats(attacker);
+      body += `</div>`;
+    }
+    if (enemy) {
+      const enemyColor = factionColor(this.world, enemy.ownerId);
+      body += `<div class="cl-vs-divider">— VS —</div>`;
+      body += `<div class="cl-vs-unit" style="color:${esc(enemyColor)};">`;
+      body += `<div class="cl-vs-name">${esc(enemy.label)}</div>`;
+      body += this.buildUnitStats(enemy);
+      body += `</div>`;
+    }
+
+    // Combat prediction breakdown
     if (!c.wasValid) {
       body += `<div class="cl-step"><span style="color:#f66;">✗ ${esc(c.reasonInvalid ?? 'Invalid')}</span></div>`;
     } else {
-      // Show abbreviated steps: each on one line, no formula expansion
+      body += `<div class="cl-vs-divider" style="color:#666;">— Prediction —</div>`;
       for (const step of c.steps) {
         const col = toneColor(step.tone);
         body += `<div class="cl-step" style="padding:1px 0;border:none;">`;
         body += `<span class="cl-step-title">${esc(step.title)}</span> `;
         body += `<span style="color:${col};">${esc(step.result)}</span>`;
         body += `</div>`;
+      }
+      if (c.targetDestroyed) {
+        body += `<div class="cl-step" style="color:#f44;padding:1px 0;">☠ Target destroyed</div>`;
       }
       if (c.splash.length > 0) {
         body += `<div class="cl-step" style="color:#fa0;padding:1px 0;">💥 Splash → ${c.splash.length} nearby unit${c.splash.length > 1 ? 's' : ''}</div>`;
@@ -361,8 +534,8 @@ export class CombatPanel {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function minimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[] } {
-  return { idx: t.idx, s: t.s, n: t.n };
+function minimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; f?: boolean } {
+  return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, f: t.f || undefined };
 }
 
 function toneColor(tone: string): string {

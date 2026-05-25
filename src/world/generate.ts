@@ -35,8 +35,10 @@ export function generateWorld(seed: number): World {
 
   // Step 3: Generate terrain
   console.time('terrain');
-  const positions = dualTiles.map((t) => t.position3d);
-  const terrainData = generateTerrain(positions, seed);
+  const positions  = dualTiles.map((t) => t.position3d);
+  const neighbours = dualTiles.map((t) => t.neighbours);
+  const sides      = dualTiles.map((t) => t.sides);
+  const terrainData = generateTerrain(positions, neighbours, sides, seed);
   console.timeEnd('terrain');
 
   // Step 4: Build authoritative tiles
@@ -48,8 +50,62 @@ export function generateWorld(seed: number): World {
     position3d: dt.position3d,
     boundary: dt.boundary,
     terrainType: terrainData[i].terrainType,
-    elevation: terrainData[i].elevation,
+    elevationType: terrainData[i].elevationType,
+    forested: terrainData[i].forested,
   }));
+
+  // Debug: count tile type combinations
+  console.log('\n=== Tile Type Distribution ===');
+
+  // Terrain types
+  const terrainCounts: Record<string, number> = {};
+  for (const tile of tiles) {
+    terrainCounts[tile.terrainType] = (terrainCounts[tile.terrainType] || 0) + 1;
+  }
+  console.log('\nTerrain types:');
+  Object.entries(terrainCounts).sort((a, b) => b[1] - a[1]).forEach(([k, v]) => {
+    console.log(`  ${k}: ${v}`);
+  });
+
+  // Elevation types
+  const elevCounts: Record<string, number> = {};
+  for (const tile of tiles) {
+    elevCounts[tile.elevationType] = (elevCounts[tile.elevationType] || 0) + 1;
+  }
+  console.log('\nElevation types:');
+  Object.entries(elevCounts).sort((a, b) => b[1] - a[1]).forEach(([k, v]) => {
+    console.log(`  ${k}: ${v}`);
+  });
+
+  // Vegetation types (forested vs clear)
+  const vegCounts: Record<string, number> = {};
+  for (const tile of tiles) {
+    const vegKey = tile.forested ? 'Forested' : 'Clear';
+    vegCounts[vegKey] = (vegCounts[vegKey] || 0) + 1;
+  }
+  console.log('\nVegetation types:');
+  Object.entries(vegCounts).sort((a, b) => b[1] - a[1]).forEach(([k, v]) => {
+    console.log(`  ${k}: ${v}`);
+  });
+
+  // All valid combinations
+  const comboCounts: Record<string, number> = {};
+  for (const tile of tiles) {
+    let combo = tile.terrainType;
+    // Elevation applies to all land tiles
+    if (tile.terrainType !== 'ocean') {
+      combo += `:${tile.elevationType}`;
+    }
+    // Vegetation applies to land tiles except tundra and desert
+    if (tile.terrainType !== 'ocean' && tile.terrainType !== 'tundra' && tile.terrainType !== 'desert') {
+      combo += tile.forested ? ':forested' : ':clear';
+    }
+    comboCounts[combo] = (comboCounts[combo] || 0) + 1;
+  }
+  console.log('\nValid combinations (terrain[:elevation][:vegetation]):');
+  Object.entries(comboCounts).sort((a, b) => b[1] - a[1]).forEach(([k, v]) => {
+    console.log(`  ${k}: ${v}`);
+  });
 
   // Step 5: Place cities
   console.time('cities');

@@ -25,7 +25,6 @@ const tiles: Tile[] = raw.tiles.map((t: any) => ({
   neighbours: t.n,
   position3d: { x: t.pos[0], y: t.pos[1], z: t.pos[2] } as Vec3,
   terrainType: t.terrain,
-  elevation: t.elev,
   cityId: t.city,
 }));
 

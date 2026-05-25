@@ -1,10 +1,14 @@
 /**
  * Combat System — deterministic drone combat on a hex grid.
  *
- * Core mechanics: facing arcs, armour, electronic defence aura,
- * formation support, splash damage, reaction fire.
+ * Damage formula (ratio-based curve):
+ *   Damage = round(1 + 29 * AttackPower² / (AttackPower² + EffectiveDefence²))
  *
- * Terrain is intentionally excluded from this version.
+ * Key properties:
+ * - Minimum damage is always 1 (weak attacks are never useless)
+ * - Maximum damage is 30
+ * - Defence uses a 0.75 scale factor to stay meaningful without being overwhelming
+ * - Orientation is additive: front +0, side +1, rear +2
  */
 
 import { Tile } from './types.js';
@@ -12,11 +16,45 @@ import { Unit, HexSegment } from './units.js';
 import { graphDistance } from './pathfinding.js';
 
 // ---------------------------------------------------------------------------
-// Attack arc classification
+// Constants
 // ---------------------------------------------------------------------------
 
-/** Attack arc relative to the defender's facing. */
-export type AttackArc = 'front' | 'frontSide' | 'side' | 'rear' | 'unknown';
+export const DEFENCE_SCALE = 0.75;
+export const MAX_DAMAGE = 30;
+export const MIN_DAMAGE = 1;
+export const SPLASH_SCALE = 0.2;
+
+// ---------------------------------------------------------------------------
+// Orientation
+// ---------------------------------------------------------------------------
+
+/** Target orientation relative to the attacker. */
+export type TargetOrientation = 'front' | 'side' | 'rear';
+
+/** Legacy alias kept for API compatibility. */
+export type AttackArc = 'front' | 'side' | 'rear' | 'unknown';
+
+/**
+ * Get the orientation bonus based on the target's facing relative to attacker.
+ *
+ * | Target Orientation | Bonus |
+ * |--------------------|-------|
+ * | Front-facing       |   0   |
+ * | Side-on            |   1   |
+ * | Rear / facing away |   2   |
+ */
+export function getOrientationBonus(targetOrientation: TargetOrientation | string): number {
+  switch (targetOrientation) {
+    case 'front': return 0;
+    case 'side': return 1;
+    case 'rear': return 2;
+    default: return 0; // invalid defaults to front
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Attack arc classification (hex geometry)
+// ---------------------------------------------------------------------------
 
 /**
  * Get the direction index from one adjacent tile to another using the
@@ -80,8 +118,13 @@ export function getApproachDirection(
 }
 
 /**
- * Classify the attack arc based on the defender's facing and the
+ * Classify the target orientation based on the defender's facing and the
  * approach direction (direction from defender toward attacker).
+ *
+ * Simplified 3-arc system:
+ * - diff 0, 1, 5 → front
+ * - diff 2, 4 → side
+ * - diff 3 → rear
  */
 export function classifyAttackArc(
   defenderFacing: number,
@@ -94,35 +137,29 @@ export function classifyAttackArc(
 
   switch (diff) {
     case 0: return 'front';
-    case 1: return 'frontSide'; // front-right
-    case 5: return 'frontSide'; // front-left
-    case 2: return 'side';      // side-right
-    case 4: return 'side';      // side-left
+    case 1: return 'front'; // front-right
+    case 5: return 'front'; // front-left
+    case 2: return 'side';  // side-right
+    case 4: return 'side';  // side-left
     case 3: return 'rear';
     default: return 'unknown';
   }
 }
 
-/** Get the damage modifier for an attack arc. */
+/** Get the orientation bonus for a classified attack arc. */
 export function getFacingModifier(arc: AttackArc): number {
-  switch (arc) {
-    case 'front': return -1;
-    case 'frontSide': return 0;
-    case 'side': return 1;
-    case 'rear': return 2;
-    case 'unknown': return 0;
-  }
+  return getOrientationBonus(arc === 'unknown' ? 'front' : arc);
 }
 
 // ---------------------------------------------------------------------------
-// Formation support
+// Formation support (defensiveFormation)
 // ---------------------------------------------------------------------------
 
 /**
  * Count adjacent friendly units that provide formation support.
  * Adjacent = neighbouring hex or same hex (different segment).
  * Destroyed units (currentHealth <= 0) do not provide support.
- * Capped at +2.
+ * Capped at 2.
  */
 export function getAdjacentFriendlySupport(
   target: Unit,
@@ -151,70 +188,124 @@ export function getAdjacentFriendlySupport(
 }
 
 // ---------------------------------------------------------------------------
-// Electronic defence (EW aura)
+// Electronic Warfare (EW) — sum of defence in same hex, capped at 5
 // ---------------------------------------------------------------------------
 
 /**
- * Get the best defence value among friendly units within 1 hex of the target.
+ * Get the total EW defence from friendly units in the same hex as the target.
+ * Sum all defence values, capped at 5.
  * Excludes the target itself and destroyed units.
  */
-export function getBestNearbyDefense(
+export function getEWDefense(
   target: Unit,
   allUnits: Unit[],
-  tiles: Tile[],
 ): number {
-  let best = 0;
-  const targetTile = tiles[target.tileIndex];
+  let total = 0;
 
   for (const unit of allUnits) {
     if (unit.id === target.id) continue;
     if (unit.ownerId !== target.ownerId) continue;
     if (unit.currentHealth <= 0) continue;
+    if (unit.tileIndex !== target.tileIndex) continue;
 
-    const isNearby =
-      unit.tileIndex === target.tileIndex ||
-      targetTile.neighbours.includes(unit.tileIndex);
-
-    if (isNearby) {
-      const def = unit.attributes.defence ?? 0;
-      if (def > best) best = def;
-    }
+    total += unit.attributes.defence ?? 0;
   }
 
-  return best;
+  return Math.min(5, total);
 }
 
+// ---------------------------------------------------------------------------
+// Terrain defence value
+// ---------------------------------------------------------------------------
+
 /**
- * Calculate effective defence for a target unit.
- * effectiveDefense = ownDefense + bestNearbyDefense + formationSupport
- * Clamped to max 7. Reduced by 1 if encircled (min 0).
+ * Get the terrain defence value for a tile.
+ * Based on elevation type and forest cover.
+ *
+ * Elevation mapping:
+ *   flat     → 0
+ *   rolling  → 0
+ *   hills    → 1
+ *   mountain → 3
+ * Forest: +1
+ * Max 4.
+ */
+export function getTerrainDefense(tile: Tile): number {
+  let value = 0;
+
+  switch (tile.elevationType) {
+    case 'hills':    value += 1; break;
+    case 'mountain': value += 3; break;
+  }
+
+  if (tile.forested) value += 1;
+
+  return Math.min(4, value);
+}
+
+// ---------------------------------------------------------------------------
+// Defence Power calculation
+// ---------------------------------------------------------------------------
+
+/**
+ * Calculate the full DefencePower for a target unit.
+ * DefencePower = armour + EW + defensiveFormation + terrain
+ *
+ * Each component is clamped to its valid range before summing.
+ */
+export function getDefencePower(
+  target: Unit,
+  allUnits: Unit[],
+  tiles: Tile[],
+): { armour: number; ew: number; defensiveFormation: number; terrain: number; total: number } {
+  const armour = clamp(target.attributes.armour ?? 0, 0, 5);
+  const ew = clamp(getEWDefense(target, allUnits), 0, 5);
+  const defensiveFormation = clamp(getAdjacentFriendlySupport(target, allUnits, tiles), 0, 2);
+  const terrain = clamp(getTerrainDefense(tiles[target.tileIndex]), 0, 4);
+  const total = armour + ew + defensiveFormation + terrain;
+
+  return { armour, ew, defensiveFormation, terrain, total };
+}
+
+// ---------------------------------------------------------------------------
+// Legacy compatibility: getEffectiveDefense (used by server/combat.ts)
+// ---------------------------------------------------------------------------
+
+/**
+ * @deprecated Use getDefencePower instead. Kept for server compatibility.
+ * Returns the DefencePower total (not scaled).
  */
 export function getEffectiveDefense(
   target: Unit,
   allUnits: Unit[],
   tiles: Tile[],
 ): number {
-  const ownDefense = target.attributes.defence ?? 0;
-  const nearbyDefense = getBestNearbyDefense(target, allUnits, tiles);
-  const formation = getAdjacentFriendlySupport(target, allUnits, tiles);
-
-  let effective = ownDefense + nearbyDefense + formation;
-
-  // Encirclement check
-  if (isEncircled(target, allUnits, tiles)) {
-    effective -= 1;
-  }
-
-  return Math.max(0, Math.min(7, effective));
+  return getDefencePower(target, allUnits, tiles).total;
 }
 
 // ---------------------------------------------------------------------------
-// Encirclement
+// Legacy compatibility: getBestNearbyDefense
+// ---------------------------------------------------------------------------
+
+/**
+ * @deprecated Legacy function. In the new model, EW is summed from same-hex
+ * units (not best-nearby). Kept for API compatibility.
+ */
+export function getBestNearbyDefense(
+  target: Unit,
+  allUnits: Unit[],
+  tiles: Tile[],
+): number {
+  return getEWDefense(target, allUnits);
+}
+
+// ---------------------------------------------------------------------------
+// Encirclement (legacy — no longer affects damage formula)
 // ---------------------------------------------------------------------------
 
 /**
  * A unit is encircled if enemy units occupy 3 or more distinct adjacent
- * directions around it.
+ * directions around it. Kept for informational purposes.
  */
 export function isEncircled(
   target: Unit,
@@ -238,40 +329,103 @@ export function isEncircled(
 }
 
 // ---------------------------------------------------------------------------
-// Damage calculation
+// Damage formula
+// ---------------------------------------------------------------------------
+
+/** Clamp a value to [min, max]. */
+export function clamp(value: number, minValue: number, maxValue: number): number {
+  return Math.max(minValue, Math.min(value, maxValue));
+}
+
+/**
+ * Calculate damage using the ratio-based curve formula.
+ *
+ * Damage = round(1 + 29 * AttackPower² / (AttackPower² + EffectiveDefence²))
+ * Clamped to [1, 30].
+ *
+ * When EffectiveDefence is 0, the denominator equals AttackPower² and damage = 30.
+ */
+export function calculateDamage(
+  attack: number,
+  targetOrientation: TargetOrientation | string,
+  armour: number,
+  ew: number,
+  defensiveFormation: number,
+  terrain: number,
+): number {
+  // Clamp inputs
+  attack = clamp(attack, 1, 5);
+  armour = clamp(armour, 0, 5);
+  ew = clamp(ew, 0, 5);
+  defensiveFormation = clamp(defensiveFormation, 0, 2);
+  terrain = clamp(terrain, 0, 4);
+
+  const orientationBonus = getOrientationBonus(targetOrientation);
+  const attackPower = attack + orientationBonus;
+
+  const defencePower = armour + ew + defensiveFormation + terrain;
+  const effectiveDefence = defencePower * DEFENCE_SCALE;
+
+  const attackPowerSquared = attackPower * attackPower;
+  const effectiveDefenceSquared = effectiveDefence * effectiveDefence;
+
+  const rawDamage = 1 + 29 * attackPowerSquared / (attackPowerSquared + effectiveDefenceSquared);
+  const damage = Math.round(rawDamage);
+
+  return clamp(damage, MIN_DAMAGE, MAX_DAMAGE);
+}
+
+/**
+ * Apply damage to a unit's current health.
+ * Returns the new health value, clamped to [0, 50].
+ * Damage minimum is 1 (no upper clamp — combined direct+splash can exceed 30).
+ */
+export function applyDamage(currentHealth: number, damage: number): number {
+  currentHealth = clamp(currentHealth, 0, 50);
+  damage = Math.max(1, damage);
+  const newHealth = currentHealth - damage;
+  return clamp(newHealth, 0, 50);
+}
+
+// ---------------------------------------------------------------------------
+// Direct damage calculation (contextual — uses game state)
 // ---------------------------------------------------------------------------
 
 /**
- * Calculate direct damage from attacker to target.
- * rawDamage = attacker.attackPower + facingModifier
- * finalDamage = rawDamage - target.armour - floor(effectiveDefense / 2)
- * Clamped: min 0, max target.currentHealth
+ * Calculate direct damage from attacker to target using full game state.
+ * Returns the damage amount along with breakdown info.
  */
 export function calculateDirectDamage(
   attacker: Unit,
   target: Unit,
   allUnits: Unit[],
   tiles: Tile[],
-): { damage: number; arc: AttackArc; facingMod: number; effectiveDefense: number } {
+): { damage: number; arc: AttackArc; orientationBonus: number; defencePower: ReturnType<typeof getDefencePower> } {
   const approachDir = getApproachDirection(tiles, target.tileIndex, attacker.tileIndex);
   const arc = classifyAttackArc(target.facing, approachDir);
-  const facingMod = getFacingModifier(arc);
-  const effectiveDefense = getEffectiveDefense(target, allUnits, tiles);
+  const orientationBonus = getFacingModifier(arc);
 
-  const attackPower = attacker.attributes.attack ?? 0;
-  const armour = target.attributes.armour ?? 0;
-  const defenseReduction = Math.floor(effectiveDefense / 2);
+  const defencePower = getDefencePower(target, allUnits, tiles);
+  const attack = clamp(attacker.attributes.attack ?? 0, 1, 5);
 
-  const rawDamage = attackPower + facingMod;
-  const finalDamage = Math.max(0, Math.min(target.currentHealth, rawDamage - armour - defenseReduction));
+  const damage = calculateDamage(
+    attack,
+    arc === 'unknown' ? 'front' : arc,
+    defencePower.armour,
+    defencePower.ew,
+    defencePower.defensiveFormation,
+    defencePower.terrain,
+  );
 
-  return { damage: finalDamage, arc, facingMod, effectiveDefense };
+  return { damage, arc, orientationBonus, defencePower };
 }
 
 /**
  * Calculate splash damage against a specific victim.
- * splashFinalDamage = attacker.splashDamage - floor(victim.armour / 2) - floor(victimEffectiveDefense / 2)
- * Clamped: min 0, max victim.currentHealth
+ *
+ * Splash is 20% of the formula result using splashAttack as the attack input.
+ * Orientation is always "front" (no flanking bonus for splash on adjacents).
+ * Result is rounded, with minimum 1 damage.
  */
 export function calculateSplashDamage(
   attacker: Unit,
@@ -282,11 +436,50 @@ export function calculateSplashDamage(
   const splashPower = attacker.attributes.splashAttack ?? 0;
   if (splashPower <= 0) return 0;
 
-  const armourReduction = Math.floor((victim.attributes.armour ?? 0) / 2);
-  const effectiveDefense = getEffectiveDefense(victim, allUnits, tiles);
-  const defenseReduction = Math.floor(effectiveDefense / 2);
+  const defPower = getDefencePower(victim, allUnits, tiles);
 
-  return Math.max(0, Math.min(victim.currentHealth, splashPower - armourReduction - defenseReduction));
+  const fullDamage = calculateDamage(
+    clamp(splashPower, 1, 5),
+    'front',
+    defPower.armour,
+    defPower.ew,
+    defPower.defensiveFormation,
+    defPower.terrain,
+  );
+
+  // Splash is 20% of the formula result, minimum 1
+  return Math.max(1, Math.round(fullDamage * SPLASH_SCALE));
+}
+
+/**
+ * Calculate the splash bonus damage added to the primary target.
+ *
+ * Same formula as splash on adjacents: 20% of damage using splashAttack,
+ * but uses the primary target's orientation and defence.
+ */
+export function calculateSplashBonusOnTarget(
+  attacker: Unit,
+  target: Unit,
+  allUnits: Unit[],
+  tiles: Tile[],
+  targetOrientation: TargetOrientation | string,
+): number {
+  const splashPower = attacker.attributes.splashAttack ?? 0;
+  if (splashPower <= 0) return 0;
+
+  const defPower = getDefencePower(target, allUnits, tiles);
+
+  const fullDamage = calculateDamage(
+    clamp(splashPower, 1, 5),
+    targetOrientation,
+    defPower.armour,
+    defPower.ew,
+    defPower.defensiveFormation,
+    defPower.terrain,
+  );
+
+  // 20% of formula result, minimum 1
+  return Math.max(1, Math.round(fullDamage * SPLASH_SCALE));
 }
 
 // ---------------------------------------------------------------------------
@@ -367,26 +560,31 @@ export function resolveAttack(
   }
 
   // Calculate direct damage
-  const { damage, arc, facingMod, effectiveDefense } = calculateDirectDamage(attacker, target, allUnits, tiles);
+  const { damage, arc, orientationBonus, defencePower } = calculateDirectDamage(attacker, target, allUnits, tiles);
 
-  // Apply direct damage
-  target.currentHealth -= damage;
+  // Calculate splash bonus on primary target (additive)
+  const splashPower = attacker.attributes.splashAttack ?? 0;
+  const splashBonusOnTarget = splashPower > 0
+    ? calculateSplashBonusOnTarget(attacker, target, allUnits, tiles, arc === 'unknown' ? 'front' : arc)
+    : 0;
+  const totalDirectDamage = damage + splashBonusOnTarget;
+
+  // Apply total damage to primary target
+  target.currentHealth = applyDamage(target.currentHealth, totalDirectDamage);
   const destroyedIds: string[] = [];
   if (target.currentHealth <= 0) {
-    target.currentHealth = 0;
     destroyedIds.push(target.id);
   }
 
-  // Splash damage
+  // Splash damage on adjacent units (20% of formula using splashAttack)
   const splashEvents: SplashEvent[] = [];
-  const splashPower = attacker.attributes.splashAttack ?? 0;
   if (splashPower > 0) {
     const targetTile = tiles[target.tileIndex];
     const splashCandidates = allUnits.filter((u) => {
       if (u.id === target.id) return false;
       if (u.id === attacker.id) return false;
       if (u.currentHealth <= 0) return false;
-      // Adjacent to primary target
+      // Adjacent to primary target or same hex
       return (
         u.tileIndex === target.tileIndex ||
         targetTile.neighbours.includes(u.tileIndex)
@@ -396,10 +594,9 @@ export function resolveAttack(
     for (const victim of splashCandidates) {
       const splashDmg = calculateSplashDamage(attacker, victim, allUnits, tiles);
       if (splashDmg > 0) {
-        victim.currentHealth -= splashDmg;
+        victim.currentHealth = applyDamage(victim.currentHealth, splashDmg);
         const destroyed = victim.currentHealth <= 0;
         if (destroyed) {
-          victim.currentHealth = 0;
           destroyedIds.push(victim.id);
         }
         splashEvents.push({ victimId: victim.id, damage: splashDmg, victimDestroyed: destroyed });
@@ -412,10 +609,10 @@ export function resolveAttack(
     targetId,
     wasValid: true,
     attackArc: arc,
-    facingModifier: facingMod,
-    targetArmour: target.attributes.armour ?? 0,
-    targetEffectiveDefense: effectiveDefense,
-    directDamage: damage,
+    facingModifier: orientationBonus,
+    targetArmour: defencePower.armour,
+    targetEffectiveDefense: defencePower.total,
+    directDamage: totalDirectDamage,
     splashEvents,
     destroyedUnitIds: destroyedIds,
     reactionEvents: [],
@@ -530,8 +727,8 @@ export function resolveSimultaneousAttacks(
   const resultB = resolveAttack(unitBId, unitAId, allUnits, tiles);
 
   // Restore and apply both damages simultaneously
-  unitA.currentHealth = Math.max(0, healthA - resultB.directDamage);
-  unitB.currentHealth = Math.max(0, healthB - resultA.directDamage);
+  unitA.currentHealth = applyDamage(healthA, resultB.directDamage);
+  unitB.currentHealth = applyDamage(healthB, resultA.directDamage);
 
   return [resultA, resultB];
 }

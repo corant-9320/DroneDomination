@@ -96,42 +96,11 @@ export function handleGenerate(config: GenerateConfig): GenerateResult {
   const units = spawnInitialUnits(world.tiles, filteredCities);
   console.log('[DD][api] Spawned %d units for %d cities', units.length, filteredCities.length);
 
-  // Build compact format (same as generate.ts CLI)
-  const compact = {
-    seed: world.seed,
-    tileCount: world.tiles.length,
-    pentagonCount: world.pentagonIndices.length,
-    hexCount: world.tiles.length - world.pentagonIndices.length,
-    pentagonIndices: world.pentagonIndices,
-    cities: compactCities,
-    units: units.map((u) => ({
-      id: u.id,
-      label: u.label,
-      ownerId: u.ownerId,
-      tileIndex: u.tileIndex,
-      segment: u.segment,
-      attributes: u.attributes,
-      currentHealth: u.currentHealth,
-    })),
-    tiles: world.tiles.map((t) => ({
-      idx: t.index,
-      s: t.sides,
-      n: t.neighbours,
-      pos: [
-        Math.round(t.position3d.x * 1e6) / 1e6,
-        Math.round(t.position3d.y * 1e6) / 1e6,
-        Math.round(t.position3d.z * 1e6) / 1e6,
-      ],
-      b: t.boundary.map((v) => [
-        Math.round(v.x * 1e5) / 1e5,
-        Math.round(v.y * 1e5) / 1e5,
-        Math.round(v.z * 1e5) / 1e5,
-      ]),
-      terrain: t.terrainType,
-      elev: Math.round(t.elevation * 1000) / 1000,
-      city: t.cityId || undefined,
-    })),
-  };
+  // Build compact format using the canonical helper (keeps server in sync with CLI)
+  const compactBase = toCompactWorld(world.seed, world.tiles, world.pentagonIndices, filteredCities, units);
+
+  // Override cities with the role-annotated versions built above
+  const compact = { ...compactBase, cities: compactCities };
 
   console.log('[DD][api] handleGenerate complete in %dms — cities: %d, units: %d',
     Date.now() - startMs, compactCities.length, units.length);

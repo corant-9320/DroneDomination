@@ -15,19 +15,34 @@ import {
   getApproachDirection,
   classifyAttackArc,
   getFacingModifier,
+  getOrientationBonus,
   getAdjacentFriendlySupport,
-  getBestNearbyDefense,
-  getEffectiveDefense,
+  getEWDefense,
+  getTerrainDefense,
+  getDefencePower,
   isEncircled,
+  clamp,
+  calculateDamage,
+  applyDamage,
   calculateSplashDamage,
+  calculateSplashBonusOnTarget,
   resolveAttack,
+  DEFENCE_SCALE,
+  SPLASH_SCALE,
   type AttackArc,
   type CombatResult,
 } from '../src/world/combat.js';
+import {
+  calculateRepairAmount,
+  applyRepair,
+  validateRepair,
+  resolveRepair,
+} from '../src/world/repair.js';
 import type {
   ExplanationStep,
   SplashExplanation,
   ExplainedCombat,
+  ExplainedRepair,
   CombatResponse,
 } from '../shared/combatTypes.js';
 
@@ -63,15 +78,23 @@ interface WireTile {
   idx: number;
   s: 5 | 6;
   n: number[];
+  /** Terrain type (needed for defence calculation). */
+  t?: string;
+  /** Whether tile has forest cover (needed for movement cost). */
+  f?: boolean;
 }
 
 export interface CombatRequest {
   /** The attack to resolve. */
-  action: 'attack' | 'move' | 'preview';
+  action: 'attack' | 'move' | 'preview' | 'repair';
   /** For 'attack'/'preview': attacker unit ID. */
   attackerId?: string;
   /** For 'attack'/'preview': target unit ID. */
   targetId?: string;
+  /** For 'repair': repairer unit ID. */
+  repairerId?: string;
+  /** For 'repair': target unit ID to heal. */
+  repairTargetId?: string;
   /** For 'move': unit ID that is moving. */
   unitId?: string;
   /** For 'move': path as tile indices. */
@@ -91,7 +114,7 @@ export interface CombatRequest {
 export function handleCombat(req: CombatRequest): CombatResponse<WireUnit> {
   console.log('[DD][combat] handleCombat action=%s', req.action);
 
-  // Rebuild minimal Tile[] for pathfinding/adjacency (we only need neighbours)
+  // Rebuild minimal Tile[] for pathfinding/adjacency
   const tiles = rebuildTiles(req.tiles);
   const units = rebuildUnits(req.units);
 
@@ -101,6 +124,8 @@ export function handleCombat(req: CombatRequest): CombatResponse<WireUnit> {
     return handlePreview(req, tiles, units);
   } else if (req.action === 'move') {
     return handleMove(req, tiles, units);
+  } else if (req.action === 'repair') {
+    return handleRepair(req, tiles, units);
   }
 
   return { success: false, error: 'Unknown action', combats: [], reactions: [], updatedUnits: [] };
@@ -141,11 +166,14 @@ function handleAttack(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatR
   // Build splash explanations
   explained.splash = explainSplash(attacker, target, result, units, tiles);
 
+  // Remove destroyed units completely so they never appear again
+  const survivingUnits = units.filter((u) => u.currentHealth > 0);
+
   return {
     success: true,
     combats: [explained],
     reactions: [],
-    updatedUnits: units.map(toWireUnit),
+    updatedUnits: survivingUnits.map(toWireUnit),
   };
 }
 
@@ -197,7 +225,6 @@ function handleMove(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatRes
   }
 
   // Walk the path — update position and facing.
-  // No reaction fire in turn-based mode (units only act on their own turn).
   for (let i = 1; i < path.length; i++) {
     const prevHex = path[i - 1];
     const currentHex = path[i];
@@ -214,6 +241,122 @@ function handleMove(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatRes
     combats: [],
     reactions: [],
     updatedUnits: units.map(toWireUnit),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Repair handler
+// ---------------------------------------------------------------------------
+
+function handleRepair(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatResponse<WireUnit> {
+  const { repairerId, repairTargetId, activeFaction } = req;
+  if (!repairerId || !repairTargetId) {
+    return { success: false, error: 'repairerId and repairTargetId required', combats: [], reactions: [], updatedUnits: [] };
+  }
+
+  const repairer = units.find((u) => u.id === repairerId);
+  const target = units.find((u) => u.id === repairTargetId);
+  if (!repairer || !target) {
+    return { success: false, error: 'Repairer or target not found', combats: [], reactions: [], updatedUnits: [] };
+  }
+
+  // Turn-based enforcement: only the active faction may repair
+  if (repairer.ownerId !== activeFaction) {
+    return { success: false, error: 'Not this faction\'s turn', combats: [], reactions: [], updatedUnits: [] };
+  }
+
+  // Validate and resolve
+  const validation = validateRepair(repairer, target);
+  if (!validation.valid) {
+    const explained = explainRepairInvalid(repairer, target, validation.reason!);
+    return { success: true, combats: [], reactions: [], updatedUnits: units.map(toWireUnit), repair: explained };
+  }
+
+  // Build explanation before resolving
+  const explained = explainRepairAction(repairer, target);
+
+  // Resolve (mutates target health)
+  resolveRepair(repairerId, repairTargetId, units);
+
+  // Update explanation with post-repair health
+  explained.targetHealthAfter = target.currentHealth;
+  explained.repairAmount = target.currentHealth - explained.targetHealthBefore;
+
+  return {
+    success: true,
+    combats: [],
+    reactions: [],
+    updatedUnits: units.map(toWireUnit),
+    repair: explained,
+  };
+}
+
+function explainRepairAction(repairer: Unit, target: Unit): ExplainedRepair {
+  const rp = repairer.attributes.repair ?? 0;
+  const maxHealth = (target.attributes.maxHealth ?? 1) * 10; // HP_PER_POINT = 10
+  const repairRate = 2 + (clamp(maxHealth, 10, 50) - 10) / 20;
+  const repairAmount = Math.floor(clamp(rp, 1, 5) * repairRate + 0.5);
+
+  const steps: ExplanationStep[] = [
+    {
+      title: '🔧 Repair Capability',
+      description: `${repairer.label} has Repair ${rp}. Target ${target.label} has MaxHealth ${maxHealth}.`,
+      result: `RP = ${rp}`,
+      tone: 'neutral',
+    },
+    {
+      title: '⚙ Repair Rate',
+      description: `RepairRate = 2 + (${maxHealth} − 10) / 20 = ${repairRate.toFixed(2)} HP per RP.`,
+      formula: `2 + (${maxHealth} − 10) / 20 = ${repairRate.toFixed(2)}`,
+      result: `${repairRate.toFixed(2)} HP/RP`,
+      tone: 'neutral',
+    },
+    {
+      title: '💚 Repair Amount',
+      description: `RepairAmount = round(${rp} × ${repairRate.toFixed(2)}) = ${repairAmount}.`,
+      formula: `round(${rp} × ${repairRate.toFixed(2)}) = ${repairAmount}`,
+      result: `+${repairAmount} HP`,
+      tone: 'positive',
+    },
+    {
+      title: '❤ Health Update',
+      description: `${target.label}: ${target.currentHealth} → min(${maxHealth}, ${target.currentHealth} + ${repairAmount}) HP.`,
+      formula: `min(${maxHealth}, ${target.currentHealth} + ${repairAmount})`,
+      result: `${Math.min(maxHealth, target.currentHealth + repairAmount)} HP`,
+      tone: 'positive',
+    },
+  ];
+
+  return {
+    repairerId: repairer.id,
+    repairerLabel: repairer.label,
+    targetId: target.id,
+    targetLabel: target.label,
+    wasValid: true,
+    steps,
+    repairAmount,
+    targetHealthBefore: target.currentHealth,
+    targetHealthAfter: target.currentHealth, // updated after resolve
+  };
+}
+
+function explainRepairInvalid(repairer: Unit, target: Unit, reason: string): ExplainedRepair {
+  return {
+    repairerId: repairer.id,
+    repairerLabel: repairer.label,
+    targetId: target.id,
+    targetLabel: target.label,
+    wasValid: false,
+    reasonInvalid: reason,
+    steps: [{
+      title: '❌ Invalid Repair',
+      description: reason,
+      result: 'Repair cannot proceed',
+      tone: 'negative',
+    }],
+    repairAmount: 0,
+    targetHealthBefore: target.currentHealth,
+    targetHealthAfter: target.currentHealth,
   };
 }
 
@@ -272,109 +415,81 @@ function explainAttack(
     };
   }
 
-  // Step 2: Attack angle
+  // Step 2: Orientation
   const approachDir = getApproachDirection(tiles, target.tileIndex, attacker.tileIndex);
   const arc = classifyAttackArc(target.facing, approachDir);
-  const facingMod = getFacingModifier(arc);
+  const orientationBonus = getFacingModifier(arc);
+  const attack = clamp(attacker.attributes.attack ?? 0, 1, 5);
+  const attackPower = attack + orientationBonus;
 
   steps.push({
-    title: '🧭 Attack Angle',
-    description: `${target.label} faces direction ${target.facing}. ${attacker.label} approaches from direction ${approachDir}. The attack hits the ${formatArcLong(arc)}.`,
-    formula: `(approach ${approachDir} − facing ${target.facing}) mod 6 = ${((approachDir - target.facing) % 6 + 6) % 6}`,
-    result: `${formatArcShort(arc)} → ${formatMod(facingMod)} damage`,
-    tone: facingMod > 0 ? 'positive' : facingMod < 0 ? 'negative' : 'neutral',
+    title: '🧭 Orientation',
+    description: `${target.label} faces direction ${target.facing}. ${attacker.label} approaches from direction ${approachDir}. Target orientation: ${arc}.`,
+    formula: `AttackPower = attack(${attack}) + orientationBonus(${orientationBonus}) = ${attackPower}`,
+    result: `${formatArcShort(arc)} → AttackPower ${attackPower}`,
+    tone: orientationBonus > 0 ? 'positive' : 'neutral',
   });
 
-  // Step 3: Base damage
-  const attackPower = attacker.attributes.attack ?? 0;
-  const rawDamage = attackPower + facingMod;
+  // Step 3: Defence breakdown
+  const defPower = getDefencePower(target, allUnits, tiles);
+  const effectiveDefence = defPower.total * DEFENCE_SCALE;
 
   steps.push({
-    title: '⚔ Raw Damage',
-    description: `Attack power from ${attacker.label} plus the facing angle modifier.`,
-    formula: `attackPower(${attackPower}) + facingMod(${formatMod(facingMod)}) = ${rawDamage}`,
-    result: `${rawDamage} raw damage`,
-    tone: rawDamage > 0 ? 'positive' : 'neutral',
+    title: '🛡 Defence Power',
+    description: `Armour(${defPower.armour}) + EW(${defPower.ew}) + Formation(${defPower.defensiveFormation}) + Terrain(${defPower.terrain}) = ${defPower.total}. EffectiveDefence = ${defPower.total} × ${DEFENCE_SCALE} = ${effectiveDefence.toFixed(2)}.`,
+    formula: `DefencePower = ${defPower.armour} + ${defPower.ew} + ${defPower.defensiveFormation} + ${defPower.terrain} = ${defPower.total}`,
+    result: `EffectiveDefence = ${effectiveDefence.toFixed(2)}`,
+    tone: defPower.total > 0 ? 'negative' : 'neutral',
   });
 
-  // Step 4: Target armour
-  const armour = target.attributes.armour ?? 0;
+  // Step 4: Damage calculation
+  const damage = calculateDamage(
+    attack,
+    arc === 'unknown' ? 'front' : arc,
+    defPower.armour,
+    defPower.ew,
+    defPower.defensiveFormation,
+    defPower.terrain,
+  );
+
+  const apSq = attackPower * attackPower;
+  const edSq = effectiveDefence * effectiveDefence;
 
   steps.push({
-    title: '🛡 Armour',
-    description: `${target.label} has ${armour} armour, reducing incoming damage by that amount.`,
-    formula: `armour = ${armour}`,
-    result: `−${armour} from armour`,
-    tone: armour > 0 ? 'negative' : 'neutral',
+    title: '💥 Damage Formula',
+    description: `Damage = round(1 + 29 × AP² / (AP² + ED²))`,
+    formula: `round(1 + 29 × ${apSq} / (${apSq} + ${edSq.toFixed(2)})) = ${damage}`,
+    result: `${damage} direct damage`,
+    tone: damage >= 15 ? 'critical' : damage >= 5 ? 'positive' : 'neutral',
   });
 
-  // Step 5: Defence breakdown
-  const ownDef = target.attributes.defence ?? 0;
-  const nearbyDef = getBestNearbyDefense(target, allUnits, tiles);
-  const formation = getAdjacentFriendlySupport(target, allUnits, tiles);
-  const encircled = isEncircled(target, allUnits, tiles);
-  const effDef = getEffectiveDefense(target, allUnits, tiles);
-  const defReduction = Math.floor(effDef / 2);
+  // Step 5: Splash bonus on primary target
+  const splashAttack = attacker.attributes.splashAttack ?? 0;
+  const splashBonus = splashAttack > 0
+    ? calculateSplashBonusOnTarget(attacker, target, allUnits, tiles, arc === 'unknown' ? 'front' : arc)
+    : 0;
+  const totalDamage = damage + splashBonus;
 
-  let defDesc = `Own defence: ${ownDef}`;
-  defDesc += ` + best nearby EW aura: ${nearbyDef}`;
-  defDesc += ` + formation support: ${formation} (max 2)`;
-  if (encircled) defDesc += ` − encirclement: 1`;
-  defDesc += `. Clamped to max 7.`;
-
-  steps.push({
-    title: '📡 Electronic Defence',
-    description: defDesc,
-    formula: `effective = min(7, ${ownDef} + ${nearbyDef} + ${formation}${encircled ? ' − 1' : ''}) = ${effDef} → ⌊${effDef}/2⌋ = ${defReduction} reduction`,
-    result: `−${defReduction} from EW defence`,
-    tone: defReduction > 0 ? 'negative' : 'neutral',
-  });
-
-  // Formation detail sub-step
-  if (formation > 0) {
-    const adjacentFriends = allUnits.filter(
-      (u) => u.id !== target.id && u.ownerId === target.ownerId && u.currentHealth > 0 &&
-        (u.tileIndex === target.tileIndex || tiles[target.tileIndex].neighbours.includes(u.tileIndex))
-    );
-    const names = adjacentFriends.slice(0, 3).map((u) => u.label).join(', ');
+  if (splashBonus > 0) {
     steps.push({
-      title: '🤝 Formation Support',
-      description: `${adjacentFriends.length} adjacent friendly unit${adjacentFriends.length !== 1 ? 's' : ''} (${names}${adjacentFriends.length > 3 ? '…' : ''}) provide +${formation} support (capped at +2).`,
-      result: `+${formation} to effective defence`,
-      tone: 'neutral',
+      title: '💣 Splash Bonus',
+      description: `Splash attack ${splashAttack} adds ${Math.round(SPLASH_SCALE * 100)}% bonus damage to primary target.`,
+      formula: `${damage} + ${splashBonus} = ${totalDamage} total`,
+      result: `+${splashBonus} splash bonus (${totalDamage} total)`,
+      tone: 'positive',
     });
   }
 
-  if (encircled) {
-    steps.push({
-      title: '🔄 Encircled',
-      description: `Enemy units occupy 3+ adjacent directions around ${target.label}, reducing effective defence by 1.`,
-      result: `−1 effective defence`,
-      tone: 'critical',
-    });
-  }
-
-  // Step 6: Final damage calculation
-  const finalDamage = Math.max(0, Math.min(target.currentHealth, rawDamage - armour - defReduction));
-
-  steps.push({
-    title: '💥 Final Damage',
-    description: `Raw damage minus all reductions, clamped to [0, target HP].`,
-    formula: `max(0, min(${target.currentHealth}, ${rawDamage} − ${armour} − ${defReduction})) = ${finalDamage}`,
-    result: finalDamage > 0 ? `${finalDamage} damage dealt` : `0 — attack fully absorbed`,
-    tone: finalDamage > 0 ? 'critical' : 'negative',
-  });
-
-  // Step 7: Health outcome
-  const healthAfter = Math.max(0, target.currentHealth - finalDamage);
+  // Step 6: Health outcome
+  const healthAfter = Math.max(0, target.currentHealth - totalDamage);
   const destroyed = healthAfter <= 0;
 
   steps.push({
     title: destroyed ? '☠ Target Destroyed' : '❤ Health Update',
     description: `${target.label}: ${target.currentHealth} HP → ${healthAfter} HP.`,
-    formula: `${target.currentHealth} − ${finalDamage} = ${healthAfter}`,
-    result: destroyed ? `${target.label} is destroyed!` : `${healthAfter}/${target.attributes.maxHealth ?? 1} HP remaining`,
-    tone: destroyed ? 'critical' : (finalDamage > 0 ? 'negative' : 'neutral'),
+    formula: `${target.currentHealth} − ${totalDamage} = ${healthAfter}`,
+    result: destroyed ? `${target.label} is destroyed!` : `${healthAfter} HP remaining`,
+    tone: destroyed ? 'critical' : (damage > 0 ? 'negative' : 'neutral'),
   });
 
   return {
@@ -384,9 +499,9 @@ function explainAttack(
     targetLabel: target.label,
     wasValid: true,
     steps,
-    directDamage: finalDamage,
+    directDamage: totalDamage,
     targetHealthBefore: target.currentHealth,
-    targetHealthAfter: healthAfter, // will be overwritten with actual post-resolve value
+    targetHealthAfter: healthAfter,
     targetDestroyed: destroyed,
     splash: [],
     destroyedUnitIds: [],
@@ -409,40 +524,37 @@ function explainSplash(
     const victim = allUnits.find((u) => u.id === event.victimId);
     if (!victim) continue;
 
-    const victimArmour = victim.attributes.armour ?? 0;
-    const armourRed = Math.floor(victimArmour / 2);
-    const victimEffDef = getEffectiveDefense(victim, allUnits, tiles);
-    const defRed = Math.floor(victimEffDef / 2);
-    const healthBefore = victim.currentHealth + event.damage; // reconstruct pre-splash health
+    const defPower = getDefencePower(victim, allUnits, tiles);
+    const effectiveDefence = defPower.total * DEFENCE_SCALE;
+    const healthBefore = victim.currentHealth + event.damage;
+
+    const apSq = splashPower * splashPower;
+    const edSq = effectiveDefence * effectiveDefence;
+
+    const fullDamage = Math.round(1 + 29 * apSq / (apSq + edSq));
+    const scaledDamage = event.damage;
 
     const steps: ExplanationStep[] = [
       {
         title: '💥 Splash Source',
-        description: `${attacker.label} has splash attack ${splashPower}. ${victim.label} is adjacent to primary target ${primaryTarget.label}.`,
-        result: `Splash power: ${splashPower}`,
+        description: `${attacker.label} has splash attack ${splashPower}. ${victim.label} is adjacent to primary target ${primaryTarget.label}. Splash deals ${Math.round(SPLASH_SCALE * 100)}% of formula damage.`,
+        result: `Splash AttackPower: ${splashPower}`,
         tone: 'neutral',
       },
       {
-        title: '🛡 Victim Armour',
-        description: `${victim.label} armour ${victimArmour} → half reduction: ⌊${victimArmour}/2⌋ = ${armourRed}.`,
-        formula: `−${armourRed}`,
-        result: `−${armourRed} from armour`,
-        tone: armourRed > 0 ? 'negative' : 'neutral',
-      },
-      {
-        title: '📡 Victim EW Defence',
-        description: `${victim.label} effective defence = ${victimEffDef} → reduction ⌊${victimEffDef}/2⌋ = ${defRed}.`,
-        formula: `−${defRed}`,
-        result: `−${defRed} from defence`,
-        tone: defRed > 0 ? 'negative' : 'neutral',
+        title: '🛡 Victim Defence',
+        description: `Armour(${defPower.armour}) + EW(${defPower.ew}) + Formation(${defPower.defensiveFormation}) + Terrain(${defPower.terrain}) = ${defPower.total}. EffectiveDefence = ${effectiveDefence.toFixed(2)}.`,
+        formula: `DefencePower = ${defPower.total}, ED = ${effectiveDefence.toFixed(2)}`,
+        result: `EffectiveDefence = ${effectiveDefence.toFixed(2)}`,
+        tone: defPower.total > 0 ? 'negative' : 'neutral',
       },
       {
         title: '💥 Splash Result',
-        description: `Final splash: max(0, ${splashPower} − ${armourRed} − ${defRed}) = ${event.damage}.`,
-        formula: `max(0, ${splashPower} − ${armourRed} − ${defRed}) = ${event.damage}`,
+        description: `Full formula = ${fullDamage}, × ${SPLASH_SCALE} = ${scaledDamage} splash damage.`,
+        formula: `round(${fullDamage} × ${SPLASH_SCALE}) = ${scaledDamage}`,
         result: event.victimDestroyed
-          ? `${event.damage} damage — ${victim.label} destroyed!`
-          : `${event.damage} damage to ${victim.label}`,
+          ? `${scaledDamage} damage — ${victim.label} destroyed!`
+          : `${scaledDamage} damage to ${victim.label}`,
         tone: event.damage > 0 ? 'critical' : 'neutral',
       },
     ];
@@ -489,7 +601,6 @@ function invalidExplanation(attacker: Unit, target: Unit, reason: string): Expla
 }
 
 function rebuildTiles(wireTiles: WireTile[]): Tile[] {
-  // Build a sparse array indexed by tile idx
   const maxIdx = wireTiles.reduce((m, t) => Math.max(m, t.idx), 0);
   const tiles: Tile[] = new Array(maxIdx + 1);
 
@@ -501,8 +612,8 @@ function rebuildTiles(wireTiles: WireTile[]): Tile[] {
       neighbours: wt.n,
       position3d: { x: 0, y: 0, z: 0 },
       boundary: [],
-      terrainType: 'plains',
-      elevation: 0,
+      terrainType: (wt.t as any) ?? 'plains',
+      forested: wt.f || undefined,
     };
   }
 
@@ -546,26 +657,11 @@ function toWireUnit(u: Unit): WireUnit {
   };
 }
 
-function formatArcLong(arc: AttackArc): string {
-  switch (arc) {
-    case 'front': return 'front armour (strongest protection)';
-    case 'frontSide': return 'front-side (standard exposure)';
-    case 'side': return 'side flank (vulnerable)';
-    case 'rear': return 'rear (most vulnerable)';
-    default: return 'unknown angle';
-  }
-}
-
 function formatArcShort(arc: AttackArc): string {
   switch (arc) {
     case 'front': return '🛡 Front';
-    case 'frontSide': return '↗ Front-Side';
     case 'side': return '→ Side';
     case 'rear': return '🎯 Rear';
     default: return '? Unknown';
   }
-}
-
-function formatMod(n: number): string {
-  return n > 0 ? `+${n}` : `${n}`;
 }

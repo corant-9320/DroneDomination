@@ -1,5 +1,5 @@
 {
-  "seed": 42,
+  "seed": 137,
   "tileCount": 5762,
   "pentagonCount": 12,
   "hexCount": 5750,
@@ -9,22 +9,22 @@
       "id": "city_0",
       "label": "C01",
       "tileIndex": 12,
-      "neighbourCount": 4,
-      "terrain": "grassland"
+      "neighbourCount": 5,
+      "terrain": "plains"
     },
     {
       "id": "city_1",
       "label": "C02",
       "tileIndex": 582,
-      "neighbourCount": 5,
-      "terrain": "grassland"
+      "neighbourCount": 4,
+      "terrain": "plains"
     },
     {
       "id": "city_2",
       "label": "C03",
       "tileIndex": 1202,
       "neighbourCount": 5,
-      "terrain": "forest"
+      "terrain": "plains"
     },
     {
       "id": "city_3",
@@ -37,22 +37,22 @@
       "id": "city_4",
       "label": "C05",
       "tileIndex": 2329,
-      "neighbourCount": 6,
-      "terrain": "desert"
+      "neighbourCount": 7,
+      "terrain": "plains"
     },
     {
       "id": "city_5",
       "label": "C06",
       "tileIndex": 2874,
       "neighbourCount": 7,
-      "terrain": "desert"
+      "terrain": "plains"
     },
     {
       "id": "city_6",
       "label": "C07",
-      "tileIndex": 1904,
-      "neighbourCount": 6,
-      "terrain": "desert"
+      "tileIndex": 1923,
+      "neighbourCount": 5,
+      "terrain": "grassland"
     },
     {
       "id": "city_7",
@@ -65,38 +65,36 @@
       "id": "city_8",
       "label": "C09",
       "tileIndex": 4187,
-      "neighbourCount": 6,
-      "terrain": "forest"
+      "neighbourCount": 5,
+      "terrain": "plains"
     },
     {
       "id": "city_9",
       "label": "C10",
       "tileIndex": 4851,
       "neighbourCount": 6,
-      "terrain": "forest"
+      "terrain": "grassland"
     },
     {
       "id": "city_10",
       "label": "C11",
-      "tileIndex": 5399,
-      "neighbourCount": 7,
+      "tileIndex": 5400,
+      "neighbourCount": 8,
       "terrain": "grassland"
     },
     {
       "id": "city_11",
       "label": "C12",
-      "tileIndex": 4535,
+      "tileIndex": 4457,
       "neighbourCount": 8,
       "terrain": "grassland"
     }
   ],
   "terrainDistribution": {
-    "grassland": 2173,
-    "forest": 1866,
-    "desert": 1030,
-    "plains": 540,
-    "tundra": 92,
-    "ocean": 52,
-    "hills": 9
+    "plains": 1897,
+    "grassland": 1883,
+    "ocean": 1687,
+    "tundra": 217,
+    "desert": 78
   }
 }

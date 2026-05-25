@@ -3,7 +3,7 @@
  * Shared hex→RGB conversion eliminates duplication.
  */
 
-import { WorldData } from './worldData.js';
+import { WorldData, TileData } from './worldData.js';
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -18,27 +18,113 @@ function hexToRGB(hex: string): [number, number, number] {
 }
 
 // ---------------------------------------------------------------------------
+// Tile identity
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical identity key for a tile — combines terrain type, elevation type,
+ * and forestry presence into a single string.
+ *
+ * Format: "<terrain>:<elevType>[:forested]"
+ * Examples:
+ *   "grassland:flat"
+ *   "grassland:flat:forested"
+ *   "hills:hills"
+ *   "mountain:mountain"
+ *   "plains:rolling"
+ *   "plains:rolling:forested"
+ *
+ * Use this key to look up per-combination colours, movement costs, etc.
+ * The colour lookup falls back from most-specific to least-specific:
+ *   full key → terrain:elevType → terrain → '#555555'
+ */
+export function tileIdentity(tile: Pick<TileData, 'terrain' | 'elevType' | 'f'>): string {
+  const base = `${tile.terrain}:${tile.elevType}`;
+  return tile.f ? `${base}:forested` : base;
+}
+
+// ---------------------------------------------------------------------------
 // Terrain colors
 // ---------------------------------------------------------------------------
 
-/** Terrain type to color mapping. */
-export const TERRAIN_COLORS: Record<string, string> = {
-  ocean: '#1a5276',
-  plains: '#a8c686',
-  grassland: '#6b9b37',
-  forest: '#2d6a2d',
-  hills: '#8b7355',
-  mountain: '#6b6b6b',
-  desert: '#d4a843',
-  tundra: '#b8c9d4',
+/**
+ * Color table keyed by tile identity (most-specific first) or terrain/elevType alone.
+ *
+ * Lookup order in tileColor():
+ *   1. Full identity  e.g. "plains:rolling:forested"
+ *   2. terrain:elev   e.g. "plains:rolling"
+ *   3. elevType alone e.g. "rolling"
+ *   4. terrain alone  e.g. "plains"
+ *   5. fallback       '#555555'
+ *
+ * Elevation type takes visual priority over terrain for non-ocean tiles:
+ *   mountain → white, hills → grey, rolling → dark brown, flat → terrain colour
+ */
+export const TILE_COLORS: Record<string, string> = {
+  // --- elevation type overrides (apply to all terrain at that elevation) ---
+  'mountain': '#ffffff', // white
+  'hills':    '#808080', // grey
+  'rolling':  '#4a3728', // dark brown
+  // flat: no override — falls through to terrain colour
+
+  // --- base terrain colours (used for flat elevation, and ocean) ---
+  'ocean':     '#1a5276',
+  'grassland': '#6b9b37',
+  'plains':    '#a8c686',
+  'desert':    '#d4a843',
+  'tundra':    '#b8c9d4',
+
+  // --- forested variants (override the elevation colour with a green tint) ---
+  'grassland:flat:forested':    '#3a7a1a',
+  'plains:flat:forested':       '#5a8a3a',
+  'grassland:rolling:forested': '#3a5a1a',
+  'plains:rolling:forested':    '#4a6a2a',
+  'grassland:hills:forested':   '#4a6a4a',
+  'plains:hills:forested':      '#5a7a5a',
 };
 
-export function terrainColor(terrain: string): string {
-  return TERRAIN_COLORS[terrain] || '#555555';
+/**
+ * Return the display color for a tile.
+ * Falls back through: full identity → terrain:elev → elevType → terrain → default.
+ *
+ * Ocean and tundra always use their terrain color — elevation does not override them.
+ */
+export function tileColor(tile: Pick<TileData, 'terrain' | 'elevType' | 'f'>): string {
+  const identity = tileIdentity(tile);
+  if (TILE_COLORS[identity]) return TILE_COLORS[identity];
+
+  const terrainElev = `${tile.terrain}:${tile.elevType}`;
+  if (TILE_COLORS[terrainElev]) return TILE_COLORS[terrainElev];
+
+  // Ocean and tundra: terrain color takes priority over elevation override
+  if (tile.terrain === 'ocean' || tile.terrain === 'tundra') {
+    return TILE_COLORS[tile.terrain];
+  }
+
+  if (TILE_COLORS[tile.elevType]) return TILE_COLORS[tile.elevType];
+
+  if (TILE_COLORS[tile.terrain]) return TILE_COLORS[tile.terrain];
+
+  return '#555555';
 }
 
-export function terrainColorRGB(terrain: string): [number, number, number] {
-  return hexToRGB(terrainColor(terrain));
+export function tileColorRGB(tile: Pick<TileData, 'terrain' | 'elevType' | 'f'>): [number, number, number] {
+  return hexToRGB(tileColor(tile));
+}
+
+// ---------------------------------------------------------------------------
+// Legacy shims — keep callers that pass terrain string directly working
+// ---------------------------------------------------------------------------
+
+/** @deprecated Use tileColor(tile) instead. */
+export function terrainColor(terrain: string, elevType?: string): string {
+  if (elevType) return tileColor({ terrain, elevType, f: false });
+  return TILE_COLORS[terrain] ?? '#555555';
+}
+
+/** @deprecated Use tileColorRGB(tile) instead. */
+export function terrainColorRGB(terrain: string, elevType?: string): [number, number, number] {
+  return hexToRGB(terrainColor(terrain, elevType));
 }
 
 // ---------------------------------------------------------------------------

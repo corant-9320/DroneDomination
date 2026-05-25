@@ -1,10 +1,21 @@
 /**
  * Terrain generation using simplex-like noise on the sphere.
  * Uses a seeded PRNG for deterministic generation.
+ *
+ * Three independent dimensions per tile:
+ *   TerrainType  — grassland | plains | tundra | desert | ocean
+ *   ElevationType — flat | rolling | hills | mountain  (always set, including ocean tiles)
+ *   forested      — boolean                            (false for ocean/tundra/desert)
+ *
+ * Ocean is determined by a separate noise ranking (bottom 30% by rank),
+ * independent of ElevationType — so flat land tiles exist.
  */
 
-import { Vec3, TerrainType, Tile } from './types.js';
-import { dot } from './vec3.js';
+import { Vec3, TerrainType, ElevationType } from './types.js';
+
+// ---------------------------------------------------------------------------
+// PRNG
+// ---------------------------------------------------------------------------
 
 /** Simple seeded PRNG (mulberry32) */
 export function mulberry32(seed: number): () => number {
@@ -17,6 +28,10 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Gradient noise
+// ---------------------------------------------------------------------------
+
 /** 3D gradient noise (simplified) for sphere-based terrain */
 function gradientNoise3D(
   pos: Vec3,
@@ -28,7 +43,6 @@ function gradientNoise3D(
   const fy = pos.y * frequency;
   const fz = pos.z * frequency;
 
-  // Simple value noise with trilinear interpolation
   const ix = Math.floor(fx);
   const iy = Math.floor(fy);
   const iz = Math.floor(fz);
@@ -52,14 +66,14 @@ function gradientNoise3D(
     return g.x * dx + g.y * dy + g.z * dz;
   }
 
-  const n000 = grad(hash(ix, iy, iz), tx, ty, tz);
-  const n100 = grad(hash(ix + 1, iy, iz), tx - 1, ty, tz);
-  const n010 = grad(hash(ix, iy + 1, iz), tx, ty - 1, tz);
-  const n110 = grad(hash(ix + 1, iy + 1, iz), tx - 1, ty - 1, tz);
-  const n001 = grad(hash(ix, iy, iz + 1), tx, ty, tz - 1);
-  const n101 = grad(hash(ix + 1, iy, iz + 1), tx - 1, ty, tz - 1);
-  const n011 = grad(hash(ix, iy + 1, iz + 1), tx, ty - 1, tz - 1);
-  const n111 = grad(hash(ix + 1, iy + 1, iz + 1), tx - 1, ty - 1, tz - 1);
+  const n000 = grad(hash(ix,     iy,     iz    ),  tx,      ty,      tz    );
+  const n100 = grad(hash(ix + 1, iy,     iz    ),  tx - 1,  ty,      tz    );
+  const n010 = grad(hash(ix,     iy + 1, iz    ),  tx,      ty - 1,  tz    );
+  const n110 = grad(hash(ix + 1, iy + 1, iz    ),  tx - 1,  ty - 1,  tz    );
+  const n001 = grad(hash(ix,     iy,     iz + 1),  tx,      ty,      tz - 1);
+  const n101 = grad(hash(ix + 1, iy,     iz + 1),  tx - 1,  ty,      tz - 1);
+  const n011 = grad(hash(ix,     iy + 1, iz + 1),  tx,      ty - 1,  tz - 1);
+  const n111 = grad(hash(ix + 1, iy + 1, iz + 1),  tx - 1,  ty - 1,  tz - 1);
 
   const nx00 = n000 + sx * (n100 - n000);
   const nx10 = n010 + sx * (n110 - n010);
@@ -72,11 +86,73 @@ function gradientNoise3D(
   return nxy0 + sz * (nxy1 - nxy0);
 }
 
+// ---------------------------------------------------------------------------
+// Pole distance via BFS
+// ---------------------------------------------------------------------------
+
+/**
+ * BFS from each polar pentagon outward.
+ * Returns an array where poleDistance[i] is the minimum hop count from tile i
+ * to either polar pentagon (0 = the pentagon itself, 1 = immediate neighbours, …).
+ * Tiles with no polar pentagon reachable within maxDepth get Infinity.
+ */
+function computePoleDistances(
+  positions: Vec3[],
+  neighbours: number[][],
+  sides: number[],
+): number[] {
+  const n = positions.length;
+  const dist = new Array<number>(n).fill(Infinity);
+
+  // The two polar pentagons are the pentagons with the highest and lowest y.
+  // An icosahedron has exactly 12 pentagons; the top and bottom vertices are
+  // the ones at y ≈ +1 and y ≈ -1.
+  const pentagonIndices: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (sides[i] === 5) pentagonIndices.push(i);
+  }
+  pentagonIndices.sort((a, b) => Math.abs(positions[b].y) - Math.abs(positions[a].y));
+  const polarPentagons = pentagonIndices.slice(0, 2); // top + bottom
+
+  // Multi-source BFS from both polar pentagons simultaneously
+  const queue: number[] = [];
+  for (const src of polarPentagons) {
+    dist[src] = 0;
+    queue.push(src);
+  }
+
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    const d = dist[cur];
+    for (const nb of neighbours[cur]) {
+      if (dist[nb] === Infinity) {
+        dist[nb] = d + 1;
+        queue.push(nb);
+      }
+    }
+  }
+
+  return dist;
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export interface TileTerrainData {
+  terrainType: TerrainType;
+  elevationType: ElevationType;
+  forested: boolean;
+}
+
 /** Generate terrain for all tiles */
 export function generateTerrain(
   positions: Vec3[],
+  neighbours: number[][],
+  sides: number[],
   seed: number
-): { terrainType: TerrainType; elevation: number }[] {
+): TileTerrainData[] {
   const rng = mulberry32(seed);
 
   // Build permutation table
@@ -99,66 +175,135 @@ export function generateTerrain(
     });
   }
 
-  return positions.map((pos) => {
-    // Multi-octave noise for elevation
-    let elevation = 0;
-    elevation += gradientNoise3D(pos, 3, gradients, permutation) * 0.5;
-    elevation += gradientNoise3D(pos, 6, gradients, permutation) * 0.25;
-    elevation += gradientNoise3D(pos, 12, gradients, permutation) * 0.125;
-    elevation += gradientNoise3D(pos, 24, gradients, permutation) * 0.0625;
+  // --- Pole distances (hop count from nearest polar pentagon) ---
+  const poleDistances = computePoleDistances(positions, neighbours, sides);
 
-    // Normalize to [0, 1]
-    elevation = (elevation + 1) / 2;
-    elevation = Math.max(0, Math.min(1, elevation));
+  // --- Pass 1: noise ranking used for two independent purposes ---
+  // The same noise field drives both ElevationType (quartiles) and the ocean
+  // flag (bottom 30% by rank). These are separate outputs — a flat tile is
+  // not necessarily ocean, and an ocean tile can be any elevation type.
+  const numTiles = positions.length;
+  const rawElevations = positions.map((pos) => {
+    let e = 0;
+    e += gradientNoise3D(pos, 3,  gradients, permutation) * 0.5;
+    e += gradientNoise3D(pos, 6,  gradients, permutation) * 0.25;
+    e += gradientNoise3D(pos, 12, gradients, permutation) * 0.125;
+    e += gradientNoise3D(pos, 24, gradients, permutation) * 0.0625;
+    return e; // raw value — only the rank matters
+  });
 
-    // Latitude factor (poles are colder)
-    const latitude = Math.abs(pos.y); // 0 at equator, 1 at poles
+  const sortedIndices = rawElevations
+    .map((e, i) => ({ e, i }))
+    .sort((a, b) => a.e - b.e);
 
-    const terrainType = classifyTerrain(elevation, latitude);
+  // ElevationType: four equal quartiles across all tiles
+  const elevationTypeMap = new Array<ElevationType>(numTiles);
+  const q = Math.floor(numTiles / 4);
+  sortedIndices.forEach(({ i }, rank) => {
+    if (rank < q)           elevationTypeMap[i] = 'flat';
+    else if (rank < q * 2)  elevationTypeMap[i] = 'rolling';
+    else if (rank < q * 3)  elevationTypeMap[i] = 'hills';
+    else                    elevationTypeMap[i] = 'mountain';
+  });
 
-    return { terrainType, elevation };
+  // Ocean flag: bottom 30% by noise rank (independent of elevation quartile)
+  const oceanCutoff = Math.floor(numTiles * 0.30);
+  const isOceanMap = new Array<boolean>(numTiles).fill(false);
+  sortedIndices.slice(0, oceanCutoff).forEach(({ i }) => { isOceanMap[i] = true; });
+
+  // --- Pass 2: classify each tile across all three dimensions ---
+  return positions.map((pos, i) => {
+    const elevationType = elevationTypeMap[i];
+    const poleDist      = poleDistances[i];
+    const isOcean       = isOceanMap[i];
+
+    const terrainType = classifyTerrain(isOcean, elevationType, poleDist, rng);
+    const forested    = classifyForested(terrainType, elevationType,
+                          gradientNoise3D(pos, 5, gradients, permutation));
+
+    return { terrainType, elevationType, forested };
   });
 }
 
-function classifyTerrain(elevation: number, latitude: number): TerrainType {
-  // --- Polar band overrides (latitude = |pos.y|, 1 = pole) ---
-  // With G(24,0) each ring ≈ 3.75° of colatitude.
-  // 2 rings from pole → colatitude ~7.5° → y > 0.99
-  // Next 1 ring → colatitude ~11° → y > 0.98
+// ---------------------------------------------------------------------------
+// Terrain classification — returns one of the 5 terrain types
+// ---------------------------------------------------------------------------
 
-  // Tundra: only the 2 tiles closest to the pole
-  if (latitude > 0.99) return 'tundra';
+/**
+ * Pole distance zones (hop count from the polar pentagon):
+ *
+ *   0          — the polar pentagon itself          (1 tile)
+ *   1          — first hex ring                     (5 tiles)
+ *   2          — second hex ring                    (10 tiles)
+ *   ─────────────────────────────────────────────── total: 16 tiles of tundra
+ *   3          — ocean buffer ring
+ *   4          — ocean buffer ring
+ *   ───────────────────────────────────────────────
+ *   5+         — normal terrain classification
+ *
+ * The near-polar band (dist 5–9) blends tundra into plains with rising probability.
+ */
+function classifyTerrain(
+  isOcean: boolean,
+  elevationType: ElevationType,
+  poleDist: number,
+  rng: () => number,
+): TerrainType {
+  // --- Hard tundra cap: pentagon + 2 hex rings ---
+  if (poleDist <= 2) return 'tundra';
 
-  // Polar ocean buffer: 1 tile-width separating tundra from habitable land
-  if (latitude > 0.98) return 'ocean';
+  // --- Ocean buffer just outside the tundra cap ---
+  if (poleDist <= 4) return 'ocean';
 
-  // Green band beyond the ocean: force productive terrain so polar cities
-  // are not disadvantaged. Use elevation to vary between forest/grassland.
-  if (latitude > 0.90) {
-    if (elevation > 0.65) return 'forest';
+  // --- Near-polar band (dist 5–9): tundra probability fades with distance.
+  //     Evaluated before the ocean flag so polar land isn't swallowed by water. ---
+  if (poleDist <= 9) {
+    const tundraChance = (10 - poleDist) / 5; // 1.0 at dist 5 → 0.2 at dist 9
+    if (rng() < tundraChance) return 'tundra';
+  }
+
+  // --- Ocean: bottom 30% of tiles by noise rank ---
+  if (isOcean) return 'ocean';
+
+  // --- Equatorial desert: small patches (far from poles, rolling elevation) ---
+  if (poleDist > 30 && elevationType === 'rolling' && rng() > 0.7) {
+    return 'desert';
+  }
+
+  // --- Mid-latitude grassland (most common land type) ---
+  if (elevationType === 'flat' || elevationType === 'rolling' ||
+      (elevationType === 'hills' && poleDist < 28)) {
     return 'grassland';
   }
 
-  // --- Normal terrain classification below latitude 0.90 ---
-
-  // Ocean
-  if (elevation < 0.35) return 'ocean';
-
-  // Mountains at high elevation
-  if (elevation > 0.8) return 'mountain';
-
-  // Hills
-  if (elevation > 0.65) return 'hills';
-
-  // Desert at low latitude, mid elevation
-  if (latitude < 0.25 && elevation > 0.4 && elevation < 0.55) return 'desert';
-
-  // Forest at mid latitudes
-  if (latitude > 0.3 && latitude < 0.65 && elevation > 0.45) return 'forest';
-
-  // Grassland
-  if (elevation > 0.45) return 'grassland';
-
-  // Plains (default land)
+  // --- Plains: hills far from equator and all mountains ---
   return 'plains';
+}
+
+// ---------------------------------------------------------------------------
+// Vegetation classification — forested or clear
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine whether a tile has forest cover.
+ *
+ * Rules:
+ *   ocean   → always clear
+ *   tundra  → always clear
+ *   desert  → always clear
+ *   mountain elevation → always clear (too high)
+ *   otherwise → noise threshold (~42% forested)
+ */
+function classifyForested(
+  terrain: TerrainType,
+  elevationType: ElevationType,
+  forestNoise: number,
+): boolean {
+  if (terrain === 'ocean')   return false;
+  if (terrain === 'tundra')  return false;
+  if (terrain === 'desert')  return false;
+  if (elevationType === 'mountain') return false;
+
+  // Eligible: grassland/plains at flat/rolling/hills elevation
+  return forestNoise > 0.15; // ~42% forested coverage
 }

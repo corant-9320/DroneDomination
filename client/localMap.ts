@@ -4,9 +4,10 @@
  * onto a tangent plane. Pentagons are excluded.
  */
 
-import { WorldData, UnitData } from './worldData.js';
-import { terrainColor, factionColor } from './colors.js';
+import { WorldData, UnitData, TileData } from './worldData.js';
+import { tileColor, factionColor } from './colors.js';
 import { drawUnitIcon, segmentAngle } from './unitIcons.js';
+import { CombatAnimator } from './combatAnimations.js';
 import { dbg } from './debug.js';
 
 interface FlatTile {
@@ -47,8 +48,18 @@ export class LocalMapView {
   private onTurnEnd: (() => void) | null = null;
   /** Callback when player initiates an attack (attackerId, targetId). */
   private onAttack: ((attackerId: string, targetId: string) => void) | null = null;
+  /** Callback when player initiates a repair (repairerId, targetId). */
+  private onRepair: ((repairerId: string, targetId: string) => void) | null = null;
   /** The faction (ownerId) allowed to select and move units. */
   private activeFaction: string = '';
+
+  // Movement range overlay
+  /** Tiles reachable within full MP (movement range). Keyed by tile index → MP cost to reach. */
+  private moveRangeTiles: Map<number, number> = new Map();
+  /** Tiles reachable with ≥1 MP remaining (can still attack after moving here). */
+  private attackReadyTiles: Set<number> = new Set();
+  /** Tiles within weapon range from attackReady hexes (outer attack radius). */
+  private weaponRangeTiles: Set<number> = new Set();
 
   // View transform
   private offsetX: number = 0;
@@ -60,6 +71,11 @@ export class LocalMapView {
   private dragEmitPending: boolean = false;
   private lastEmittedCentreTile: number = -1;
 
+  // Combat animations
+  private animator: CombatAnimator;
+  /** Units hidden from rendering (e.g. destroyed during animation). */
+  private hiddenUnits: Set<string> = new Set();
+
   constructor(
     canvas: HTMLCanvasElement,
     world: WorldData,
@@ -69,6 +85,8 @@ export class LocalMapView {
     this.ctx = canvas.getContext('2d')!;
     this.world = world;
     this.onTileSelect = onTileSelect;
+    this.animator = new CombatAnimator(canvas);
+    this.animator.setRenderCallback(() => this.render());
 
     canvas.addEventListener('click', this.onClick.bind(this));
     canvas.addEventListener('contextmenu', this.onRightClick.bind(this));
@@ -137,6 +155,56 @@ export class LocalMapView {
   setHighlightCombat(attackerId: string | null, targetId: string | null): void {
     this.highlightAttackerId = attackerId;
     this.highlightTargetId = targetId;
+  }
+
+  /**
+   * Get the screen-space position of a unit by its id.
+   * Returns null if the unit isn't visible on the current view.
+   */
+  getUnitScreenPos(unitId: string): { x: number; y: number } | null {
+    const unit = this.world.units.find((u) => u.id === unitId);
+    if (!unit) return null;
+
+    const ft = this.flatTiles.find((f) => f.tileIndex === unit.tileIndex);
+    if (!ft) return null;
+
+    const seg = this.getSegmentCentroid(ft, unit.segment);
+    if (!seg) return null;
+
+    const [sx, sy] = this.worldToScreen(seg.x, seg.y);
+    return { x: sx, y: sy };
+  }
+
+  /**
+   * Play the full attack animation sequence (missile → explosion → smoke).
+   * Renders the base map, then overlays animations.
+   * Returns a promise that resolves when all animations complete.
+   */
+  async playAttackAnimation(
+    attackerId: string,
+    targetId: string,
+    factionColorHex: string,
+    damage: number,
+    targetDestroyed: boolean,
+  ): Promise<void> {
+    const from = this.getUnitScreenPos(attackerId);
+    const to = this.getUnitScreenPos(targetId);
+    if (!from || !to) return; // units not visible, skip animation
+
+    // Play missile → explosion, then hide the unit before the smoke plume
+    await this.animator.playMissile(from, to, factionColorHex);
+    await this.animator.playExplosion(to, damage, factionColorHex);
+    if (targetDestroyed) {
+      this.hiddenUnits.add(targetId);
+      this.render();
+      await this.animator.playSmoke(to);
+      this.hiddenUnits.delete(targetId);
+    }
+  }
+
+  /** Whether combat animations are currently playing. */
+  get isAnimating(): boolean {
+    return this.animator.isAnimating;
   }
 
   /**
@@ -280,7 +348,7 @@ export class LocalMapView {
     // Draw each tile as its actual boundary polygon
     for (const ft of this.flatTiles) {
       const tile = this.world.tiles[ft.tileIndex];
-      let color = terrainColor(tile.terrain);
+      let color = tileColor(tile);
 
       if (tile.city) {
         color = factionColor(this.world, tile.city);
@@ -336,11 +404,17 @@ export class LocalMapView {
       }
     }
 
+    // Draw movement range overlay (before units, after tiles)
+    this.drawMovementRange();
+
     // Draw units at all zoom levels
     this.drawUnits();
 
     // Draw AI combat highlights (attacker ring + target ring + connecting line)
     this.drawCombatHighlight();
+
+    // Draw combat animation overlays (missiles, explosions, smoke)
+    this.animator.drawFrame();
 
     // HUD: zoom factor (top-left)
     this.ctx.save();
@@ -414,6 +488,7 @@ export class LocalMapView {
     }
 
     for (const unit of units) {
+      if (this.hiddenUnits.has(unit.id)) continue;
       const ft = ftByTile.get(unit.tileIndex);
       if (!ft) continue;
       const tile = this.world.tiles[unit.tileIndex];
@@ -676,11 +751,15 @@ export class LocalMapView {
       }
 
       dbg.localMap.log('Selected units:', [...this.selectedUnits]);
+      this.computeMovementRange();
       this.onTileSelect(tileIdx, segment >= 0 ? segment : undefined);
+      if (this.selectedUnits.size === 0) this.canvas.style.cursor = '';
       this.render();
     } else {
       dbg.localMap.log('Click missed (no tile at position)');
       this.selectedUnits.clear();
+      this.computeMovementRange();
+      this.canvas.style.cursor = '';
       this.render();
     }
   }
@@ -705,12 +784,21 @@ export class LocalMapView {
     if (this.onHoverEnemy && this.selectedUnits.size > 0) {
       const tileIdx = this.findTileAt(x, y);
       if (tileIdx >= 0) {
-        const unitsOnTile = this.world.units.filter((u) => u.tileIndex === tileIdx);
+        // Detect segment-level hover so preview updates when moving between
+        // triangles within the same hex (not just when crossing hex boundaries).
+        const ft = this.flatTiles.find((f) => f.tileIndex === tileIdx);
+        const segment = ft ? this.findSegmentAt(x, y, ft) : -1;
+
         const playerUnits = this.world.units.filter((u) => this.selectedUnits.has(u.id));
         if (playerUnits.length > 0) {
           const playerOwner = playerUnits[0].ownerId;
-          const enemy = unitsOnTile.find((u) => u.ownerId !== playerOwner);
+          // Find enemy in the specific segment under the cursor
+          const enemy = this.world.units.find(
+            (u) => u.tileIndex === tileIdx && u.segment === segment && u.ownerId !== playerOwner
+          );
           if (enemy) {
+            // Crosshair cursor when hovering an enemy with a unit selected
+            this.canvas.style.cursor = 'crosshair';
             if (this.lastHoveredEnemyId !== enemy.id) {
               this.lastHoveredEnemyId = enemy.id;
               this.onHoverEnemy(playerUnits[0], enemy);
@@ -719,11 +807,15 @@ export class LocalMapView {
           }
         }
       }
-      // No enemy under cursor — clear preview
+      // No enemy under cursor — clear preview and reset cursor
+      this.canvas.style.cursor = '';
       if (this.lastHoveredEnemyId !== null) {
         this.lastHoveredEnemyId = null;
         this.onHoverEnemy(null, null);
       }
+    } else {
+      // No unit selected — ensure default cursor
+      this.canvas.style.cursor = '';
     }
   }
 
@@ -917,9 +1009,295 @@ export class LocalMapView {
     );
   }
 
+  /** Get the movement mode for a unit. */
+  private getMovementMode(unit: UnitData): 'wheeled' | 'limb' | 'flight' {
+    if ((unit.attributes.flightMovement ?? 0) >= 1) return 'flight';
+    if ((unit.attributes.limbMovement ?? 0) >= 1) return 'limb';
+    return 'wheeled';
+  }
+
+  /** Whether a terrain type is impassable for ground units. */
+  private isImpassableTerrain(terrain: string): boolean {
+    return terrain === 'mountain' || terrain === 'ocean';
+  }
+
+  /** Whether terrain counts as hill for movement costs. */
+  private isHillTerrain(terrain: string): boolean {
+    return terrain === 'hills';
+  }
+
+  /**
+   * Calculate MP cost to enter a tile for a given movement mode.
+   * isFirstHex: whether this is the first hex the unit moves into this turn.
+   */
+  private hexEntryCost(tile: TileData, mode: 'wheeled' | 'limb' | 'flight', isFirstHex: boolean): number {
+    if (this.isImpassableTerrain(tile.terrain) && mode !== 'flight') return Infinity;
+    if (isFirstHex) return 1;
+    if (mode === 'flight') return 1;
+    if (mode === 'limb') return 3;
+
+    // Tank/wheeled
+    const hill = this.isHillTerrain(tile.terrain);
+    const forested = tile.f === true;
+    if (hill && forested) return 4;
+    if (hill || forested) return 3;
+    return 2;
+  }
+
+  // -------------------------------------------------------------------------
+  // Movement range overlay computation
+  // -------------------------------------------------------------------------
+
+  /**
+   * Compute movement range zones for the selected unit using Dijkstra flood fill.
+   * Populates moveRangeTiles, attackReadyTiles, and weaponRangeTiles.
+   */
+  private computeMovementRange(): void {
+    this.moveRangeTiles.clear();
+    this.attackReadyTiles.clear();
+    this.weaponRangeTiles.clear();
+
+    if (this.selectedUnits.size === 0) return;
+
+    // Use the first selected unit for range display
+    const unitId = [...this.selectedUnits][0];
+    const unit = this.world.units.find((u) => u.id === unitId);
+    if (!unit) return;
+
+    const remainingMP = this.movementPoints.get(unitId) ?? 0;
+    if (remainingMP <= 0) return;
+
+    const mode = this.getMovementMode(unit);
+    const totalMP = this.getMaxMovement(unit);
+    const alreadySpent = totalMP - remainingMP;
+    // If unit already moved (spent > 0), first-hex rule no longer applies
+    const hexesMoved = alreadySpent > 0 ? 1 : 0;
+
+    const startTile = unit.tileIndex;
+    const tiles = this.world.tiles;
+
+    // Dijkstra flood fill from the unit's current tile
+    // dist map: tile index → total MP cost to reach that tile
+    const dist = new Map<number, number>();
+    dist.set(startTile, 0);
+
+    // Priority queue (simple array sorted by cost — fine for small BFS radius)
+    const pq: { idx: number; cost: number }[] = [{ idx: startTile, cost: 0 }];
+
+    while (pq.length > 0) {
+      // Extract minimum cost node
+      let minI = 0;
+      for (let i = 1; i < pq.length; i++) {
+        if (pq[i].cost < pq[minI].cost) minI = i;
+      }
+      const { idx: current, cost: currentCost } = pq[minI];
+      pq.splice(minI, 1);
+
+      // Skip if we already found a better path
+      if (currentCost > (dist.get(current) ?? Infinity)) continue;
+
+      // Explore neighbours
+      for (const neighbour of tiles[current].n) {
+        const nTile = tiles[neighbour];
+        // Determine if this is the first hex of the turn
+        // hexesMoved tracks whether unit has already moved; if cost so far is 0
+        // and hexesMoved is 0, the next hop is the first hex
+        const hopsFromStart = currentCost === 0 && hexesMoved === 0;
+        const entryCost = this.hexEntryCost(nTile, mode, hopsFromStart);
+        if (entryCost === Infinity) continue;
+
+        const newCost = currentCost + entryCost;
+        if (newCost > remainingMP) continue;
+
+        const existingCost = dist.get(neighbour);
+        if (existingCost === undefined || newCost < existingCost) {
+          dist.set(neighbour, newCost);
+          pq.push({ idx: neighbour, cost: newCost });
+        }
+      }
+    }
+
+    // Remove the start tile from the range display (unit is already there)
+    dist.delete(startTile);
+
+    // Populate moveRangeTiles (all reachable hexes)
+    this.moveRangeTiles = dist;
+
+    // Populate attackReadyTiles (hexes reachable with ≥1 MP remaining for attack)
+    for (const [tileIdx, cost] of dist) {
+      if (remainingMP - cost >= 1) {
+        this.attackReadyTiles.add(tileIdx);
+      }
+    }
+    // Also include start tile as attack-ready if unit has MP for attack without moving
+    if (remainingMP >= 1) {
+      this.attackReadyTiles.add(startTile);
+    }
+
+    // Compute weapon range: rangeAttack value IS the range in hexes
+    const rangeAttack = unit.attributes.rangeAttack ?? 0;
+    const meleeAttack = unit.attributes.attack ?? 0;
+    const weaponRange = Math.max(rangeAttack, meleeAttack > 0 ? 1 : 0);
+
+    if (weaponRange > 0) {
+      // BFS outward from every attack-ready tile up to weaponRange hops
+      for (const readyTile of this.attackReadyTiles) {
+        const queue: { idx: number; d: number }[] = [{ idx: readyTile, d: 0 }];
+        const visited = new Set<number>();
+        visited.add(readyTile);
+        let head = 0;
+
+        while (head < queue.length) {
+          const { idx, d } = queue[head++];
+          if (d >= weaponRange) continue;
+
+          for (const neighbour of tiles[idx].n) {
+            if (visited.has(neighbour)) continue;
+            visited.add(neighbour);
+            // Weapon range tiles are those NOT already in moveRange or attackReady
+            if (!this.moveRangeTiles.has(neighbour) && !this.attackReadyTiles.has(neighbour) && neighbour !== startTile) {
+              this.weaponRangeTiles.add(neighbour);
+            }
+            queue.push({ idx: neighbour, d: d + 1 });
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Draw movement range as bounding lines around each zone:
+   * - Green solid: attack-ready tiles (movement leaving ≥1 MP)
+   * - Blue dashed: max movement range (all reachable tiles)
+   * - Red dotted: max weapon range (outer attack radius)
+   *
+   * Only edges that border tiles NOT in the same zone are drawn,
+   * producing a clean perimeter outline for each radius.
+   */
+  private drawMovementRange(): void {
+    if (this.moveRangeTiles.size === 0 && this.weaponRangeTiles.size === 0) return;
+
+    // Build a tile→FlatTile lookup for visible tiles
+    const ftByTile = new Map<number, FlatTile>();
+    for (const ft of this.flatTiles) {
+      ftByTile.set(ft.tileIndex, ft);
+    }
+
+    // The three zone sets (each zone is a superset of the previous):
+    // 1. attackReady ⊆ moveRange ⊆ (moveRange ∪ weaponRange)
+    const attackReadySet = this.attackReadyTiles;
+    const moveRangeSet = new Set<number>(this.moveRangeTiles.keys());
+    // Add attackReady start tile to moveRange for boundary purposes
+    for (const t of attackReadySet) moveRangeSet.add(t);
+    const allRangeSet = new Set<number>(moveRangeSet);
+    for (const t of this.weaponRangeTiles) allRangeSet.add(t);
+
+    // Draw weapon range boundary (red dotted) — outermost
+    this.drawZoneBoundary(allRangeSet, ftByTile, 'rgba(255, 80, 60, 0.9)', [4, 4], 2);
+    // Draw max movement boundary (blue dashed)
+    this.drawZoneBoundary(moveRangeSet, ftByTile, 'rgba(80, 160, 255, 0.9)', [8, 4], 2);
+    // Draw attack-ready boundary (green solid) — innermost
+    this.drawZoneBoundary(attackReadySet, ftByTile, 'rgba(80, 220, 120, 0.9)', [], 2.5);
+  }
+
+  /**
+   * Draw the boundary of a tile zone by outlining entire hexes that sit on the perimeter.
+   * A tile is on the perimeter if any of its neighbours is outside the zone.
+   */
+  private drawZoneBoundary(
+    zone: Set<number>,
+    ftByTile: Map<number, FlatTile>,
+    color: string,
+    dash: number[],
+    lineWidth: number,
+  ): void {
+    if (zone.size === 0) return;
+
+    this.ctx.save();
+    this.ctx.strokeStyle = color;
+    this.ctx.lineWidth = lineWidth;
+    this.ctx.setLineDash(dash);
+    this.ctx.lineCap = 'round';
+    this.ctx.lineJoin = 'round';
+    this.ctx.beginPath();
+
+    for (const tileIdx of zone) {
+      const ft = ftByTile.get(tileIdx);
+      if (!ft) continue;
+
+      // Check if this tile is on the boundary (has any neighbour outside the zone)
+      const tile = this.world.tiles[tileIdx];
+      const onBoundary = tile.n.some((n: number) => !zone.has(n));
+      if (!onBoundary) continue;
+
+      // Draw full hex outline
+      for (let i = 0; i < ft.poly.length; i++) {
+        const [sx, sy] = this.worldToScreen(ft.poly[i].x, ft.poly[i].y);
+        if (i === 0) this.ctx.moveTo(sx, sy);
+        else this.ctx.lineTo(sx, sy);
+      }
+      this.ctx.closePath();
+    }
+
+    this.ctx.stroke();
+    this.ctx.restore();
+  }
+
+  /** Draw a colored overlay on a tile polygon. */
+  private drawTileOverlay(ft: FlatTile, color: string): void {
+    this.ctx.beginPath();
+    for (let i = 0; i < ft.poly.length; i++) {
+      const [sx, sy] = this.worldToScreen(ft.poly[i].x, ft.poly[i].y);
+      if (i === 0) this.ctx.moveTo(sx, sy);
+      else this.ctx.lineTo(sx, sy);
+    }
+    this.ctx.closePath();
+    this.ctx.fillStyle = color;
+    this.ctx.fill();
+  }
+
+  /**
+   * Calculate how many BFS hops along a path a unit can afford.
+   * hexesAlreadyMoved: how many hexes the unit has already moved this turn (for first-hex rule).
+   * Returns the number of hops (tiles entered) affordable within remaining MP.
+   */
+  private affordableHops(path: number[], unit: UnitData, remainingMP: number, hexesAlreadyMoved: number): number {
+    const mode = this.getMovementMode(unit);
+    let spent = 0;
+    let hops = 0;
+
+    for (let i = 1; i < path.length; i++) {
+      const isFirst = (hexesAlreadyMoved + i - 1) === 0;
+      const cost = this.hexEntryCost(this.world.tiles[path[i]], mode, isFirst);
+      if (cost === Infinity) break;
+      spent += cost;
+      if (spent > remainingMP) break;
+      hops++;
+    }
+    return hops;
+  }
+
+  /**
+   * Calculate the actual MP spent for a given number of hops along a path.
+   */
+  private mpSpentForHops(path: number[], unit: UnitData, hops: number, hexesAlreadyMoved: number): number {
+    const mode = this.getMovementMode(unit);
+    let spent = 0;
+    for (let i = 1; i <= hops && i < path.length; i++) {
+      const isFirst = (hexesAlreadyMoved + i - 1) === 0;
+      spent += this.hexEntryCost(this.world.tiles[path[i]], mode, isFirst);
+    }
+    return spent;
+  }
+
   /** Get the remaining movement points for a unit. */
   getRemainingMovement(unitId: string): number {
     return this.movementPoints.get(unitId) ?? 0;
+  }
+
+  /** Consume all remaining movement points for a unit (e.g. after repair action). */
+  consumeMovement(unitId: string): void {
+    this.movementPoints.set(unitId, 0);
   }
 
   /** Register callback for end-of-turn. */
@@ -930,6 +1308,11 @@ export class LocalMapView {
   /** Register callback for when the player attacks. */
   setOnAttack(cb: (attackerId: string, targetId: string) => void) {
     this.onAttack = cb;
+  }
+
+  /** Register callback for when the player repairs a friendly unit. */
+  setOnRepair(cb: (repairerId: string, targetId: string) => void) {
+    this.onRepair = cb;
   }
 
   /** Set the faction allowed to select/move/attack. */
@@ -1062,15 +1445,38 @@ export class LocalMapView {
         this.onAttack(attacker.id, enemyTarget.id);
         return;
       }
+
+      // --- Repair check ---
+      // If no enemy target, check for a friendly unit in the same hex that can be repaired.
+      // The selected unit must have repair attribute and movement points remaining.
+      if (!enemyTarget && this.onRepair) {
+        const repairer = playerUnits.find(
+          (u) => (u.attributes.repair ?? 0) >= 1 && (this.movementPoints.get(u.id) ?? 0) > 0
+        );
+        if (repairer) {
+          // Find friendly target in the clicked segment (same hex, different unit, damaged)
+          let friendlyTarget: UnitData | undefined;
+          if (targetSegment >= 0) {
+            friendlyTarget = unitsOnTarget.find(
+              (u) => u.segment === targetSegment && u.ownerId === playerOwner && u.id !== repairer.id && u.currentHealth < (u.attributes.maxHealth ?? 1) * 10
+            );
+          }
+          if (!friendlyTarget) {
+            // No segment match — pick any damaged friendly on that tile
+            friendlyTarget = unitsOnTarget.find(
+              (u) => u.ownerId === playerOwner && u.id !== repairer.id && u.currentHealth < (u.attributes.maxHealth ?? 1) * 10
+            );
+          }
+          if (friendlyTarget && repairer.tileIndex === friendlyTarget.tileIndex) {
+            dbg.localMap.log('Repair command:', repairer.label, '→', friendlyTarget.label);
+            this.onRepair(repairer.id, friendlyTarget.id);
+            return;
+          }
+        }
+      }
     }
 
     // --- Movement (existing logic) ---
-    // Can't move into ocean
-    if (targetTileData.terrain === 'ocean') {
-      dbg.localMap.log('Movement blocked: ocean tile');
-      return;
-    }
-
     // Gather selected units that can still move
     const units = this.world.units;
     const movingUnits = units.filter(
@@ -1078,25 +1484,43 @@ export class LocalMapView {
     );
     if (movingUnits.length === 0) return;
 
-    // Group speed: minimum remaining movement among selected units
-    const groupSpeed = Math.min(
-      ...movingUnits.map((u) => this.movementPoints.get(u.id) ?? 0)
-    );
+    // Can't move into impassable terrain (ground units)
+    if (this.isImpassableTerrain(targetTileData.terrain)) {
+      // Check if ALL selected units are drones (flight ignores impassable)
+      const allFlight = movingUnits.every(
+        (u) => this.getMovementMode(u) === 'flight'
+      );
+      if (!allFlight) {
+        dbg.localMap.log('Movement blocked: impassable tile');
+        return;
+      }
+    }
 
     // All selected units must share an origin for group movement.
-    // If they're on different tiles, move each individually at group speed.
-    // BFS from first unit's tile (use shared path if same origin).
+    // If they're on different tiles, move each individually.
     const originTile = movingUnits[0].tileIndex;
     const allSameOrigin = movingUnits.every((u) => u.tileIndex === originTile);
 
     if (allSameOrigin) {
-      // Shared path — all move together at group speed
+      // Shared path — all move together, limited by slowest unit's affordable hops
       const path = this.findPathBFS(originTile, targetTile);
       if (!path || path.length < 2) return;
 
-      const hops = Math.min(groupSpeed, path.length - 1);
+      // For group movement: use the minimum affordable hops across all units
+      // hexesAlreadyMoved is 0 at start of turn (first-hex rule applies to first move)
+      const groupHops = Math.min(
+        ...movingUnits.map((u) => {
+          const remaining = this.movementPoints.get(u.id) ?? 0;
+          const totalMP = this.getMaxMovement(u);
+          const alreadyMoved = totalMP - remaining > 0 ? 1 : 0; // simplified: if MP spent, not first hex
+          return this.affordableHops(path, u, remaining, alreadyMoved);
+        })
+      );
+
+      if (groupHops === 0) return;
+
+      const hops = Math.min(groupHops, path.length - 1);
       const destTileIndex = path[hops];
-      // The tile they came from (for facing direction)
       const prevTileIndex = path[hops - 1];
 
       // Check capacity at destination
@@ -1116,11 +1540,6 @@ export class LocalMapView {
         '| angle (deg):', (facingAngle * 180 / Math.PI).toFixed(1),
         '| facing idx:', moveFacing);
 
-      // Move all units to destination, preserving their source segment.
-      // If a single unit lands on the actual target tile and a segment was
-      // explicitly right-clicked, use that as the preferred segment.
-      // For multi-unit groups, always preserve original segments so the
-      // formation doesn't rotate around the clicked segment.
       const reachedTarget = destTileIndex === targetTile;
       const useTargetSegment = reachedTarget && targetSegment >= 0 && movingUnits.length === 1;
       const occupiedSegments = new Set(existingAtDest.map((u) => u.segment));
@@ -1129,24 +1548,35 @@ export class LocalMapView {
         const freeSegment = this.findPreferredSegment(preferred, occupiedSegments);
         if (freeSegment < 0) break;
 
+        const remaining = this.movementPoints.get(unit.id) ?? 0;
+        const totalMP = this.getMaxMovement(unit);
+        const alreadyMoved = totalMP - remaining > 0 ? 1 : 0;
+        const mpCost = this.mpSpentForHops(path, unit, hops, alreadyMoved);
+
         unit.tileIndex = destTileIndex;
         unit.segment = freeSegment as 0 | 1 | 2 | 3 | 4 | 5;
         unit.facing = moveFacing;
-        this.movementPoints.set(unit.id, (this.movementPoints.get(unit.id) ?? 0) - hops);
+        this.movementPoints.set(unit.id, Math.max(0, remaining - mpCost));
         occupiedSegments.add(freeSegment as 0 | 1 | 2 | 3 | 4 | 5);
 
         dbg.localMap.log(
           'Moved', unit.label, '→ tile', destTileIndex,
-          'segment', freeSegment, '| points left:', this.movementPoints.get(unit.id)
+          'segment', freeSegment, '| MP spent:', mpCost, '| points left:', this.movementPoints.get(unit.id)
         );
       }
     } else {
-      // Units on different tiles — move each individually at group speed
+      // Units on different tiles — move each individually
       for (const unit of movingUnits) {
         const path = this.findPathBFS(unit.tileIndex, targetTile);
         if (!path || path.length < 2) continue;
 
-        const hops = Math.min(groupSpeed, path.length - 1);
+        const remaining = this.movementPoints.get(unit.id) ?? 0;
+        const totalMP = this.getMaxMovement(unit);
+        const alreadyMoved = totalMP - remaining > 0 ? 1 : 0;
+        const maxHops = this.affordableHops(path, unit, remaining, alreadyMoved);
+        if (maxHops === 0) continue;
+
+        const hops = Math.min(maxHops, path.length - 1);
         const destTileIndex = path[hops];
         const prevTileIndex = path[hops - 1];
 
@@ -1162,14 +1592,16 @@ export class LocalMapView {
         const freeSegment = this.findPreferredSegment(preferred, occupiedSegments);
         if (freeSegment < 0) continue;
 
+        const mpCost = this.mpSpentForHops(path, unit, hops, alreadyMoved);
+
         unit.tileIndex = destTileIndex;
         unit.segment = freeSegment as 0 | 1 | 2 | 3 | 4 | 5;
         unit.facing = this.angleToFacing(this.computeFacingAngle(prevTileIndex, destTileIndex));
-        this.movementPoints.set(unit.id, (this.movementPoints.get(unit.id) ?? 0) - hops);
+        this.movementPoints.set(unit.id, Math.max(0, remaining - mpCost));
 
         dbg.localMap.log(
           'Moved', unit.label, '→ tile', destTileIndex,
-          'segment', freeSegment, '| points left:', this.movementPoints.get(unit.id)
+          'segment', freeSegment, '| MP spent:', mpCost, '| points left:', this.movementPoints.get(unit.id)
         );
       }
     }
@@ -1185,6 +1617,7 @@ export class LocalMapView {
       this.selectedSegment = -1;
     }
 
+    this.computeMovementRange();
     this.render();
   }
 

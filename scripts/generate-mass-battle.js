@@ -148,7 +148,7 @@ function generateUnit(id, label, ownerId, tileIndex, segment) {
     segment,
     facing: randInt(0, 5),
     attributes: attrs,
-    currentHealth: maxHealth,
+    currentHealth: maxHealth * 10,
   };
 }
 

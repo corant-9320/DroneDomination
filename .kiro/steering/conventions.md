@@ -2,7 +2,7 @@
 
 ## Build & run
 
-See `package.json` scripts. Key: `dev` (Vite:3000), `test` (vitest), `build && generate` for world regen.
+See `package.json` scripts. Key: `dev` (Vite:3000), `test` (vitest), `build` (tsc + auto-generates world via `postbuild`).
 
 ## Import rules
 
@@ -17,7 +17,7 @@ See `package.json` scripts. Key: `dev` (Vite:3000), `test` (vitest), `build && g
 |---|---|
 | `client/**`, `index.html` | Just refresh the browser (Vite HMR may do it automatically) |
 | `server/**` (dev plugin / API handlers) | Restart `npm run dev` |
-| `src/world/**` (generation logic) | `npm run build && npm run generate`, then refresh |
+| `src/world/**` (generation logic) | `npm run build` (world regenerates automatically via postbuild), then refresh |
 | `data/world.json` regenerated | Refresh the browser |
 | `tsconfig.json`, `vite.config.ts` | Restart `npm run dev` |
 | `scripts/**` | Run the script manually (`node scripts/<name>.js`) |
