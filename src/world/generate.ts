@@ -113,6 +113,24 @@ export function generateWorld(seed: number): World {
   console.log(`  Cities placed: ${cities.length}`);
   console.timeEnd('cities');
 
+  // Step 6: Sanitise city neighbourhoods
+  // Tiles adjacent to a city must not be mountain or ocean — they would block
+  // unit movement and look wrong next to a settlement.
+  for (const city of cities) {
+    for (const ni of tiles[city.tileIndex].neighbours) {
+      const t = tiles[ni];
+      if (t.terrainType === 'ocean') {
+        // Promote to plains at flat elevation
+        t.terrainType  = 'plains';
+        t.elevationType = 'flat';
+        t.forested      = false;
+      } else if (t.elevationType === 'mountain') {
+        // Demote mountain → hills, keep terrain type (already 'plains' for mountains)
+        t.elevationType = 'hills';
+      }
+    }
+  }
+
   console.timeEnd('total');
 
   return {

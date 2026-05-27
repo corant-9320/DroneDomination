@@ -378,6 +378,9 @@ export class LocalMapView {
         this.drawForestCornerTrees(ft);
       }
 
+      // Draw elevation badge (▲ hills, ▲▲ mountain, ~ rolling) when zoomed in
+      this.drawElevationBadge(ft, tile.elevType);
+
       // Highlight selected segment (triangle overlay)
       if (ft.tileIndex === this.selectedTile && this.selectedSegment >= 0 && tile.s === 6) {
         this.drawSegmentHighlight(ft, this.selectedSegment);
@@ -459,6 +462,55 @@ export class LocalMapView {
     ctx.fill();
 
     ctx.restore();
+  }
+
+  /**
+   * Draw an elevation badge near the top of a hex when zoomed in enough.
+   * Only shown for rolling (≥0.6× zoom), hills (≥0.4×), and mountain (≥0.3×).
+   *
+   *   rolling  → "~"   (subtle wave)
+   *   hills    → "▲"
+   *   mountain → "▲▲"
+   */
+  private drawElevationBadge(ft: FlatTile, elevType: string): void {
+    // Determine symbol
+    let symbol: string;
+    switch (elevType) {
+      case 'rolling':  symbol = '▲';     break;
+      case 'hills':    symbol = '▲▲';    break;
+      case 'mountain': symbol = '▲▲▲';   break;
+      default: return; // flat / ocean — no badge
+    }
+
+    // Compute hex radius in screen pixels to size the font
+    const [csx, csy] = this.worldToScreen(ft.cx, ft.cy);
+    let avgRadius = 0;
+    for (const v of ft.poly) {
+      const [vx, vy] = this.worldToScreen(v.x, v.y);
+      avgRadius += Math.sqrt((vx - csx) ** 2 + (vy - csy) ** 2);
+    }
+    avgRadius /= ft.poly.length;
+    if (avgRadius < 6) return;
+
+    const fontSize = Math.max(4, Math.min(7, avgRadius * 0.19));
+
+    // Position: centre of hex
+    const badgeY = csy;
+
+    this.ctx.save();
+    this.ctx.font = `bold ${fontSize}px sans-serif`;
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+
+    // Dark shadow for legibility on any terrain colour
+    this.ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    this.ctx.fillText(symbol, csx + 1, badgeY + 1);
+
+    // Light grey badge text
+    this.ctx.fillStyle = 'rgba(220,220,220,0.90)';
+    this.ctx.fillText(symbol, csx, badgeY);
+
+    this.ctx.restore();
   }
 
   /**

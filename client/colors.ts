@@ -69,22 +69,47 @@ export const TILE_COLORS: Record<string, string> = {
   // --- base terrain colours (used for all non-mountain elevations, and ocean) ---
   'ocean':     '#1a5276',
   'grassland': '#6b9b37',
-  'plains':    '#a8c686',
+  'plains':    '#c8a96e', // pale brown — arid, open land
   'desert':    '#d4a843',
   'tundra':    '#b8c9d4',
 
-  // --- forested variants ---
+  // --- mountain-adjacent hills: dark grey rocky foothills ---
+  'plains:hills': '#6b6b6b',
+
+  // --- forested variants (grassland only — plains never forested) ---
   'grassland:flat:forested':    '#3a7a1a',
-  'plains:flat:forested':       '#5a8a3a',
   'grassland:rolling:forested': '#3a6a1a',
-  'plains:rolling:forested':    '#4a7a2a',
   'grassland:hills:forested':   '#3a6a1a',
-  'plains:hills:forested':      '#4a7a2a',
 };
+
+/**
+ * Elevation brightness multipliers applied on top of the base terrain colour.
+ * Mountain is already white so it gets no tint.
+ * Ocean and tundra are excluded — their colour carries meaning on its own.
+ */
+const ELEVATION_TINT: Record<string, number> = {
+  flat:     1.00,
+  rolling:  1.10,
+  hills:    1.22,
+  mountain: 1.00, // already white
+};
+
+/**
+ * Brighten a hex colour by a multiplier (clamped to #ffffff).
+ * Only applied when multiplier > 1.
+ */
+function brightenHex(hex: string, factor: number): string {
+  if (factor === 1) return hex;
+  const [r, g, b] = hexToRGB(hex);
+  const clamp = (v: number) => Math.min(255, Math.round(v * factor * 255));
+  const toHex = (v: number) => v.toString(16).padStart(2, '0');
+  return `#${toHex(clamp(r))}${toHex(clamp(g))}${toHex(clamp(b))}`;
+}
 
 /**
  * Return the display color for a tile.
  * Falls back through: full identity → terrain:elev → elevType → terrain → default.
+ * Then applies an elevation brightness tint (rolling +10%, hills +22%).
  *
  * Ocean and tundra always use their terrain color — elevation does not override them.
  */
@@ -102,9 +127,11 @@ export function tileColor(tile: Pick<TileData, 'terrain' | 'elevType' | 'f'>): s
 
   if (TILE_COLORS[tile.elevType]) return TILE_COLORS[tile.elevType];
 
-  if (TILE_COLORS[tile.terrain]) return TILE_COLORS[tile.terrain];
+  const base = TILE_COLORS[tile.terrain] ?? '#555555';
 
-  return '#555555';
+  // Apply elevation brightness tint for non-mountain land tiles
+  const tintFactor = ELEVATION_TINT[tile.elevType] ?? 1;
+  return brightenHex(base, tintFactor);
 }
 
 export function tileColorRGB(tile: Pick<TileData, 'terrain' | 'elevType' | 'f'>): [number, number, number] {

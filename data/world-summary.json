@@ -31,14 +31,14 @@
       "label": "C04",
       "tileIndex": 1767,
       "neighbourCount": 6,
-      "terrain": "grassland"
+      "terrain": "plains"
     },
     {
       "id": "city_4",
       "label": "C05",
       "tileIndex": 2329,
       "neighbourCount": 7,
-      "terrain": "grassland"
+      "terrain": "desert"
     },
     {
       "id": "city_5",
@@ -52,14 +52,14 @@
       "label": "C07",
       "tileIndex": 1904,
       "neighbourCount": 6,
-      "terrain": "grassland"
+      "terrain": "plains"
     },
     {
       "id": "city_7",
       "label": "C08",
       "tileIndex": 2418,
       "neighbourCount": 6,
-      "terrain": "grassland"
+      "terrain": "desert"
     },
     {
       "id": "city_8",
@@ -91,10 +91,10 @@
     }
   ],
   "terrainDistribution": {
-    "grassland": 3461,
-    "plains": 1216,
+    "grassland": 3146,
+    "plains": 1540,
     "ocean": 551,
-    "desert": 313,
-    "tundra": 221
+    "desert": 310,
+    "tundra": 215
   }
 }

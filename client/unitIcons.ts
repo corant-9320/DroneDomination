@@ -43,20 +43,11 @@ export function drawUnitIcon(
   color: string,
   _facingAngle?: number,
 ): void {
-  const spriteSize = size * 4.235;  // 20% larger than original 3.5
-  const discRadius = size * 1.323;  // 10% smaller than original (3.5 * 0.42)
+  const spriteSize = size * 5.082;  // 20% larger than previous (4.235 * 1.2)
   const sprite = getUnitSprite(unit, color);
 
   ctx.save();
   ctx.translate(sx, sy);
-
-  // Soft faction-colored glow behind the unit for readability at all zoom levels
-  ctx.globalAlpha = 0.35;
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(0, 0, discRadius, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalAlpha = 1.0;
 
   if (sprite) {
     // The 3D model is pre-rendered at the correct facing direction,

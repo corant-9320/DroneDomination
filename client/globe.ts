@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { WorldData, TileData } from './worldData.js';
 import { tileColorRGB, factionColorRGB } from './colors.js';
+import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
 
 export class GlobeView {
@@ -23,6 +24,8 @@ export class GlobeView {
   private cityMarkers: THREE.Points;
   private world: WorldData;
   private canvas: HTMLCanvasElement;
+  private overlayCanvas: HTMLCanvasElement;
+  private overlayCtx: CanvasRenderingContext2D;
   private onTileSelect: (tileIndex: number) => void;
   private onViewCentreChange: ((tileIndex: number) => void) | null = null;
   private tileIdByFace: Uint16Array; // maps triangle index -> tile index
@@ -55,6 +58,13 @@ export class GlobeView {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(rect.width, rect.height);
+
+    // Overlay canvas — 2D canvas on top of the WebGL canvas for unit count discs
+    this.overlayCanvas = document.createElement('canvas');
+    this.overlayCanvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;';
+    canvas.parentElement!.style.position = 'relative';
+    canvas.parentElement!.appendChild(this.overlayCanvas);
+    this.overlayCtx = this.overlayCanvas.getContext('2d')!;
 
     // Controls
     this.controls = new OrbitControls(this.camera, canvas);
@@ -383,6 +393,8 @@ export class GlobeView {
     this.camera.aspect = rect.width / rect.height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(rect.width, rect.height);
+    this.overlayCanvas.width = rect.width * window.devicePixelRatio;
+    this.overlayCanvas.height = rect.height * window.devicePixelRatio;
   }
 
   /** Pan the camera so the given tile faces the viewer (smooth slerp). */
@@ -440,10 +452,102 @@ export class GlobeView {
     }
   }
 
+  /**
+   * Draw faction-coloured discs with unit counts on each occupied hex.
+   * Runs every frame on the 2D overlay canvas so positions stay in sync
+   * with camera movement.
+   */
+  private drawUnitDiscs(): void {
+    const rect = this.canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = rect.width;
+    const h = rect.height;
+
+    // Resize overlay if needed
+    if (this.overlayCanvas.width !== Math.round(w * dpr) || this.overlayCanvas.height !== Math.round(h * dpr)) {
+      this.overlayCanvas.width = Math.round(w * dpr);
+      this.overlayCanvas.height = Math.round(h * dpr);
+    }
+
+    const ctx = this.overlayCtx;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const units = this.world.units;
+    if (!units || units.length === 0) return;
+
+    // Count units per tile, grouped by dominant faction (most units)
+    const tileUnits = new Map<number, { counts: Map<string, number>; total: number }>();
+    for (const unit of units) {
+      let entry = tileUnits.get(unit.tileIndex);
+      if (!entry) {
+        entry = { counts: new Map(), total: 0 };
+        tileUnits.set(unit.tileIndex, entry);
+      }
+      entry.total++;
+      entry.counts.set(unit.ownerId, (entry.counts.get(unit.ownerId) ?? 0) + 1);
+    }
+
+    // Project each occupied tile's position to screen space
+    const vec = new THREE.Vector3();
+    for (const [tileIndex, { counts, total }] of tileUnits) {
+      const tile = this.world.tiles[tileIndex];
+      if (!tile) continue;
+
+      // Tile position is on the unit sphere — push slightly above surface
+      const push = 1.04;
+      vec.set(tile.pos[0] * push, tile.pos[1] * push, tile.pos[2] * push);
+      vec.project(this.camera);
+
+      // Discard tiles on the far hemisphere (dot product of tile normal vs camera direction)
+      const camDir = this.camera.position.clone().normalize();
+      const tileNormal = new THREE.Vector3(tile.pos[0], tile.pos[1], tile.pos[2]).normalize();
+      if (tileNormal.dot(camDir) < 0.1) continue; // facing away or on the limb
+
+      const sx = (vec.x * 0.5 + 0.5) * w;
+      const sy = (-vec.y * 0.5 + 0.5) * h;
+      if (sx < -20 || sx > w + 20 || sy < -20 || sy > h + 20) continue;
+
+      // Pick the faction with the most units on this tile
+      let dominantOwner = '';
+      let maxCount = 0;
+      for (const [owner, count] of counts) {
+        if (count > maxCount) { maxCount = count; dominantOwner = owner; }
+      }
+      const color = factionColor(this.world, dominantOwner);
+
+      // Disc radius scales with camera distance (closer = bigger)
+      const dist = this.camera.position.length();
+      const radius = Math.max(5, Math.min(14, 28 / dist));
+
+      // Disc fill
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.85;
+      ctx.fill();
+
+      // Disc border
+      ctx.globalAlpha = 1.0;
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Unit count label
+      const fontSize = Math.max(8, radius * 0.9);
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(String(total), sx, sy);
+
+      ctx.restore();
+    }
+  }
+
   private animate() {
     requestAnimationFrame(() => this.animate());
-
-    // Smooth slerp pan when following the local map
     if (this.panTarget && this.panStart && this.panProgress < 1) {
       this.panProgress = Math.min(1, this.panProgress + 0.15);
       // Slerp on unit sphere, then scale to correct distance
@@ -463,5 +567,6 @@ export class GlobeView {
 
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
+    this.drawUnitDiscs();
   }
 }

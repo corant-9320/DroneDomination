@@ -237,16 +237,50 @@ function createChamferedWedgeHull(
 // Chassis builders
 // ---------------------------------------------------------------------------
 
-function buildWheeledChassis(group: THREE.Group, movement: number, bom: BoltOnMaterials): TurretInfo {
+function buildWheeledChassis(group: THREE.Group, movement: number, bom: BoltOnMaterials, factionHex?: string): TurretInfo {
   const m = movement / 5;
   const hullGeo = createChamferedWedgeHull(1.4, 0.5, 2.0, 0.55, 0.07, 0.35);
   const hull = new THREE.Mesh(hullGeo, matHull);
   hull.position.y = 0.35;
   group.add(hull);
 
-  const turretBase = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.675, 0.5, 8), matHull);
+  // Turret uses a darkened faction colour (no texture) so it reads as a distinct armoured mass
+  const turretColor = factionHex
+    ? hexToColor(factionHex).multiplyScalar(0.55)
+    : new THREE.Color(0x9aba9a).multiplyScalar(0.55);
+  const turretMat = new THREE.MeshStandardMaterial({ color: turretColor, roughness: 0.55, metalness: 0.4 });
+  const turretBase = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.675, 0.5, 8), turretMat);
   turretBase.position.set(0, 0.75, -0.1);
   group.add(turretBase);
+
+  // --- Escape hatch on turret top ---
+  // Recessed ring (the hatch surround / coaming)
+  const hatchRingOuter = 0.28;
+  const hatchRingInner = 0.22;
+  const hatchRingH = 0.04;
+  const hatchRingGeo = new THREE.CylinderGeometry(hatchRingOuter, hatchRingOuter, hatchRingH, 16);
+  const hatchRing = new THREE.Mesh(hatchRingGeo, matDark);
+  hatchRing.position.set(0, 1.02, -0.1);
+  group.add(hatchRing);
+
+  // Hatch cover — slightly smaller disc sitting inside the coaming, slightly raised
+  const hatchCoverGeo = new THREE.CylinderGeometry(hatchRingInner, hatchRingInner, 0.025, 16);
+  const hatchCoverMat = new THREE.MeshStandardMaterial({ color: 0x6a7a6a, roughness: 0.65, metalness: 0.35 });
+  const hatchCover = new THREE.Mesh(hatchCoverGeo, hatchCoverMat);
+  hatchCover.position.set(0, 1.055, -0.1);
+  group.add(hatchCover);
+
+  // Hinge — small box at the rear edge of the hatch
+  const hingeGeo = new THREE.BoxGeometry(0.1, 0.03, 0.025);
+  const hinge = new THREE.Mesh(hingeGeo, matMetal);
+  hinge.position.set(0, 1.07, -0.1 + hatchRingInner - 0.01);
+  group.add(hinge);
+
+  // Latch handle — thin bar across the front half of the hatch
+  const handleGeo = new THREE.BoxGeometry(0.12, 0.025, 0.025);
+  const handle = new THREE.Mesh(handleGeo, matMetal);
+  handle.position.set(0, 1.07, -0.1 - hatchRingInner * 0.5);
+  group.add(handle);
 
   // --- Track belt (loops around wheels with rounded ends) ---
   const trackH = 0.2 + m * 0.2;    // total height of the track loop
@@ -327,15 +361,18 @@ function buildWheeledChassis(group: THREE.Group, movement: number, bom: BoltOnMa
   return { turretY: 0.8, turretZ: -0.1, turretFrontZ: -0.75 };
 }
 
-function buildLimbedChassis(group: THREE.Group, movement: number, bom: BoltOnMaterials): TurretInfo {
+function buildLimbedChassis(group: THREE.Group, movement: number, bom: BoltOnMaterials, factionHex?: string): TurretInfo {
   const m = movement / 5;
   const bodyGeo = createChamferedWedgeHull(1.0, 0.6, 1.2, 0.5, 0.06, 0.3);
   const body = new THREE.Mesh(bodyGeo, matHull);
   body.position.y = 0.7;
   group.add(body);
 
+  // Dome (turret) uses faction colour (no texture) so it stands out as a faction identifier
+  const domeColor = factionHex ? hexToColor(factionHex) : new THREE.Color(0x9aba9a);
+  const domeMat = new THREE.MeshStandardMaterial({ color: domeColor, roughness: 0.5, metalness: 0.35 });
   const dome = new THREE.Mesh(
-    new THREE.SphereGeometry(0.45, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2), matHull
+    new THREE.SphereGeometry(0.45, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2), domeMat
   );
   dome.position.set(0, 0.95, -0.05);
   group.add(dome);
@@ -831,8 +868,8 @@ export function buildUnitModel(attrs: UnitModelAttrs, factionHex?: string): THRE
 
   let turretInfo: TurretInfo;
   switch (attrs.chassis) {
-    case 'wheeled': turretInfo = buildWheeledChassis(group, attrs.movement, bom); break;
-    case 'limbed': turretInfo = buildLimbedChassis(group, attrs.movement, bom); break;
+    case 'wheeled': turretInfo = buildWheeledChassis(group, attrs.movement, bom, factionHex); break;
+    case 'limbed': turretInfo = buildLimbedChassis(group, attrs.movement, bom, factionHex); break;
     case 'flight': turretInfo = buildFlightChassis(group, attrs.movement, bom); break;
   }
 

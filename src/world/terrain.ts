@@ -4,7 +4,7 @@
  *
  * Three independent dimensions per tile:
  *   TerrainType  — grassland | plains | tundra | desert | ocean
- *   ElevationType — flat | rolling | hills | mountain  (always set, including ocean tiles)
+ *   ElevationType — flat | rolling | hills | mountain  (ocean tiles are always flat)
  *   forested      — boolean                            (false for ocean/tundra/desert)
  *
  * Target proportions (out of ~5762 tiles):
@@ -144,9 +144,13 @@ function computePoleDistances(
 // ---------------------------------------------------------------------------
 
 /**
- * Grow mountain ranges as elongated chains.
- * Each range starts at a seed tile and extends in a dominant direction,
- * with occasional width (1–3 hexes wide) and length 3–20 hexes.
+ * Grow mountain ranges as jagged, irregular chains with branches.
+ *
+ * Each range uses a biased random walk: a weak directional bias keeps the
+ * range from looping back on itself, but high random jitter and occasional
+ * sharp turns produce the irregular, craggy look of real mountain chains.
+ * Branches sprout from the spine at random points, adding offshoots.
+ *
  * Returns a Set of tile indices that are mountain.
  */
 function growMountainRanges(
@@ -170,6 +174,76 @@ function growMountainRanges(
     [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
   }
 
+  /**
+   * Walk a single chain of `length` tiles starting from `start`.
+   * `biasDirIdx` is the preferred neighbour index (−1 = no bias).
+   * Returns the tiles added.
+   */
+  function walkChain(start: number, length: number, biasDirIdx: number): number[] {
+    const chain: number[] = [start];
+    let current = start;
+    let bias = biasDirIdx; // preferred direction index into neighbours array
+
+    for (let step = 1; step < length; step++) {
+      const nbrs = neighbours[current];
+      if (nbrs.length === 0) break;
+
+      // Build weighted candidate list.
+      // Each neighbour gets a weight:
+      //   - base weight 1.0 for all valid neighbours
+      //   - +1.5 bonus if it matches the current bias direction (weak pull)
+      //   - +0.5 bonus for directions adjacent to bias (allows gentle curves)
+      //   - 0 weight if too close to pole or already mountain (avoid merging)
+      const weights: number[] = [];
+      let totalWeight = 0;
+
+      for (let d = 0; d < nbrs.length; d++) {
+        const nb = nbrs[d];
+        if (poleDistances[nb] <= 8) { weights.push(0); continue; }
+        if (mountains.has(nb))       { weights.push(0); continue; }
+
+        let w = 1.0;
+        if (bias >= 0) {
+          const diff = Math.abs(d - bias);
+          const wrap = Math.min(diff, nbrs.length - diff); // handle circular neighbour list
+          if (wrap === 0)      w += 1.5; // same direction
+          else if (wrap === 1) w += 0.5; // one step off — gentle curve
+          // wrap >= 2: no bonus — sharp turn, but still possible
+        }
+        weights.push(w);
+        totalWeight += w;
+      }
+
+      if (totalWeight === 0) break;
+
+      // Weighted random pick
+      let pick = rng() * totalWeight;
+      let chosen = -1;
+      for (let d = 0; d < weights.length; d++) {
+        pick -= weights[d];
+        if (pick <= 0) { chosen = d; break; }
+      }
+      if (chosen < 0) chosen = weights.findIndex((w) => w > 0);
+      if (chosen < 0) break;
+
+      // Occasionally inject a sharp direction change (jagged kink)
+      // ~20% chance per step to reset bias to a random valid direction
+      if (rng() < 0.20) {
+        const validDirs = weights.map((w, d) => w > 0 ? d : -1).filter((d) => d >= 0);
+        if (validDirs.length > 0) {
+          bias = validDirs[Math.floor(rng() * validDirs.length)];
+        }
+      } else {
+        bias = chosen; // continue in the direction we just moved
+      }
+
+      current = nbrs[chosen];
+      chain.push(current);
+    }
+
+    return chain;
+  }
+
   let seedIdx = 0;
 
   while (mountains.size < targetCount && seedIdx < candidates.length) {
@@ -177,56 +251,32 @@ function growMountainRanges(
     if (mountains.has(seed)) continue;
     if (poleDistances[seed] <= 8) continue;
 
-    // Range parameters
-    const rangeLength = 3 + Math.floor(rng() * 18); // 3–20
-    const rangeWidth  = 1 + Math.floor(rng() * 3);  // 1–3
+    // Main spine: 4–22 tiles, random initial direction
+    const spineLength = 4 + Math.floor(rng() * 19);
+    const initBias = Math.floor(rng() * (neighbours[seed]?.length || 6));
+    const spine = walkChain(seed, spineLength, initBias);
 
-    // Build the spine: walk in a consistent direction by preferring
-    // neighbours that continue the current heading.
-    const spine: number[] = [seed];
-    let current = seed;
-    let prevDir = -1; // index into current tile's neighbour list
-
-    for (let step = 1; step < rangeLength; step++) {
-      const nbrs = neighbours[current];
-      if (nbrs.length === 0) break;
-
-      // Score each neighbour: prefer continuing in same direction,
-      // avoid poles, avoid already-mountain (keeps ranges distinct)
-      let best = -1;
-      let bestScore = -Infinity;
-      for (let d = 0; d < nbrs.length; d++) {
-        const nb = nbrs[d];
-        if (poleDistances[nb] <= 8) continue;
-        // Directional continuity: same or adjacent direction index scores higher
-        const dirScore = prevDir < 0 ? 0 : (d === prevDir ? 2 : (Math.abs(d - prevDir) <= 1 ? 1 : 0));
-        // Small random jitter so ranges aren't perfectly straight
-        const score = dirScore + rng() * 0.5;
-        if (score > bestScore) {
-          bestScore = score;
-          best = d;
-        }
-      }
-      if (best < 0) break;
-
-      prevDir = best;
-      current = nbrs[best];
-      spine.push(current);
-    }
-
-    // Add spine tiles as mountains
     for (const t of spine) mountains.add(t);
 
-    // Widen the range: for each spine tile, add 0 to (rangeWidth-1) side tiles
-    if (rangeWidth > 1) {
-      for (const t of spine) {
+    // Branches: 0–3 offshoots sprouting from random spine points
+    const branchCount = Math.floor(rng() * 4); // 0–3
+    for (let b = 0; b < branchCount; b++) {
+      const branchOrigin = spine[Math.floor(rng() * spine.length)];
+      const branchLength = 2 + Math.floor(rng() * 7); // 2–8 tiles
+      // Pick a bias direction perpendicular-ish to the spine
+      const nbrs = neighbours[branchOrigin];
+      const perpBias = nbrs ? Math.floor(rng() * nbrs.length) : -1;
+      const branch = walkChain(branchOrigin, branchLength, perpBias);
+      for (const t of branch) mountains.add(t);
+    }
+
+    // Widen: randomly thicken ~40% of spine tiles by one neighbour
+    for (const t of spine) {
+      if (rng() < 0.40) {
         const nbrs = neighbours[t];
-        // Pick side neighbours perpendicular to the spine direction
-        // (just pick random non-spine neighbours for simplicity)
-        const sideNbrs = nbrs.filter((nb) => !spine.includes(nb) && poleDistances[nb] > 8);
-        const sidesNeeded = rangeWidth - 1;
-        for (let s = 0; s < sidesNeeded && s < sideNbrs.length; s++) {
-          mountains.add(sideNbrs[s]);
+        const valid = nbrs.filter((nb) => !mountains.has(nb) && poleDistances[nb] > 8);
+        if (valid.length > 0) {
+          mountains.add(valid[Math.floor(rng() * valid.length)]);
         }
       }
     }
@@ -465,9 +515,13 @@ export function generateTerrain(
     }
 
     // --- TerrainType ---
+    const isMountainHill = hillsSet.has(i) && !mountainSet.has(i);
     const terrainType = classifyTerrain(
-      isOcean, elevationType, poleDist, mountainSet.has(i), desertSet.has(i), rng
+      isOcean, elevationType, poleDist, mountainSet.has(i), desertSet.has(i), isMountainHill, rng
     );
+
+    // Ocean tiles are always flat — no elevation geometry
+    if (terrainType === 'ocean') elevationType = 'flat';
 
     // --- Forested ---
     const forestNoise = gradientNoise3D(pos, 5, gradients, permutation);
@@ -487,6 +541,7 @@ function classifyTerrain(
   poleDist: number,
   isMountain: boolean,
   isDesert: boolean,
+  isMountainHill: boolean,
   rng: () => number,
 ): TerrainType {
   // --- Hard tundra cap: pentagon + 2 hex rings ---
@@ -510,6 +565,9 @@ function classifyTerrain(
   // --- Mountain tiles → plains (high altitude, sparse vegetation) ---
   if (isMountain) return 'plains';
 
+  // --- Hills adjacent to mountains → plains (rocky foothills) ---
+  if (isMountainHill) return 'plains';
+
   // --- Grassland for flat/rolling/hills land ---
   if (elevationType === 'flat' || elevationType === 'rolling') {
     return poleDist > 12 ? 'grassland' : 'plains';
@@ -532,11 +590,12 @@ function classifyForested(
   elevationType: ElevationType,
   forestNoise: number,
 ): boolean {
-  if (terrain === 'ocean')   return false;
-  if (terrain === 'tundra')  return false;
-  if (terrain === 'desert')  return false;
+  if (terrain === 'ocean')    return false;
+  if (terrain === 'tundra')   return false;
+  if (terrain === 'desert')   return false;
+  if (terrain === 'plains')   return false;
   if (elevationType === 'mountain') return false;
 
-  // Eligible: grassland/plains at flat/rolling/hills elevation
+  // Eligible: grassland at flat/rolling/hills elevation only
   return forestNoise > 0.15; // ~42% forested coverage
 }
