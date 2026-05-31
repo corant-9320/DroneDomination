@@ -108,6 +108,7 @@ export interface UnitModelAttrs {
   attack: number;
   rangeAttack: number;
   splashAttack: number;
+  antiAir: number;
   armour: number;
   defence: number;
   repair: number;
@@ -253,33 +254,33 @@ function buildWheeledChassis(group: THREE.Group, movement: number, bom: BoltOnMa
   turretBase.position.set(0, 0.75, -0.1);
   group.add(turretBase);
 
-  // --- Escape hatch on turret top ---
+  // --- Escape hatch on turret top (positioned toward the rear of the turret) ---
   // Recessed ring (the hatch surround / coaming)
   const hatchRingOuter = 0.28;
   const hatchRingInner = 0.22;
   const hatchRingH = 0.04;
   const hatchRingGeo = new THREE.CylinderGeometry(hatchRingOuter, hatchRingOuter, hatchRingH, 16);
   const hatchRing = new THREE.Mesh(hatchRingGeo, matDark);
-  hatchRing.position.set(0, 1.02, -0.1);
+  hatchRing.position.set(0, 1.02, 0.16);
   group.add(hatchRing);
 
   // Hatch cover — slightly smaller disc sitting inside the coaming, slightly raised
   const hatchCoverGeo = new THREE.CylinderGeometry(hatchRingInner, hatchRingInner, 0.025, 16);
   const hatchCoverMat = new THREE.MeshStandardMaterial({ color: 0x6a7a6a, roughness: 0.65, metalness: 0.35 });
   const hatchCover = new THREE.Mesh(hatchCoverGeo, hatchCoverMat);
-  hatchCover.position.set(0, 1.055, -0.1);
+  hatchCover.position.set(0, 1.055, 0.16);
   group.add(hatchCover);
 
   // Hinge — small box at the rear edge of the hatch
   const hingeGeo = new THREE.BoxGeometry(0.1, 0.03, 0.025);
   const hinge = new THREE.Mesh(hingeGeo, matMetal);
-  hinge.position.set(0, 1.07, -0.1 + hatchRingInner - 0.01);
+  hinge.position.set(0, 1.07, 0.16 + hatchRingInner - 0.01);
   group.add(hinge);
 
   // Latch handle — thin bar across the front half of the hatch
   const handleGeo = new THREE.BoxGeometry(0.12, 0.025, 0.025);
   const handle = new THREE.Mesh(handleGeo, matMetal);
-  handle.position.set(0, 1.07, -0.1 - hatchRingInner * 0.5);
+  handle.position.set(0, 1.07, 0.16 - hatchRingInner * 0.5);
   group.add(handle);
 
   // --- Track belt (loops around wheels with rounded ends) ---
@@ -493,7 +494,7 @@ function buildFlightChassis(group: THREE.Group, movement: number, bom: BoltOnMat
   sensor.position.set(0, 0.62, -0.05);
   group.add(sensor);
 
-  const bladeLen = 0.4 + m * 0.5;
+  const bladeLen = 0.4 + m * 0.68;
   const bladeThick = 0.02 + m * 0.02;   // rotor thickness scales with movement
   const bladeWidth = 0.06 + m * 0.04;   // rotor width scales with movement
   const motorSize = 0.04 + m * 0.03;
@@ -632,32 +633,76 @@ function addArmour(group: THREE.Group, level: number, chassisType: ChassisType, 
   const spikeColor = factionHex ? hexToColor(factionHex) : new THREE.Color(0x7a8a6a);
   const spikeMat = new THREE.MeshStandardMaterial({ color: spikeColor, roughness: 0.5, metalness: 0.45 });
 
-  // Hull dimensions per chassis (matching the actual geometry sizes)
-  const width = chassisType === 'limbed' ? 1.0 : chassisType === 'flight' ? 0.6 : 1.4;
-  const depth = chassisType === 'limbed' ? 1.1 : chassisType === 'flight' ? 0.7 : 1.9;
+  // --- Flight chassis: vertical spikes descending from the hull underside ---
+  if (chassisType === 'flight') {
+    const t = level / 5;
+    // Payload hull bottom sits at Y ≈ 0.55 (payload at 0.75, hull height 0.4)
+    const hullBottomY = 0.55;
+    const spikeHeight = 0.2 + t * 0.35; // spike length pointing downward
+    const spikeRadius = 0.04 + t * 0.05; // base radius of each spike cone
+
+    // Distribute spikes under the payload hull area (width ~0.6, depth ~0.7)
+    const hullW = 0.6;
+    const hullD = 0.7;
+
+    // Spike positions depend on level — more spikes at higher levels
+    // Level 1: 2 spikes, Level 2: 3, Level 3: 4, Level 4: 5, Level 5: 7
+    const spikeCount = level <= 2 ? level + 1 : level <= 4 ? level + 1 : 7;
+
+    // Generate spike positions evenly distributed under the hull
+    const positions: { x: number; z: number }[] = [];
+    if (spikeCount <= 3) {
+      // Line arrangement along Z axis
+      const spacing = hullD / (spikeCount + 1);
+      for (let i = 1; i <= spikeCount; i++) {
+        positions.push({ x: 0, z: -hullD / 2 + i * spacing });
+      }
+    } else {
+      // Two rows (left/right) for more spikes
+      const rows = 2;
+      const perRow = Math.ceil(spikeCount / rows);
+      const xOff = hullW * 0.25;
+      for (let r = 0; r < rows; r++) {
+        const rowX = r === 0 ? -xOff : xOff;
+        const count = r === 0 ? Math.ceil(spikeCount / 2) : Math.floor(spikeCount / 2);
+        const spacing = hullD / (count + 1);
+        for (let i = 1; i <= count; i++) {
+          positions.push({ x: rowX, z: -hullD / 2 + i * spacing });
+        }
+      }
+    }
+
+    for (const pos of positions) {
+      const spikeGeo = new THREE.ConeGeometry(spikeRadius, spikeHeight, 6);
+      const spike = new THREE.Mesh(spikeGeo, spikeMat);
+
+      // Cone points downward (tip at bottom): rotate 180° around X so tip faces -Y
+      spike.rotation.x = Math.PI;
+      spike.position.set(pos.x, hullBottomY - spikeHeight / 2, pos.z);
+      group.add(spike);
+    }
+
+    return; // flight chassis uses only vertical descending spikes
+  }
+
+  // --- Ground chassis (wheeled / limbed): horizontal outward-pointing spikes ---
+  const width = chassisType === 'limbed' ? 1.0 : 1.4;
+  const depth = chassisType === 'limbed' ? 1.1 : 1.9;
   const t = level / 5;
 
   // Spike dimensions scale with armour level (doubled for visibility)
-  let spikeHeight = 0.16 + t * 0.44;   // how tall spikes protrude outward
+  const spikeHeight = 0.16 + t * 0.44;   // how tall spikes protrude outward
   const spikeRadius = 0.06 + t * 0.08;   // base radius of each spike cone
   const spikeCount = Math.max(3, level + 2); // more spikes at higher levels
-
-  // For flight chassis, cap spike height so vertical spikes can't reach rotor plane (Y=0.87)
-  if (chassisType === 'flight') {
-    const maxSpikeH = 0.87 - 0.62 - spikeRadius - 0.02; // leave 0.02 clearance
-    spikeHeight = Math.min(spikeHeight, maxSpikeH);
-  }
 
   // Y position: flush against the hull, must not overlap locomotion components.
   // Wheeled: hull top ~0.55, immediately above tracks
   // Limbed: body bottom ~0.45, immediately above leg hip joints (0.42)
-  // Flight: lowered to 0.62 so spikes (top = spikeY + spikeRadius ≤ 0.76)
-  //         stay clear of rotor blades at Y=0.87 even at max armour/movement.
   let spikeY: number;
   switch (chassisType) {
     case 'wheeled': spikeY = 0.55; break;
     case 'limbed': spikeY = 0.48 + spikeRadius * 2; break;
-    case 'flight': spikeY = 0.62; break;
+    default: spikeY = 0.55; break;
   }
 
   const spacing = depth / (spikeCount + 1);
@@ -670,10 +715,6 @@ function addArmour(group: THREE.Group, level: number, chassisType: ChassisType, 
       const spikeZ = -depth / 2 + i * spacing;
 
       // For wheeled chassis, follow the bonnet slope downward at the front.
-      // The hull bonnet drops 35% of hull height (0.5*0.35=0.175) over the front 55% of length.
-      // Hull length = 2.0 centred at Z=0 → front at Z=-1.0, rear at Z=+1.0.
-      // Slope zone: Z < +0.1 (front 55% of 2.0 = 1.1, so threshold = 1.0 - 1.1 = -0.1… 
-      // actually measured from the rear: rear is +depth/2, front zone starts at rear - 45% of depth).
       let spikePosY = spikeY;
       if (chassisType === 'wheeled') {
         const halfDepth = depth / 2;
@@ -846,6 +887,142 @@ function addRepair(group: THREE.Group, level: number, chassisType: ChassisType, 
   group.add(crossV);
 }
 
+/**
+ * Anti-Air missile launcher — a tubular launcher housing tilted at 75° from
+ * horizontal, with a missile visible inside. Centred on the chassis.
+ * The missile size scales with the 1–5 attribute level, starting chunky at level 1.
+ *
+ * For wheeled chassis: mounted on top of the turret, immediately behind the splash weapon.
+ * For other chassis: mounted on top of the body centre (same layout as drone which works well).
+ */
+function addAntiAir(group: THREE.Group, level: number, turretY: number, turretFrontZ: number, chassisType: ChassisType, bom: BoltOnMaterials): void {
+  if (level === 0) return;
+  const t = level / 5;
+
+  // Position depends on chassis:
+  // Wheeled: on top of turret, behind splash (splash is at turretFrontZ+0.05, so AA goes further back)
+  // Limbed/Flight: on top of body centre (same layout as drone)
+  let baseY: number;
+  let baseZ: number;
+
+  switch (chassisType) {
+    case 'wheeled':
+      baseY = 1.02; // top of turret (turret cylinder top = 0.75 + 0.25 = 1.0, plus clearance)
+      baseZ = turretFrontZ + 0.45; // behind the splash stand (splash stand at turretFrontZ+0.05)
+      break;
+    case 'limbed':
+      baseY = 1.05;
+      baseZ = 0;
+      break;
+    case 'flight':
+      baseY = 0.95;
+      baseZ = 0;
+      break;
+  }
+
+  // Tilt angle: 75° from horizontal = 15° from vertical
+  const tiltAngle = (75 * Math.PI) / 180; // radians from horizontal
+
+  // Missile dimensions — start bigger at level 1, scale up to level 5
+  const missileRadius = 0.06 + t * 0.03;   // 0.06 at lvl1, 0.09 at lvl5
+  const missileHeight = 0.45 + t * 0.45;   // 0.45 at lvl1, 0.9 at lvl5
+  const noseConeHeight = missileHeight * 0.22;
+
+  // Launcher tube dimensions — slightly larger than the missile
+  const launcherRadius = missileRadius + 0.025;
+  const launcherLength = missileHeight * 0.7;
+
+  // Materials
+  const missileMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.4, metalness: 0.3 });
+  const noseMat = new THREE.MeshStandardMaterial({ color: 0xdd3333, roughness: 0.35, metalness: 0.4 });
+  const finMat = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.5, metalness: 0.5 });
+  const launcherMat = new THREE.MeshStandardMaterial({ color: 0x4a5a4a, roughness: 0.6, metalness: 0.4 });
+
+  // Create a sub-group for the tilted assembly so we can rotate it as a unit
+  const launcherGroup = new THREE.Group();
+  launcherGroup.position.set(0, baseY, baseZ);
+
+  // --- Launcher base / pedestal (stays upright) ---
+  const pedestalH = 0.1 + t * 0.04;
+  const pedestalR = launcherRadius * 1.3;
+  const pedestal = new THREE.Mesh(
+    new THREE.CylinderGeometry(pedestalR, pedestalR * 1.2, pedestalH, 10), bom.metal
+  );
+  pedestal.position.set(0, pedestalH / 2, 0);
+  launcherGroup.add(pedestal);
+
+  // --- Pivot joint (small sphere at top of pedestal where the tilt begins) ---
+  const pivotY = pedestalH;
+  const pivotR = launcherRadius * 0.7;
+  const pivot = new THREE.Mesh(
+    new THREE.SphereGeometry(pivotR, 8, 6), bom.metal
+  );
+  pivot.position.set(0, pivotY, 0);
+  launcherGroup.add(pivot);
+
+  // --- Tilted sub-group (launcher tube + missile) rotated 75° from horizontal ---
+  const tiltedGroup = new THREE.Group();
+  tiltedGroup.position.set(0, pivotY, 0);
+  tiltedGroup.rotation.x = -(Math.PI / 2 - tiltAngle); // lean forward 15° from vertical
+
+  // --- Launcher tube (open cylinder) ---
+  const tube = new THREE.Mesh(
+    new THREE.CylinderGeometry(launcherRadius, launcherRadius, launcherLength, 12, 1, true), launcherMat
+  );
+  tube.position.set(0, launcherLength / 2, 0);
+  tiltedGroup.add(tube);
+
+  // Launcher tube end caps (rings) for visual definition
+  const capThickness = 0.02;
+  const topCap = new THREE.Mesh(
+    new THREE.TorusGeometry(launcherRadius, capThickness, 6, 12), launcherMat
+  );
+  topCap.rotation.x = Math.PI / 2;
+  topCap.position.set(0, launcherLength, 0);
+  tiltedGroup.add(topCap);
+
+  const bottomCap = new THREE.Mesh(
+    new THREE.TorusGeometry(launcherRadius, capThickness, 6, 12), launcherMat
+  );
+  bottomCap.rotation.x = Math.PI / 2;
+  bottomCap.position.set(0, 0, 0);
+  tiltedGroup.add(bottomCap);
+
+  // --- Missile body (inside/protruding from launcher tube) ---
+  const missileBaseY = launcherLength * 0.15; // starts inside the tube
+  const missileBody = new THREE.Mesh(
+    new THREE.CylinderGeometry(missileRadius, missileRadius * 1.08, missileHeight, 8), missileMat
+  );
+  missileBody.position.set(0, missileBaseY + missileHeight / 2, 0);
+  tiltedGroup.add(missileBody);
+
+  // --- Nose cone (red tip) ---
+  const noseCone = new THREE.Mesh(
+    new THREE.ConeGeometry(missileRadius, noseConeHeight, 8), noseMat
+  );
+  noseCone.position.set(0, missileBaseY + missileHeight + noseConeHeight / 2, 0);
+  tiltedGroup.add(noseCone);
+
+  // --- Fins at the base of the missile ---
+  const finHeight = missileHeight * 0.2;
+  const finWidth = missileRadius * 2.2;
+  const finThick = 0.018;
+
+  for (let i = 0; i < 4; i++) {
+    const angle = (i / 4) * Math.PI * 2;
+    const finGeo = new THREE.BoxGeometry(finThick, finHeight, finWidth);
+    const fin = new THREE.Mesh(finGeo, finMat);
+    const fx = Math.cos(angle) * (missileRadius + finWidth * 0.25);
+    const fz = Math.sin(angle) * (missileRadius + finWidth * 0.25);
+    fin.position.set(fx, missileBaseY + finHeight / 2, fz);
+    fin.rotation.y = angle;
+    tiltedGroup.add(fin);
+  }
+
+  launcherGroup.add(tiltedGroup);
+  group.add(launcherGroup);
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -880,6 +1057,7 @@ export function buildUnitModel(attrs: UnitModelAttrs, factionHex?: string): THRE
   addArmour(group, attrs.armour, attrs.chassis, factionHex);
   addDefence(group, attrs.defence, turretY, attrs.chassis, bom);
   addRepair(group, attrs.repair, attrs.chassis, bom);
+  addAntiAir(group, attrs.antiAir, turretY, turretFrontZ, attrs.chassis, bom);
 
   return group;
 }

@@ -81,7 +81,7 @@ const pendingRenders = new Set<string>();
  * Generate a cache key from unit attributes (facing-independent).
  */
 function attrKey(attrs: UnitModelAttrs, factionColor?: string): string {
-  return `${attrs.chassis}:${attrs.movement}:${attrs.attack}:${attrs.rangeAttack}:${attrs.splashAttack}:${attrs.armour}:${attrs.defence}:${attrs.repair}:${factionColor ?? ''}`;
+  return `${attrs.chassis}:${attrs.movement}:${attrs.attack}:${attrs.rangeAttack}:${attrs.splashAttack}:${attrs.antiAir}:${attrs.armour}:${attrs.defence}:${attrs.repair}:${factionColor ?? ''}`;
 }
 
 /**
@@ -106,6 +106,7 @@ export function unitDataToModelAttrs(unit: UnitData): UnitModelAttrs {
     attack: a.attack ?? 0,
     rangeAttack: a.rangeAttack ?? 0,
     splashAttack: a.splashAttack ?? 0,
+    antiAir: a.antiAir ?? 0,
     armour: a.armour ?? 0,
     defence: a.defence ?? 0,
     repair: a.repair ?? 0,

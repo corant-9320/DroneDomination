@@ -26,14 +26,9 @@ interface BundledSave {
 
 const BUNDLED_SAVES: BundledSave[] = [
   {
-    filename: 'combat-test.json',
-    label: 'Combat Test (10v10)',
-    description: '10 player vs 10 enemy units, 3-tile gap',
-  },
-  {
-    filename: 'mass-battle.json',
-    label: 'Mass Battle (100v100)',
-    description: '100 player vs 100 enemy, random attributes, 2-hex gap',
+    filename: 'battle-30v30.json',
+    label: 'Battle (30v30)',
+    description: '30 player vs 30 enemy, random unit types, 2-hex gap',
   },
 ];
 

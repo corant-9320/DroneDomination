@@ -45,6 +45,7 @@ export interface UnitData {
     limbMovement?: number;
     flightMovement?: number;
     repair?: number;
+    antiAir?: number;
   };
   currentHealth: number;
 }

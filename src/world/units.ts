@@ -57,7 +57,7 @@ export interface UnitAttributes {
   attack?: number;
   /** Damage reduction from incoming attacks (0–5). */
   armour?: number;
-  /** Chance to avoid or deflect a hit entirely (0–5). */
+  /** Electronic Warfare (EW) value. Contributes to same-hex allies' DefencePower (0–5). */
   defence?: number;
   /** Base splash damage dealt in adjacent combat (0–5). */
   splashAttack?: number;
@@ -71,6 +71,8 @@ export interface UnitAttributes {
   flightMovement?: number;
   /** Repair capability — points of health restored per action (0–5). */
   repair?: number;
+  /** Anti-air attack power — can only target drones (0–5). */
+  antiAir?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,6 +91,7 @@ export const ATTRIBUTE_RANGES: Record<keyof UnitAttributes, [min: number, max: n
   limbMovement: [0, 5],
   flightMovement: [0, 5],
   repair: [0, 5],
+  antiAir: [0, 5],
 };
 
 /** The attribute keys that count as movement categories. */
@@ -127,10 +130,6 @@ export function validateAttributes(attrs: UnitAttributes): string[] {
     );
   }
 
-  // Drones (flightMovement) cannot have armour.
-  if ((attrs.flightMovement ?? 0) >= 1 && (attrs.armour ?? 0) > 0) {
-    errors.push('Drones (flightMovement) cannot have armour points');
-  }
 
   return errors;
 }
@@ -187,11 +186,12 @@ const ATTRIBUTE_NAMES: Record<string, Record<number, string>> = {
   splashAttack: { 1: 'Popper', 2: 'Blaster', 3: 'Bombardier', 4: 'Demolisher', 5: 'Devastator' },
   rangeAttack: { 1: 'Melee', 2: 'Short', 3: 'Medium', 4: 'Long', 5: 'Distance' },
   repair: { 1: 'Tinkerer', 2: 'Mechanic', 3: 'Engineer', 4: 'Restorer', 5: 'Fabricator' },
+  antiAir: { 1: 'Spotter', 2: 'Tracker', 3: 'Interceptor', 4: 'Skyhunter', 5: 'Annihilator' },
 };
 
 /** Non-movement attribute keys eligible for naming. */
 const NAMING_ATTRIBUTES: (keyof UnitAttributes)[] = [
-  'attack', 'armour', 'defence', 'splashAttack', 'rangeAttack', 'repair',
+  'attack', 'armour', 'defence', 'splashAttack', 'rangeAttack', 'repair', 'antiAir',
 ];
 
 /**
@@ -227,11 +227,12 @@ export function generateUnitName(attrs: UnitAttributes): string {
   const att = attrs.attack ?? 0;
   const rng = attrs.rangeAttack ?? 0;
   const spl = attrs.splashAttack ?? 0;
+  const aa = attrs.antiAir ?? 0;
   const arm = attrs.armour ?? 0;
   const ew = attrs.defence ?? 0;
   const rep = attrs.repair ?? 0;
 
-  return `${parts.join(' ')} (Mov ${mov}, Att ${att}, Rng ${rng}, Spl ${spl}, Arm ${arm}, EW ${ew}, Rep ${rep})`;
+  return `${parts.join(' ')} (Mov ${mov}, Att ${att}, Rng ${rng}, Spl ${spl}, AA ${aa}, Arm ${arm}, EW ${ew}, Rep ${rep})`;
 }
 
 // ---------------------------------------------------------------------------

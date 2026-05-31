@@ -83,10 +83,19 @@ Units have no fixed types — each is defined by its attributes:
 | defence | 0–5 | Hit avoidance/deflection |
 | splashAttack | 0–5 | Adjacent splash damage |
 | rangeAttack | 0–5 | Ranged combat damage |
+| antiAir | 0–5 | Anti-air missile — can only target drones |
 | wheeledMovement | 0–5 | Vehicle traversal speed (Tank) |
 | limbMovement | 0–5 | Legged traversal speed (Spider) |
 | flightMovement | 0–5 | Aerial traversal speed (Drone) |
 | repair | 0–5 | Health restored per action |
+
+### Anti-Air
+
+Units with the Anti-Air attribute carry an upward-pointing missile launcher. Anti-Air damage uses the standard damage formula but can **only** be used against drones (flightMovement units). It deals full, unpenalised damage.
+
+### Drone Vulnerability
+
+Attack and Splash damage suffer a **50% penalty** when targeting drones. This makes conventional weapons less effective against aerial units and incentivises dedicated Anti-Air builds.
 
 Every unit must have at least 1 movement point (wheeled, limb, or flight). Each hex holds up to 5 units in triangular segments (one segment stays free).
 

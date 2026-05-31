@@ -19,6 +19,7 @@ let currentAttrs = {
   attack: 0,
   rangeAttack: 0,
   splashAttack: 0,
+  antiAir: 0,
   armour: 0,
   defence: 0,
   repair: 0,
@@ -93,6 +94,7 @@ function rebuildUnit(): void {
     attack: currentAttrs.attack,
     rangeAttack: currentAttrs.rangeAttack,
     splashAttack: currentAttrs.splashAttack,
+    antiAir: currentAttrs.antiAir,
     armour: currentAttrs.armour,
     defence: currentAttrs.defence,
     repair: currentAttrs.repair,
@@ -118,6 +120,7 @@ function updateUI(): void {
   if (currentAttrs.attack) parts.push(`Att${currentAttrs.attack}`);
   if (currentAttrs.rangeAttack) parts.push(`Rng${currentAttrs.rangeAttack}`);
   if (currentAttrs.splashAttack) parts.push(`Spl${currentAttrs.splashAttack}`);
+  if (currentAttrs.antiAir) parts.push(`AA${currentAttrs.antiAir}`);
   if (currentAttrs.armour) parts.push(`Arm${currentAttrs.armour}`);
   if (currentAttrs.defence) parts.push(`Def${currentAttrs.defence}`);
   if (currentAttrs.repair) parts.push(`Rep${currentAttrs.repair}`);
@@ -191,7 +194,6 @@ function buildFlightHelp(mp: number): string {
       <tr><td>Any hex (including mountain/ocean)</td><td>1 MP</td></tr>
     </table>
     <p>With <b>${mp} MP</b>: move ${hexes} hexes, or ${hexesWithAttack} hex${hexesWithAttack !== 1 ? 'es' : ''} + attack.</p>
-    <p class="note">⚠️ Drones cannot equip armour.</p>
     <p class="note">Attacking costs 1 MP. Units can move then attack in one turn.</p>
   `;
 }
@@ -208,22 +210,14 @@ chassisBtns.forEach(btn => {
   });
 });
 
-/** Enforce attribute constraints based on chassis type (e.g. Drones cannot have armour). */
+/** Enforce attribute constraints based on chassis type. */
 function enforceChassisConstraints(): void {
   const armourSlider = document.querySelector<HTMLInputElement>('input[data-attr="armour"]');
   if (!armourSlider) return;
 
-  if (currentChassis === 'flight') {
-    // Drones cannot have armour — reset and disable the slider
-    currentAttrs.armour = 0;
-    armourSlider.value = '0';
-    (armourSlider.nextElementSibling as HTMLElement).textContent = '0';
-    armourSlider.disabled = true;
-    armourSlider.title = 'Drones cannot have armour';
-  } else {
-    armourSlider.disabled = false;
-    armourSlider.title = '';
-  }
+  // Armour is now allowed for all chassis types (including drones)
+  armourSlider.disabled = false;
+  armourSlider.title = '';
 }
 
 // Attribute sliders
@@ -235,11 +229,7 @@ sliders.forEach(slider => {
     currentAttrs[attr] = val;
     (slider.nextElementSibling as HTMLElement).textContent = String(val);
 
-    // Update the "= XX HP" label next to the health slider
-    if (attr === 'health') {
-      const hpLabel = slider.parentElement?.querySelector('.health-total') as HTMLElement | null;
-      if (hpLabel) hpLabel.textContent = `= ${val * 10} HP`;
-    }
+
 
     rebuildUnit();
   });

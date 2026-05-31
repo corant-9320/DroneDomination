@@ -12,10 +12,10 @@ import {
   isEncircled,
   clamp,
   calculateDamage,
+  calculateFormulaDamage,
   applyDamage,
   calculateDirectDamage,
   calculateSplashDamage,
-  calculateSplashBonusOnTarget,
   SPLASH_SCALE,
   resolveAttack,
   resolveReactionFire,
@@ -248,32 +248,32 @@ describe('combat', () => {
       expect(damage).toBe(30);
     });
 
-    it('attack=1, side, max defence = 2', () => {
-      // AP=2, DefPower=16, ED=12
-      // Damage = round(1 + 29*4/(4+144)) = round(1 + 116/148) = round(1.784) = 2
+    it('attack=1, side, max defence = 1', () => {
+      // AP=2, DefPower=16, ED=12, maxFD=min(30,12)=12
+      // Damage = round(1 + 11*4/(4+144)) = round(1 + 44/148) = round(1.297) = 1
       const damage = calculateDamage(1, 'side', 5, 5, 2, 4);
+      expect(damage).toBe(1);
+    });
+
+    it('attack=1, rear, max defence = 2', () => {
+      // AP=3, DefPower=16, ED=12, maxFD=min(30,18)=18
+      // Damage = round(1 + 17*9/(9+144)) = round(1 + 153/153) = round(2.0) = 2
+      const damage = calculateDamage(1, 'rear', 5, 5, 2, 4);
       expect(damage).toBe(2);
     });
 
-    it('attack=1, rear, max defence = 3', () => {
-      // AP=3, DefPower=16, ED=12
-      // Damage = round(1 + 29*9/(9+144)) = round(1 + 261/153) = round(2.706) = 3
-      const damage = calculateDamage(1, 'rear', 5, 5, 2, 4);
-      expect(damage).toBe(3);
-    });
-
-    it('attack=3, front, DefPower=8 → 7', () => {
-      // AP=3, DefPower=8, ED=6
-      // Damage = round(1 + 29*9/(9+36)) = round(1 + 261/45) = round(6.8) = 7
+    it('attack=3, front, DefPower=8 → 4', () => {
+      // AP=3, DefPower=8, ED=6, maxFD=min(30,18)=18
+      // Damage = round(1 + 17*9/(9+36)) = round(1 + 153/45) = round(4.4) = 4
       const damage = calculateDamage(3, 'front', 3, 3, 1, 1);
-      expect(damage).toBe(7);
+      expect(damage).toBe(4);
     });
 
-    it('attack=3, side, DefPower=8 → 10', () => {
-      // AP=4, DefPower=8, ED=6
-      // Damage = round(1 + 29*16/(16+36)) = round(1 + 464/52) = round(9.923) = 10
+    it('attack=3, side, DefPower=8 → 8', () => {
+      // AP=4, DefPower=8, ED=6, maxFD=min(30,24)=24
+      // Damage = round(1 + 23*16/(16+36)) = round(1 + 368/52) = round(8.077) = 8
       const damage = calculateDamage(3, 'side', 3, 3, 1, 1);
-      expect(damage).toBe(10);
+      expect(damage).toBe(8);
     });
 
     it('attack=3, rear, DefPower=8 → 13', () => {
@@ -305,8 +305,8 @@ describe('combat', () => {
 
     it('clamps attack below 1 to 1', () => {
       const damage = calculateDamage(0, 'front', 0, 0, 0, 0);
-      // Clamped to attack=1, AP=1, ED=0, damage=30
-      expect(damage).toBe(30);
+      // Clamped to attack=1, AP=1, ED=0, maxFD=min(30,6)=6, damage=6
+      expect(damage).toBe(6);
     });
 
     it('damage is always at least 1', () => {
@@ -455,10 +455,10 @@ describe('combat', () => {
       const dp = getDefencePower(target, allUnits, tiles);
 
       expect(dp.armour).toBe(3);
-      expect(dp.ew).toBe(4); // ewAlly's defence (target's own EW doesn't count for itself)
+      expect(dp.ew).toBe(5); // target(2) + ewAlly(4) = 6, capped at 5
       expect(dp.defensiveFormation).toBe(2); // ewAlly (same hex) + formAlly (adjacent)
       expect(dp.terrain).toBe(1); // forested
-      expect(dp.total).toBe(10);
+      expect(dp.total).toBe(11);
     });
 
     it('returns max possible values correctly', () => {
@@ -523,7 +523,40 @@ describe('combat', () => {
   // =========================================================================
 
   describe('splash damage', () => {
-    it('adds 20% splash bonus to primary target', () => {
+    it('splash fire is chosen when it scores higher than direct fire', () => {
+      // Attacker with both attack and splashAttack. Put 4 enemies in the target hex.
+      // With chassis modifier applied equally to both modes, splash wins when it
+      // hits enough targets (4+ enemies at 30% each exceeds single-target direct).
+      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
+      attacker.attributes.attack = 3;
+      attacker.attributes.splashAttack = 3;
+
+      const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
+      target.attributes.armour = 0;
+      target.currentHealth = 50;
+
+      const enemy2 = makeUnit({ id: 'e2', ownerId: 'p2', tileIndex: 0, facing: 0 });
+      enemy2.attributes.armour = 0;
+      enemy2.currentHealth = 50;
+
+      const enemy3 = makeUnit({ id: 'e3', ownerId: 'p2', tileIndex: 0, facing: 0 });
+      enemy3.attributes.armour = 0;
+      enemy3.currentHealth = 50;
+
+      const enemy4 = makeUnit({ id: 'e4', ownerId: 'p2', tileIndex: 0, facing: 0 });
+      enemy4.attributes.armour = 0;
+      enemy4.currentHealth = 50;
+
+      const allUnits = [attacker, target, enemy2, enemy3, enemy4];
+      const result = resolveAttack('a', 't', allUnits, tiles);
+
+      expect(result.wasValid).toBe(true);
+      expect(result.chosenWeaponMode).toBe('splash');
+      // All 4 enemies in the hex should be hit
+      expect(result.splashEvents.length).toBe(4);
+    });
+
+    it('direct fire is chosen when only one enemy is in the target hex', () => {
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
       attacker.attributes.attack = 5;
       attacker.attributes.splashAttack = 5;
@@ -535,20 +568,13 @@ describe('combat', () => {
       const allUnits = [attacker, target];
       const result = resolveAttack('a', 't', allUnits, tiles);
 
-      // attack=5, front (approach dir 0, facing 0 → front), no defence
-      // Direct damage = 30, splash bonus = round(30 * 0.2) = 6
-      // Total = 36... but applyDamage clamps damage input to [1,30]
-      // Actually totalDirectDamage = 30 + 6 = 36 is passed to applyDamage
-      // applyDamage clamps damage to [1,30] → capped at 30
-      // Let's verify: the CombatResult.directDamage should be 36
-      expect(result.directDamage).toBe(36);
-      // But health is: applyDamage(50, 36) → damage clamped to 30 → 50-30=20
-      // Wait — applyDamage clamps to [1,30]. Let me check...
-      // Actually we need to update applyDamage to allow >30 for combined splash
       expect(result.wasValid).toBe(true);
+      // Direct fire (attack=5) deals 30; splash (splashAttack=5) deals round(30*0.3)=9 to 1 unit
+      // Direct wins
+      expect(result.chosenWeaponMode).toBe('direct');
     });
 
-    it('deals 20% splash to adjacent enemies', () => {
+    it('splash only affects enemies in the target hex, not adjacent hexes', () => {
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 2, facing: 0 });
       attacker.attributes.attack = 3;
       attacker.attributes.splashAttack = 3;
@@ -558,6 +584,7 @@ describe('combat', () => {
       target.attributes.armour = 0;
       target.currentHealth = 50;
 
+      // Bystander in adjacent hex (tile 1) — should NOT be hit by splash
       const bystander = makeUnit({ id: 'b', ownerId: 'p2', tileIndex: 1, facing: 0 });
       bystander.attributes.armour = 0;
       bystander.currentHealth = 50;
@@ -566,83 +593,123 @@ describe('combat', () => {
       const result = resolveAttack('a', 't', allUnits, tiles);
 
       expect(result.wasValid).toBe(true);
-      expect(result.splashEvents.length).toBeGreaterThan(0);
-
-      // Splash on bystander: splashAttack=3, front, no defence
-      // Full formula = 30 (no defence), 20% = round(30*0.2) = 6
-      const splashOnBystander = result.splashEvents.find((e) => e.victimId === 'b');
-      expect(splashOnBystander).toBeDefined();
-      expect(splashOnBystander!.damage).toBe(6);
+      // Bystander is in adjacent hex, not target hex — must not be in splash events
+      expect(result.splashEvents.some((e) => e.victimId === 'b')).toBe(false);
+      // Bystander health must be unchanged
+      expect(bystander.currentHealth).toBe(50);
     });
 
-    it('splash on adjacents is reduced by victim defence', () => {
-      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 2, facing: 0 });
-      attacker.attributes.attack = 3;
-      attacker.attributes.splashAttack = 2;
-      attacker.attributes.rangeAttack = 2;
+    it('splash hits all enemies in the target hex', () => {
+      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
+      attacker.attributes.attack = 2;
+      attacker.attributes.splashAttack = 5;
 
-      const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 3 });
-      target.currentHealth = 50;
-
-      // Bystander with armour
-      const bystander = makeUnit({ id: 'b', ownerId: 'p2', tileIndex: 1, facing: 0 });
-      bystander.attributes.armour = 3;
-      bystander.currentHealth = 50;
-
-      const allUnits = [attacker, target, bystander];
-      const result = resolveAttack('a', 't', allUnits, tiles);
-
-      // splash=2, front, armour=3, formation=1 (target adjacent)
-      // DefPower = 3+0+1+0 = 4, ED = 4*0.75 = 3
-      // AP=2, AP²=4, ED²=9
-      // fullDamage = round(1 + 29*4/(4+9)) = round(1+116/13) = round(9.923) = 10
-      // splash = round(10 * 0.2) = 2
-      const splashOnBystander = result.splashEvents.find((e) => e.victimId === 'b');
-      expect(splashOnBystander).toBeDefined();
-      expect(splashOnBystander!.damage).toBe(2);
-    });
-
-    it('splash always deals at least 1 damage', () => {
-      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 2, facing: 0 });
-      attacker.attributes.attack = 3;
-      attacker.attributes.splashAttack = 1;
-      attacker.attributes.rangeAttack = 2;
-
-      const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 3 });
-      target.currentHealth = 50;
-
-      // Heavily armoured bystander on a mountain elevation
-      tiles[1] = { ...tiles[1], elevationType: 'mountain' };
-      const bystander = makeUnit({ id: 'b', ownerId: 'p2', tileIndex: 1, facing: 0 });
-      bystander.attributes.armour = 5;
-      bystander.currentHealth = 50;
-
-      const allUnits = [attacker, target, bystander];
-      const result = resolveAttack('a', 't', allUnits, tiles);
-
-      const splashOnBystander = result.splashEvents.find((e) => e.victimId === 'b');
-      expect(splashOnBystander).toBeDefined();
-      expect(splashOnBystander!.damage).toBeGreaterThanOrEqual(1);
-    });
-
-    it('splash affects friendly units adjacent to primary target', () => {
-      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 2, facing: 0 });
-      attacker.attributes.attack = 3;
-      attacker.attributes.splashAttack = 3;
-      attacker.attributes.rangeAttack = 2;
-
-      const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 3 });
+      const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
       target.attributes.armour = 0;
       target.currentHealth = 50;
 
-      const friendly = makeUnit({ id: 'f', ownerId: 'p1', tileIndex: 1, facing: 0 });
+      const enemy2 = makeUnit({ id: 'e2', ownerId: 'p2', tileIndex: 0, facing: 0 });
+      enemy2.attributes.armour = 0;
+      enemy2.currentHealth = 50;
+
+      const allUnits = [attacker, target, enemy2];
+      const result = resolveAttack('a', 't', allUnits, tiles);
+
+      expect(result.wasValid).toBe(true);
+      expect(result.chosenWeaponMode).toBe('splash');
+      // Both enemies in the hex should be hit
+      const hitIds = result.splashEvents.map((e) => e.victimId);
+      expect(hitIds).toContain('t');
+      expect(hitIds).toContain('e2');
+    });
+
+    it('splash does not hit friendly units', () => {
+      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
+      attacker.attributes.attack = 2;
+      attacker.attributes.splashAttack = 5;
+
+      const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
+      target.attributes.armour = 0;
+      target.currentHealth = 50;
+
+      // Friendly in same hex as target — should NOT be hit
+      const friendly = makeUnit({ id: 'f', ownerId: 'p1', tileIndex: 0, facing: 0 });
       friendly.attributes.armour = 0;
       friendly.currentHealth = 50;
 
       const allUnits = [attacker, target, friendly];
       const result = resolveAttack('a', 't', allUnits, tiles);
 
-      expect(result.splashEvents.some((e) => e.victimId === 'f')).toBe(true);
+      expect(result.splashEvents.some((e) => e.victimId === 'f')).toBe(false);
+      expect(friendly.currentHealth).toBe(50);
+    });
+
+    it('splash damage is reduced by victim defence', () => {
+      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
+      attacker.attributes.attack = 2;
+      attacker.attributes.splashAttack = 2;
+
+      const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
+      target.attributes.armour = 0;
+      target.currentHealth = 50;
+
+      const armoured = makeUnit({ id: 'ar', ownerId: 'p2', tileIndex: 0, facing: 0 });
+      armoured.attributes.armour = 4;
+      armoured.currentHealth = 50;
+
+      const allUnits = [attacker, target, armoured];
+      const result = resolveAttack('a', 't', allUnits, tiles);
+
+      if (result.chosenWeaponMode === 'splash') {
+        const armouredEvent = result.splashEvents.find((e) => e.victimId === 'ar');
+        const targetEvent = result.splashEvents.find((e) => e.victimId === 't');
+        expect(armouredEvent).toBeDefined();
+        expect(targetEvent).toBeDefined();
+        // Armoured unit should take less damage
+        expect(armouredEvent!.damage).toBeLessThan(targetEvent!.damage);
+      }
+    });
+
+    it('splash always deals at least 1 damage per unit', () => {
+      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
+      attacker.attributes.attack = 1;
+      attacker.attributes.splashAttack = 1;
+
+      const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
+      target.attributes.armour = 5;
+      target.currentHealth = 50;
+
+      const enemy2 = makeUnit({ id: 'e2', ownerId: 'p2', tileIndex: 0, facing: 0 });
+      enemy2.attributes.armour = 5;
+      enemy2.currentHealth = 50;
+
+      const allUnits = [attacker, target, enemy2];
+      const result = resolveAttack('a', 't', allUnits, tiles);
+
+      for (const event of result.splashEvents) {
+        expect(event.damage).toBeGreaterThanOrEqual(1);
+      }
+    });
+
+    it('calculateSplashDamage uses orientation bonus for selected target only', () => {
+      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
+      attacker.attributes.splashAttack = 3;
+
+      // Selected target facing away (rear) — should get orientation bonus
+      const selectedTarget = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 3 });
+      selectedTarget.attributes.armour = 0;
+
+      // Other unit in same hex, facing front — no orientation bonus
+      const otherUnit = makeUnit({ id: 'o', ownerId: 'p2', tileIndex: 0, facing: 0 });
+      otherUnit.attributes.armour = 0;
+
+      const allUnits = [attacker, selectedTarget, otherUnit];
+
+      const dmgSelected = calculateSplashDamage(attacker, selectedTarget, selectedTarget, allUnits, tiles);
+      const dmgOther = calculateSplashDamage(attacker, selectedTarget, otherUnit, allUnits, tiles);
+
+      // Selected target gets rear orientation bonus (+2), so should take more damage
+      expect(dmgSelected).toBeGreaterThan(dmgOther);
     });
   });
 
@@ -733,54 +800,69 @@ describe('combat', () => {
   });
 
   // =========================================================================
-  // Reaction fire
+  // Reaction fire (Anti-Air only, drones only — §16)
   // =========================================================================
 
   describe('reaction fire', () => {
-    it('triggers from front arc when enemy is in range', () => {
-      const defender = makeUnit({ id: 'd', ownerId: 'p2', tileIndex: 0, facing: 0 });
-      defender.attributes.attack = 3;
-      defender.attributes.rangeAttack = 1;
+    it('triggers AA reaction fire when a drone moves through an enemy antiAir tile', () => {
+      const aaUnit = makeUnit({ id: 'd', ownerId: 'p2', tileIndex: 1, facing: 0 });
+      aaUnit.attributes.antiAir = 3;
 
-      const mover = makeUnit({ id: 'm', ownerId: 'p1', tileIndex: 3, facing: 0 });
-      mover.currentHealth = 50;
+      const drone = makeUnit({ id: 'm', ownerId: 'p1', tileIndex: 3, facing: 0 });
+      drone.attributes.flightMovement = 3;
+      drone.currentHealth = 50;
 
-      const allUnits = [defender, mover];
-      const simplePath = [3, 1]; // move from 3 to 1 (direction 0 from tile 0 = front)
-      const results = resolveReactionFire('m', simplePath, allUnits, tiles);
+      const allUnits = [aaUnit, drone];
+      const path = [3, 1]; // drone moves into tile 1 where aaUnit is
+      const results = resolveReactionFire('m', path, allUnits, tiles);
 
       expect(results.length).toBeGreaterThan(0);
       expect(results[0].attackerId).toBe('d');
       expect(results[0].targetId).toBe('m');
+      expect(results[0].chosenWeaponMode).toBe('antiAir');
     });
 
-    it('does not trigger more than once per unit per turn', () => {
-      const defender = makeUnit({ id: 'd', ownerId: 'p2', tileIndex: 0, facing: 0 });
-      defender.attributes.attack = 2;
-      defender.attributes.rangeAttack = 2;
+    it('does not trigger reaction fire for ground units (tanks/spiders)', () => {
+      const aaUnit = makeUnit({ id: 'd', ownerId: 'p2', tileIndex: 1, facing: 0 });
+      aaUnit.attributes.antiAir = 3;
 
-      const mover = makeUnit({ id: 'm', ownerId: 'p1', tileIndex: 4, facing: 0 });
-      mover.currentHealth = 50;
+      const tank = makeUnit({ id: 'm', ownerId: 'p1', tileIndex: 3, facing: 0 });
+      // tank has wheeledMovement (default from makeUnit), no flightMovement
+      tank.currentHealth = 50;
 
-      const allUnits = [defender, mover];
+      const allUnits = [aaUnit, tank];
+      const path = [3, 1];
+      const results = resolveReactionFire('m', path, allUnits, tiles);
+      expect(results.length).toBe(0);
+    });
+
+    it('does not trigger more than once per unit per drone action', () => {
+      const aaUnit = makeUnit({ id: 'd', ownerId: 'p2', tileIndex: 1, facing: 0 });
+      aaUnit.attributes.antiAir = 2;
+
+      const drone = makeUnit({ id: 'm', ownerId: 'p1', tileIndex: 4, facing: 0 });
+      drone.attributes.flightMovement = 3;
+      drone.currentHealth = 50;
+
+      const allUnits = [aaUnit, drone];
+      // Path passes through tile 1 twice (back and forth) — but aaUnit should only fire once
       const path = [4, 1, 2];
 
       const results = resolveReactionFire('m', path, allUnits, tiles);
-      const defenderShots = results.filter((r) => r.attackerId === 'd');
-      expect(defenderShots.length).toBeLessThanOrEqual(1);
+      const aaShots = results.filter((r) => r.attackerId === 'd');
+      expect(aaShots.length).toBeLessThanOrEqual(1);
     });
 
-    it('does not trigger from non-front arc', () => {
-      // Defender facing 0 (toward tile 1). Mover enters tile 4 (rear)
-      const defender = makeUnit({ id: 'd', ownerId: 'p2', tileIndex: 0, facing: 0 });
-      defender.attributes.attack = 3;
-      defender.attributes.rangeAttack = 1;
+    it('does not trigger when enemy has no antiAir', () => {
+      const groundUnit = makeUnit({ id: 'd', ownerId: 'p2', tileIndex: 1, facing: 0 });
+      groundUnit.attributes.attack = 3; // has attack but no antiAir
 
-      const mover = makeUnit({ id: 'm', ownerId: 'p1', tileIndex: 6, facing: 0 });
-      mover.currentHealth = 50;
+      const drone = makeUnit({ id: 'm', ownerId: 'p1', tileIndex: 3, facing: 0 });
+      drone.attributes.flightMovement = 3;
+      drone.currentHealth = 50;
 
-      const allUnits = [defender, mover];
-      const path = [6, 4];
+      const allUnits = [groundUnit, drone];
+      const path = [3, 1];
       const results = resolveReactionFire('m', path, allUnits, tiles);
       expect(results.length).toBe(0);
     });

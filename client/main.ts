@@ -256,8 +256,6 @@ async function main() {
       if (updatedUnits) {
         // Sync updated unit state back into the world
         world.units = updatedUnits;
-        // Consume repairer's remaining movement points (repair uses the turn)
-        localMap.consumeMovement(repairerId);
         localMap.render();
         // Re-show detail for selected tile
         if (localMap.getSelectedUnits().size > 0) {

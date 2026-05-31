@@ -44,6 +44,8 @@ export class LocalMapView {
   private selectedUnits: Set<string> = new Set();
   /** Remaining movement points per unit this turn (keyed by unit id). */
   private movementPoints: Map<string, number> = new Map();
+  /** Units that have already used their action this turn (attack or repair). */
+  private actedUnits: Set<string> = new Set();
   /** Callback when turn ends. */
   private onTurnEnd: (() => void) | null = null;
   /** Callback when player initiates an attack (attackerId, targetId). */
@@ -378,8 +380,10 @@ export class LocalMapView {
         this.drawForestCornerTrees(ft);
       }
 
-      // Draw elevation badge (▲ hills, ▲▲ mountain, ~ rolling) when zoomed in
-      this.drawElevationBadge(ft, tile.elevType);
+      // Draw elevation shading (peak triangles) for rolling / hills / mountain
+      if (tile.s === 6 && tile.elevType !== 'flat' && tile.elevType !== 'ocean') {
+        this.drawElevationShading(ft, tile.elevType);
+      }
 
       // Highlight selected segment (triangle overlay)
       if (ft.tileIndex === this.selectedTile && this.selectedSegment >= 0 && tile.s === 6) {
@@ -465,52 +469,157 @@ export class LocalMapView {
   }
 
   /**
-   * Draw an elevation badge near the top of a hex when zoomed in enough.
-   * Only shown for rolling (≥0.6× zoom), hills (≥0.4×), and mountain (≥0.3×).
+   * Draw elevation shading by painting each triangular segment of the hex
+   * with a linear gradient that simulates a 3D faceted peak lit by a sun
+   * coming from the upper-left (screen space: angle ~225° = SW-facing faces
+   * are lit, NE-facing faces are in shadow).
    *
-   *   rolling  → "~"   (subtle wave)
-   *   hills    → "▲"
-   *   mountain → "▲▲"
+   * Each triangle's face normal (in 2D screen space, pointing outward from
+   * the hex centre toward the edge midpoint) is dot-producted against the
+   * sun direction to get a per-face light intensity in [-1, 1].
+   *
+   *   lit face   → bright highlight overlay (apex → edge, warm white)
+   *   shadow face → dark shadow overlay     (apex → edge, cool dark)
+   *   neutral     → subtle mid-tone
+   *
+   * Peak height (peakPull) controls how far the apex is pulled inward:
+   *   rolling  → 0.18  (shallow)
+   *   hills    → 0.38  (medium)
+   *   mountain → 0.62  (sharp)
    */
-  private drawElevationBadge(ft: FlatTile, elevType: string): void {
-    // Determine symbol
-    let symbol: string;
-    switch (elevType) {
-      case 'rolling':  symbol = '▲';     break;
-      case 'hills':    symbol = '▲▲';    break;
-      case 'mountain': symbol = '▲▲▲';   break;
-      default: return; // flat / ocean — no badge
-    }
+  private drawElevationShading(ft: FlatTile, elevType: string): void {
+    if (ft.poly.length < 6) return;
 
-    // Compute hex radius in screen pixels to size the font
     const [csx, csy] = this.worldToScreen(ft.cx, ft.cy);
+
+    // Compute average hex radius in screen pixels
     let avgRadius = 0;
     for (const v of ft.poly) {
       const [vx, vy] = this.worldToScreen(v.x, v.y);
       avgRadius += Math.sqrt((vx - csx) ** 2 + (vy - csy) ** 2);
     }
     avgRadius /= ft.poly.length;
-    if (avgRadius < 6) return;
+    if (avgRadius < 5) return;
 
-    const fontSize = Math.max(4, Math.min(7, avgRadius * 0.19));
+    // Sun direction in screen space: upper-left at ~315° (NW).
+    // Normalised vector pointing FROM the scene TOWARD the sun.
+    const SUN_X = -0.707;  // left
+    const SUN_Y = -0.707;  // up (screen y increases downward, so negative = up)
 
-    // Position: centre of hex
-    const badgeY = csy;
+    // Per-elevation parameters
+    let peakPull:    number;
+    let litAlpha:    number;   // max highlight opacity on fully-lit face
+    let shadowAlpha: number;   // max shadow opacity on fully-shadowed face
+    let snowCap:     boolean;
 
-    this.ctx.save();
-    this.ctx.font = `bold ${fontSize}px sans-serif`;
-    this.ctx.textAlign = 'center';
-    this.ctx.textBaseline = 'middle';
+    switch (elevType) {
+      case 'rolling':
+        peakPull    = 0.18;
+        litAlpha    = 0.22;
+        shadowAlpha = 0.14;
+        snowCap     = false;
+        break;
+      case 'hills':
+        peakPull    = 0.38;
+        litAlpha    = 0.50;
+        shadowAlpha = 0.28;
+        snowCap     = false;
+        break;
+      case 'mountain':
+      default:
+        peakPull    = 0.62;
+        litAlpha    = 0.82;
+        shadowAlpha = 0.52;
+        snowCap     = true;
+        break;
+    }
 
-    // Dark shadow for legibility on any terrain colour
-    this.ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    this.ctx.fillText(symbol, csx + 1, badgeY + 1);
+    const ctx = this.ctx;
+    ctx.save();
 
-    // Light grey badge text
-    this.ctx.fillStyle = 'rgba(220,220,220,0.90)';
-    this.ctx.fillText(symbol, csx, badgeY);
+    for (let seg = 0; seg < ft.poly.length; seg++) {
+      const v0 = ft.poly[seg];
+      const v1 = ft.poly[(seg + 1) % ft.poly.length];
 
-    this.ctx.restore();
+      const [ax, ay] = this.worldToScreen(v0.x, v0.y);
+      const [bx, by] = this.worldToScreen(v1.x, v1.y);
+
+      // Outward face normal of this triangle: vector from hex centre to
+      // the midpoint of the outer edge, normalised.
+      const midX = (ax + bx) / 2;
+      const midY = (ay + by) / 2;
+      const outX = midX - csx;
+      const outY = midY - csy;
+      const outLen = Math.sqrt(outX * outX + outY * outY);
+      if (outLen < 1e-6) continue;
+      const normX = outX / outLen;
+      const normY = outY / outLen;
+
+      // Dot product: +1 = face points directly at sun, -1 = fully away
+      const dot = normX * SUN_X + normY * SUN_Y;
+
+      // Apex point (pulled inward from centre toward edge midpoint)
+      const apexX = csx + (midX - csx) * peakPull;
+      const apexY = csy + (midY - csy) * peakPull;
+
+      // Gradient runs from apex → outer edge midpoint
+      const grad = ctx.createLinearGradient(apexX, apexY, midX, midY);
+
+      if (dot >= 0) {
+        // Lit face — warm white highlight, stronger at apex
+        const a = dot * litAlpha;
+        grad.addColorStop(0,   `rgba(255,252,240,${(a * 1.0).toFixed(3)})`);
+        grad.addColorStop(0.5, `rgba(255,252,240,${(a * 0.4).toFixed(3)})`);
+        grad.addColorStop(1,   `rgba(255,252,240,0.00)`);
+      } else {
+        // Shadow face — cool dark overlay, stronger at apex
+        const a = (-dot) * shadowAlpha;
+        grad.addColorStop(0,   `rgba(20,30,50,${(a * 1.0).toFixed(3)})`);
+        grad.addColorStop(0.5, `rgba(20,30,50,${(a * 0.5).toFixed(3)})`);
+        grad.addColorStop(1,   `rgba(20,30,50,0.00)`);
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(csx, csy);
+      ctx.lineTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Ridge lines: bright on lit side, dim on shadow side
+      const ridgeAlpha = dot >= 0
+        ? dot * (elevType === 'mountain' ? 0.45 : elevType === 'hills' ? 0.25 : 0.12)
+        : 0.04;
+      ctx.strokeStyle = `rgba(255,255,255,${ridgeAlpha.toFixed(3)})`;
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(csx, csy);
+      ctx.lineTo(ax, ay);
+      ctx.moveTo(csx, csy);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+    }
+
+    // Snow cap: radial glow at hex centre for mountains, offset slightly
+    // toward the sun so it catches the light naturally.
+    if (snowCap && avgRadius >= 10) {
+      const capRadius = Math.max(1.5, avgRadius * 0.13);
+      // Shift cap centre a little toward the sun direction
+      const shift = capRadius * 0.3;
+      const capX = csx + SUN_X * shift;
+      const capY = csy + SUN_Y * shift;
+      const capGrad = ctx.createRadialGradient(capX, capY, 0, capX, capY, capRadius);
+      capGrad.addColorStop(0,   'rgba(255,255,255,0.92)');
+      capGrad.addColorStop(0.5, 'rgba(245,245,240,0.55)');
+      capGrad.addColorStop(1,   'rgba(220,220,215,0.00)');
+      ctx.beginPath();
+      ctx.arc(capX, capY, capRadius, 0, Math.PI * 2);
+      ctx.fillStyle = capGrad;
+      ctx.fill();
+    }
+
+    ctx.restore();
   }
 
   /**
@@ -630,8 +739,12 @@ export class LocalMapView {
       // Per-unit facing direction
       const facingAngle = segmentAngle(unit.facing);
 
+      // Movement points for this unit
+      const currentMP = this.movementPoints.get(unit.id) ?? 0;
+      const maxMP = this.getMaxMovement(unit);
+
       // Draw composite icon
-      drawUnitIcon(this.ctx, unit, sx, sy, size, color, facingAngle);
+      drawUnitIcon(this.ctx, unit, sx, sy, size, color, facingAngle, currentMP, maxMP);
 
       // Selection ring for selected units
       if (this.selectedUnits.has(unit.id)) {
@@ -1116,6 +1229,7 @@ export class LocalMapView {
   /** Reset movement points for all units based on their max movement attribute. */
   private resetMovementPoints() {
     this.movementPoints.clear();
+    this.actedUnits.clear();
     for (const unit of this.world.units) {
       this.movementPoints.set(unit.id, this.getMaxMovement(unit));
     }
@@ -1423,6 +1537,17 @@ export class LocalMapView {
     this.movementPoints.set(unitId, 0);
   }
 
+  /** Whether a unit has already used its action (attack or repair) this turn. */
+  hasActed(unitId: string): boolean {
+    return this.actedUnits.has(unitId);
+  }
+
+  /** Record that a unit has used its action this turn and drain its MP. */
+  recordAction(unitId: string): void {
+    this.actedUnits.add(unitId);
+    this.movementPoints.set(unitId, 0);
+  }
+
   /** Register callback for end-of-turn. */
   setOnTurnEnd(cb: () => void) {
     this.onTurnEnd = cb;
@@ -1562,19 +1687,27 @@ export class LocalMapView {
       }
 
       if (enemyTarget && this.onAttack) {
-        // Attack with the first selected unit (single attacker per click)
-        const attacker = playerUnits[0];
+        // Attack with the first selected unit that has MP remaining and hasn't acted
+        const attacker = playerUnits.find(
+          (u) => (this.movementPoints.get(u.id) ?? 0) >= 1 && !this.actedUnits.has(u.id)
+        );
+        if (!attacker) {
+          dbg.localMap.log('Attack blocked — no eligible attacker (no MP or already acted)');
+          return;
+        }
         dbg.localMap.log('Attack command:', attacker.label, '→', enemyTarget.label);
+        this.actedUnits.add(attacker.id);
+        this.movementPoints.set(attacker.id, 0);
         this.onAttack(attacker.id, enemyTarget.id);
         return;
       }
 
       // --- Repair check ---
       // If no enemy target, check for a friendly unit in the same hex that can be repaired.
-      // The selected unit must have repair attribute and movement points remaining.
+      // The selected unit must have repair attribute, movement points remaining, and not yet acted.
       if (!enemyTarget && this.onRepair) {
         const repairer = playerUnits.find(
-          (u) => (u.attributes.repair ?? 0) >= 1 && (this.movementPoints.get(u.id) ?? 0) > 0
+          (u) => (u.attributes.repair ?? 0) >= 1 && (this.movementPoints.get(u.id) ?? 0) > 0 && !this.actedUnits.has(u.id)
         );
         if (repairer) {
           // Find friendly target in the clicked segment (same hex, different unit, damaged)
@@ -1592,6 +1725,8 @@ export class LocalMapView {
           }
           if (friendlyTarget && repairer.tileIndex === friendlyTarget.tileIndex) {
             dbg.localMap.log('Repair command:', repairer.label, '→', friendlyTarget.label);
+            this.actedUnits.add(repairer.id);
+            this.movementPoints.set(repairer.id, 0);
             this.onRepair(repairer.id, friendlyTarget.id);
             return;
           }

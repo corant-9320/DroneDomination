@@ -207,13 +207,6 @@
       color: #ff6b6b;
     }
 
-    .health-total {
-      font-size: 11px;
-      color: #7fdbca;
-      flex-shrink: 0;
-      width: 52px;
-    }
-
     .unit-name {
       text-align: center;
       padding: 10px;
@@ -282,6 +275,11 @@
           <input type="range" min="0" max="5" value="0" data-attr="splashAttack">
           <span class="attr-val">0</span>
         </div>
+        <div class="attr-row">
+          <label>Anti-Air</label>
+          <input type="range" min="0" max="5" value="0" data-attr="antiAir">
+          <span class="attr-val">0</span>
+        </div>
       </div>
 
       <div class="control-group">
@@ -290,7 +288,6 @@
           <label>Health (HP)</label>
           <input type="range" min="1" max="5" value="1" data-attr="health">
           <span class="attr-val">1</span>
-          <span class="health-total">= 10 HP</span>
         </div>
         <div class="attr-row">
           <label>Armour</label>

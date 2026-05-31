@@ -33,6 +33,8 @@ export function segmentAngle(segment: number): number {
  * @param size         Base size (half-width reference for scaling)
  * @param color        Faction color
  * @param facingAngle  Override facing angle (radians) — used for rotating the sprite
+ * @param currentMP    Remaining movement points this turn
+ * @param maxMP        Maximum movement points for this unit
  */
 export function drawUnitIcon(
   ctx: CanvasRenderingContext2D,
@@ -42,6 +44,8 @@ export function drawUnitIcon(
   size: number,
   color: string,
   _facingAngle?: number,
+  currentMP?: number,
+  maxMP?: number,
 ): void {
   const spriteSize = size * 5.082;  // 20% larger than previous (4.235 * 1.2)
   const sprite = getUnitSprite(unit, color);
@@ -71,9 +75,10 @@ export function drawUnitIcon(
 
   ctx.restore();
 
-  // Health bar in screen space (always horizontal, above the unit)
+  // Bars in screen space (always horizontal, above/below the unit)
   const extent = spriteSize / 2;
-  drawHealthBar(ctx, unit, sx, sy, size, extent);
+  const healthBarH = drawHealthBar(ctx, unit, sx, sy, size, extent);
+  drawMovementBar(ctx, sx, sy, size, extent, healthBarH, currentMP, maxMP);
 }
 
 // ---------------------------------------------------------------------------
@@ -87,7 +92,7 @@ function drawHealthBar(
   sy: number,
   size: number,
   extent: number,
-): void {
+): number {  // returns the rendered barH so the movement bar can anchor below it
   const maxHp = (unit.attributes.maxHealth ?? 1) * 10;
   const curHp = unit.currentHealth;
 
@@ -104,4 +109,62 @@ function drawHealthBar(
   const ratio = curHp / maxHp;
   ctx.fillStyle = '#4f4';
   ctx.fillRect(barX, barY, barW * ratio, barH);
+
+  return barH;
+}
+
+// ---------------------------------------------------------------------------
+// Movement Bar
+// ---------------------------------------------------------------------------
+
+/**
+ * Draw a horizontal movement-points bar directly below the health bar.
+ *
+ * The bar always represents a fixed scale of 0–5 MP.
+ * - A unit with maxMP=1 starts 20% full.
+ * - A unit with maxMP=4 starts 80% full.
+ * - A unit with maxMP=5 starts 100% full.
+ * After spending MP the fill shrinks accordingly.
+ * A 1px green tick marks the unit's personal max MP position on the scale.
+ */
+function drawMovementBar(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  sy: number,
+  size: number,
+  extent: number,
+  healthBarH: number,
+  currentMP: number | undefined,
+  maxMP: number | undefined,
+): void {
+  if (maxMP === undefined || maxMP <= 0) return;
+  const cur = Math.max(0, currentMP ?? 0);
+
+  const SCALE = 5; // bar always represents 0–5 MP
+
+  // Same width and X as the health bar
+  const barW = size * 1.2;
+  const barX = sx - barW / 2;
+
+  // Health bar top Y (same formula as drawHealthBar)
+  const healthBarY = sy - extent - healthBarH - Math.max(3, healthBarH * 0.4);
+
+  // Movement bar sits 1px below the health bar, same height
+  const mbY = healthBarY + healthBarH + 1;
+  const mbH = healthBarH;
+
+  // Background
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(barX, mbY, barW, mbH);
+
+  // Current MP fill — left-to-right, scaled against SCALE (0–5)
+  const curRatio = cur / SCALE;
+  ctx.fillStyle = '#48f';
+  ctx.fillRect(barX, mbY, barW * curRatio, mbH);
+
+  // Max MP tick — 1px vertical line at the unit's max MP position on the 0–5 scale
+  const maxRatio = Math.min(1, maxMP / SCALE);
+  const tickX = barX + barW * maxRatio;
+  ctx.fillStyle = '#4f4'; // green to match health bar
+  ctx.fillRect(tickX - 1, mbY, 1, mbH);
 }
