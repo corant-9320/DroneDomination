@@ -1,44 +1,30 @@
 # Drone Domination
 
-Civilization-style game on a Goldberg G(24,0) polyhedron — a sphere made of hexagons (and 12 pentagons).
+Turn-based strategy on a globe made of hexagons. Build units, conquer cities, crush your enemies.
 
-## Prerequisites
-
-- Node.js 18+
-- npm
-
-## Install
+## Quick start
 
 ```bash
 npm install
-```
-
-## Development
-
-Start the Vite dev server (serves the client + API routes):
-
-```bash
 npm run dev
 ```
 
-Opens at http://localhost:3000. Hot-reloads client changes.
+Open http://localhost:3000 and click **+ New** to generate a world.
 
-## Scripts
+## Other useful commands
 
 ```bash
-npm run dev        # Vite dev server with hot reload
-npm run build      # Compile TypeScript to dist/
-npm run generate   # Generate data/world.json (run build first)
-npm run validate   # Validate existing data/world.json
+npm test          # run unit tests
+npm run build     # compile TypeScript (also regenerates world data)
+npm run validate  # check that data/world.json is valid
 ```
 
-## In-Game World Generation
+## Starting a game
 
-Click **+ New World** in the local map panel:
-
-- **Enemy Cities** — number of opponents (1–13)
-- **Distance from Home** — target tile distance to enemies (20–45). Hidden at max enemies.
-- **Your Colour** — pick a faction color
+1. Click **+ New** in the right panel
+2. Pick how many enemy cities (1–13) and how far away they start
+3. Choose your faction colour
+4. Hit **Generate**
 
 ## Controls
 
@@ -48,82 +34,62 @@ Click **+ New World** in the local map panel:
 | Click + drag | Pan (local map) / Rotate (globe) |
 | Click tile | Select tile, show info |
 | Right-click tile | Move selected units / Attack enemy |
-| Home key / ⌂ button | Pan to player home city |
+| Home / ⌂ button | Jump to your home city |
 | Space / Next ▶ | End turn |
 | Ctrl+S | Save game |
 | Ctrl+L | Load game |
 
-Zooming past 1.5× reveals hex segments and units. Past 2.5× shows attribute bars.
+Zoom past 1.5× to see units. Zoom past 2.5× to see their stat bars.
 
-## HUD Layout
+## Enemy turns
 
-- **Left panel** — Globe view (strategic overview)
-- **Right panel** — Combat log curtain with menu bar, playback controls, and Next Turn button
-- **Bottom bar** — Hex/unit detail panel (shows terrain, city, and up to 5 unit cards)
+When enemies move, the right panel shows playback controls:
 
-### AI Turn Playback
+| Button | What it does |
+|--------|-------------|
+| ▶ / ⏸ | Auto-play or pause |
+| ⏩ | Skip to next action immediately |
 
-When enemy factions take their turn, the right panel shows video-style controls:
-
-| Button | Function |
-|--------|----------|
-| ▶ / ⏸ | Play (auto-advance at readable pace) or Pause |
-| ⏩ | Fast Forward — skip to next action immediately |
-
-During enemy attacks, the map highlights the attacker (red ring) and target (cyan ring) with a connecting arrow so the player can follow the action.
+Attackers get a red ring, targets get a cyan ring, with an arrow between them.
 
 ## Units
 
-Units have no fixed types — each is defined by its attributes:
+There are no fixed unit types — every unit is built from attributes. You design them in the unit designer.
 
-| Attribute | Range | Description |
+| Attribute | Range | What it does |
 |-----------|-------|-------------|
-| maxHealth | 1–5 | Hit points (1 pt = 10 Health for damage calc) |
-| armour | 0–5 | Damage reduction |
-| defence | 0–5 | Hit avoidance/deflection |
-| splashAttack | 0–5 | Adjacent splash damage |
-| rangeAttack | 0–5 | Ranged combat damage |
-| antiAir | 0–5 | Anti-air missile — can only target drones |
-| wheeledMovement | 0–5 | Vehicle traversal speed (Tank) |
-| limbMovement | 0–5 | Legged traversal speed (Spider) |
-| flightMovement | 0–5 | Aerial traversal speed (Drone) |
-| repair | 0–5 | Health restored per action |
+| maxHealth | 1–5 | Hit points (×10, so 10–50 HP) |
+| armour | 0–5 | Reduces incoming damage |
+| defence | 0–5 | Electronic warfare — stacks with allies in same hex |
+| splashAttack | 0–5 | Damages all enemies in target hex |
+| rangeAttack | 0–5 | Attack range in hexes (0 = melee only) |
+| antiAir | 0–5 | Missile launcher — only targets drones |
+| wheeledMovement | 0–5 | Tank chassis |
+| limbMovement | 0–5 | Spider chassis |
+| flightMovement | 0–5 | Drone chassis |
+| repair | 0–5 | Heals a friendly unit in the same hex |
 
-### Anti-Air
+Every unit needs at least 1 point in one movement type. Each hex holds up to 5 units.
 
-Units with the Anti-Air attribute carry an upward-pointing missile launcher. Anti-Air damage uses the standard damage formula but can **only** be used against drones (flightMovement units). It deals full, unpenalised damage.
+### Movement costs
 
-### Drone Vulnerability
+| Chassis | First hex | Clear | Hill or Forest | Hill + Forest |
+|---------|-----------|-------|----------------|---------------|
+| Tank | 1 MP | 2 MP | 3 MP | 4 MP |
+| Spider | 1 MP | 3 MP | 3 MP | 3 MP |
+| Drone | 1 MP | 1 MP | 1 MP | 1 MP |
 
-Attack and Splash damage suffer a **50% penalty** when targeting drones. This makes conventional weapons less effective against aerial units and incentivises dedicated Anti-Air builds.
+Mountains and oceans block ground units. Drones fly over everything — but enemy anti-air units shoot at them as they pass.
 
-Every unit must have at least 1 movement point (wheeled, limb, or flight). Each hex holds up to 5 units in triangular segments (one segment stays free).
+You need at least 1 MP left after moving to attack.
 
-### Movement
+## Saving and loading
 
-Units can move and attack in the same turn, but attacking costs 1 MP.
+- **Ctrl+S** — saves to browser localStorage
+- **Ctrl+L** — opens the load screen
+- Saves persist between sessions in the same browser
 
-**First-hex rule:** The first hex entered each turn always costs 1 MP, regardless of terrain or unit type.
+## Deeper docs
 
-**Subsequent hex costs by chassis:**
-
-| Chassis | Clear/Flat | Hill OR Forest | Hill AND Forest |
-|---------|-----------|----------------|-----------------|
-| Tank (wheeled) | 2 MP | 3 MP | 4 MP |
-| Spider (limb) | 3 MP | 3 MP | 3 MP |
-| Drone (flight) | 1 MP | 1 MP | 1 MP |
-
-**Impassable terrain:** Mountain and ocean tiles cannot be entered (except by drones, which fly over everything).
-
-**Terrain model:** Tiles have a terrain type (plains, grassland, hills, mountain, desert, tundra, ocean, forest) and a separate `forested` boolean. Only plains, grassland, and hills can be forested. Desert, tundra, ocean, and mountain are never forested. For movement costs, only "hills" and "forested" matter; all other terrain differences are cosmetic.
-
-**Examples:**
-- Tank MP 4: first hex (1) + clear (2) = 3 spent, 1 remaining → 2 hexes + attack
-- Tank MP 4, second hex is hill: first (1) + hill (3) = 4, 0 remaining → 2 hexes, no attack
-- Spider MP 4: first (1) + any (3) = 4, 0 remaining → 2 hexes, no attack
-- Spider MP 5: first (1) + any (3) = 4, 1 remaining → 2 hexes + attack
-- Drone MP 4: first (1) + any (1) + any (1) = 3, 1 remaining → 3 hexes + attack
-
-## Architecture
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for module map, data flow, types, and conventions.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — module map, data flow, API, TypeScript config
+- [COMBAT_RULES.md](COMBAT_RULES.md) — full combat formulas and mechanics reference

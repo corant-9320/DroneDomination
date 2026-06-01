@@ -1,3 +1,7 @@
+---
+inclusion: always
+---
+
 # Conventions (always loaded)
 
 ## Build & run

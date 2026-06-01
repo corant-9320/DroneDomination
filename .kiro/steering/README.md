@@ -6,8 +6,10 @@ Scoped guidance for AI agents working on Drone Domination.
 |------|-----------|---------|
 | `conventions.md` | Always | Build commands, import rules, cross-file dependencies, post-change actions |
 | `ui-defaults.md` | Editing `client/**`, `index.html` | Civ6-inspired HUD layout, menu bar, keyboard shortcuts |
-| `architecture.md` | Editing `src/**`, `server/**`, config files | Full module map, types, data flow, API contract |
+| `architecture.md` | Editing `src/**`, `server/**`, config files | Includes `ARCHITECTURE.md` — module map, types, data flow, API contract |
 
 ## Key references
 
 - [README.md](/README.md) — player-facing setup, controls, unit attributes
+- [ARCHITECTURE.md](/ARCHITECTURE.md) — full module map, data flow, types, API
+- [COMBAT_RULES.md](/COMBAT_RULES.md) — authoritative combat mechanics reference
