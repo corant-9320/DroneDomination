@@ -6,7 +6,6 @@
 import { loadWorld, WorldData, applyNewWorld } from './worldData.js';
 import { GlobeView } from './globe.js';
 import { LocalMapView } from './localMap.js';
-import { DetailPanel } from './detailPanel.js';
 import { CombatPanel } from './combatPanel.js';
 import { showNewWorldModal } from './newWorldModal.js';
 import { saveGame, showLoadModal } from './saveLoad.js';
@@ -43,19 +42,15 @@ async function main() {
 
     const globeCanvas = document.getElementById('globe-canvas') as HTMLCanvasElement;
     const localCanvas = document.getElementById('local-canvas') as HTMLCanvasElement;
-    const detailEl = document.getElementById('detail-panel') as HTMLElement;
-
-    // Detail panel — shows terrain, units, city info for selected tile
-    const detailPanel = new DetailPanel(detailEl, world);
 
     // Combat panel — right curtain on local map, shows one combat at a time with nav
     const combatLogEl = document.getElementById('combat-log-content') as HTMLElement;
     const combatPanel = new CombatPanel(combatLogEl, world);
 
     // AI playback controller — video-style buttons for enemy turn pacing
-    // Mounted directly in the combat-log-panel (flex column) so it stays
+    // Mounted directly in the combat-log-inner (flex column) so it stays
     // pinned on screen above the Next Turn button during all enemy moves.
-    const playbackContainer = document.getElementById('combat-log-panel') as HTMLElement;
+    const playbackContainer = document.getElementById('combat-log-inner') as HTMLElement;
     const turnControlsEl = document.getElementById('turn-controls') as HTMLElement;
     const aiPlayback = new AiPlaybackController(playbackContainer, turnControlsEl);
 
@@ -150,20 +145,13 @@ async function main() {
     }
 
     // Shared tile selection handler
-    function showTileInfo(tileIndex: number, segment?: number) {
-      dbg.input.log('showTileInfo tile:', tileIndex, 'segment:', segment, '| terrain:', world.tiles[tileIndex]?.terrain);
-      detailPanel.showTile(tileIndex, segment);
-    }
-
     function onTileSelected(tileIndex: number) {
       dbg.input.log('Globe tile selected:', tileIndex);
-      showTileInfo(tileIndex);
       localMap.setSelected(tileIndex);
     }
 
     function onLocalTileSelected(tileIndex: number, segment?: number) {
       dbg.input.log('LocalMap tile selected:', tileIndex, 'segment:', segment);
-      showTileInfo(tileIndex, segment);
       globe.panToTile(tileIndex);
 
       // Update combat panel with selected unit (shows stats immediately)
@@ -189,6 +177,63 @@ async function main() {
 
     // Initialize localMap with the starting active faction
     localMap.setActiveFaction(getActiveFaction());
+
+    // ─── Curtain Toggle Setup ───────────────────────────────────────────
+    // Left curtain (strategy panel) toggle
+    const strategyPanel = document.getElementById('strategy-panel') as HTMLElement;
+    const strategyToggle = strategyPanel.querySelector('.curtain-toggle') as HTMLElement;
+    if (strategyToggle) {
+      // Initialize icon based on current collapsed state
+      strategyToggle.textContent = strategyPanel.classList.contains('collapsed') ? '›' : '‹';
+      strategyToggle.addEventListener('click', () => {
+        strategyPanel.classList.toggle('collapsed');
+        strategyToggle.textContent = strategyPanel.classList.contains('collapsed') ? '›' : '‹';
+      });
+    }
+
+    // Right curtain (combat log panel) toggle
+    const combatLogPanel = document.getElementById('combat-log-panel') as HTMLElement;
+    const combatToggle = combatLogPanel.querySelector('.curtain-toggle') as HTMLElement;
+    if (combatToggle) {
+      combatToggle.textContent = combatLogPanel.classList.contains('collapsed') ? '›' : '‹';
+      combatToggle.addEventListener('click', () => {
+        combatLogPanel.classList.toggle('collapsed');
+        combatToggle.textContent = combatLogPanel.classList.contains('collapsed') ? '›' : '‹';
+      });
+    }
+
+    // System menu dropdown toggle
+    const systemMenuBtn = document.getElementById('system-menu-btn') as HTMLElement;
+    const systemMenuDropdown = document.getElementById('system-menu-dropdown') as HTMLElement;
+    if (systemMenuBtn && systemMenuDropdown) {
+      systemMenuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = systemMenuDropdown.classList.toggle('open');
+        systemMenuBtn.classList.toggle('open', isOpen);
+      });
+      // Close dropdown when clicking outside
+      document.addEventListener('click', () => {
+        systemMenuDropdown.classList.remove('open');
+        systemMenuBtn.classList.remove('open');
+      });
+      // Prevent clicks inside dropdown from closing it immediately
+      systemMenuDropdown.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // Close after a menu item is clicked
+        systemMenuDropdown.classList.remove('open');
+        systemMenuBtn.classList.remove('open');
+      });
+    }
+
+    // Keyboard shortcut: T to toggle the left curtain
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 't' || event.key === 'T') {
+        if ((event.target as HTMLElement).tagName === 'INPUT') return;
+        event.preventDefault();
+        strategyPanel.classList.toggle('collapsed');
+        strategyToggle.textContent = strategyPanel.classList.contains('collapsed') ? '›' : '‹';
+      }
+    });
 
     // All heavy initialisation complete — hide loading overlay
     loadingEl.style.display = 'none';
@@ -230,13 +275,6 @@ async function main() {
         // Sync updated unit state back into the world
         world.units = updatedUnits;
         localMap.render();
-        // Re-show detail for selected tile
-        if (localMap.getSelectedUnits().size > 0) {
-          const unit = world.units.find((u) => localMap.getSelectedUnits().has(u.id));
-          if (unit) {
-            detailPanel.showTile(unit.tileIndex, unit.segment);
-          }
-        }
       }
     });
 
@@ -257,13 +295,6 @@ async function main() {
         // Sync updated unit state back into the world
         world.units = updatedUnits;
         localMap.render();
-        // Re-show detail for selected tile
-        if (localMap.getSelectedUnits().size > 0) {
-          const unit = world.units.find((u) => localMap.getSelectedUnits().has(u.id));
-          if (unit) {
-            detailPanel.showTile(unit.tileIndex, unit.segment);
-          }
-        }
       }
     });
 
@@ -273,15 +304,6 @@ async function main() {
     localMap.goHome();
     if (homeCity) {
       globe.panToTile(homeCity.tileIndex);
-    }
-
-    // Home button
-    const homeBtn = document.getElementById('home-btn');
-    if (homeBtn) {
-      homeBtn.addEventListener('click', () => {
-        localMap.goHome();
-        if (homeCity) globe.panToTile(homeCity.tileIndex);
-      });
     }
 
     // Home key (keyboard)

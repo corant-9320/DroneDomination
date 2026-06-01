@@ -5,7 +5,7 @@
  */
 
 import { WorldData, UnitData, TileData } from './worldData.js';
-import { tileColor, factionColor } from './colors.js';
+import { baseTerrainColor, factionColor } from './colors.js';
 import { drawUnitIcon, segmentAngle } from './unitIcons.js';
 import { CombatAnimator } from './combatAnimations.js';
 import { dbg } from './debug.js';
@@ -72,6 +72,7 @@ export class LocalMapView {
   private lastMouse: { x: number; y: number } = { x: 0, y: 0 };
   private dragEmitPending: boolean = false;
   private lastEmittedCentreTile: number = -1;
+  private isProgrammaticCentre: boolean = false;
 
   // Combat animations
   private animator: CombatAnimator;
@@ -119,6 +120,7 @@ export class LocalMapView {
     this.offsetX = 0;
     this.offsetY = 0;
     this.scale = 0.3;
+    this.isProgrammaticCentre = true;
     this.render();
   }
 
@@ -347,10 +349,22 @@ export class LocalMapView {
 
     if (this.flatTiles.length === 0) return;
 
+    // Build a visible tile lookup once so terrain shading can compare each
+    // triangle with the neighbouring hex across that edge.
+    const ftByTile = new Map<number, FlatTile>();
+    for (const ft of this.flatTiles) {
+      ftByTile.set(ft.tileIndex, ft);
+    }
+
     // Draw each tile as its actual boundary polygon
     for (const ft of this.flatTiles) {
       const tile = this.world.tiles[ft.tileIndex];
-      let color = tileColor(tile);
+      let color = baseTerrainColor(tile);
+      // Mountains are deliberately light grey rather than white so the
+      // leading-edge contour highlights remain visible against them.
+      if (!tile.city && (tile.elevType === 'mountain' || tile.terrain === 'mountain')) {
+        color = '#cfcfcf';
+      }
 
       if (tile.city) {
         color = factionColor(this.world, tile.city);
@@ -366,23 +380,26 @@ export class LocalMapView {
       this.ctx.closePath();
       this.ctx.fillStyle = color;
       this.ctx.fill();
-      this.ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-      this.ctx.lineWidth = 0.5;
-      this.ctx.stroke();
 
-      // Draw faint dotted segment dividers on all hexes
-      if (tile.s === 6) {
+      // Water interiors should read as one continuous lake/sea surface, so do
+      // not draw full hex outlines or tactical segment lines inside water.
+      // Only draw the coastline/shoreline where water meets non-water.
+      if (this.isWaterTile(tile)) {
+        this.drawWaterBoundaryEdges(ft, tile, ftByTile);
+      } else {
+        this.ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+        this.ctx.lineWidth = 0.5;
+        this.ctx.stroke();
+      }
+
+      // Draw faint dotted segment dividers on land hexes only.
+      if (tile.s === 6 && !this.isWaterTile(tile)) {
         this.drawSegmentLines(ft);
       }
 
       // Draw tree icons in each corner of forested hexes
       if (tile.f && tile.s === 6) {
         this.drawForestCornerTrees(ft);
-      }
-
-      // Draw elevation shading (peak triangles) for rolling / hills / mountain
-      if (tile.s === 6 && tile.elevType !== 'flat' && tile.elevType !== 'ocean') {
-        this.drawElevationShading(ft, tile.elevType);
       }
 
       // Highlight selected segment (triangle overlay)
@@ -415,6 +432,18 @@ export class LocalMapView {
         }
       }
     }
+
+    // Add a single-surface water sheen after all tiles are filled.  Because
+    // internal water hex/segment lines are suppressed above, this pass can make
+    // connected lakes read as reflective water rather than as blue board tiles.
+    this.drawWaterSurfaceLighting(ftByTile);
+
+    // Terrain relief is drawn as a separate map-level pass.  It does not use
+    // hex-edge contours or visible triangle meshes.  Contour lines follow the
+    // centres of tiles that sit on the same elevation band boundary; local
+    // one-hex peaks/troughs get compact relief shading instead.
+    this.drawTerrainFeathering(ftByTile);
+    this.drawContourRelief(ftByTile);
 
     // Draw movement range overlay (before units, after tiles)
     this.drawMovementRange();
@@ -468,26 +497,773 @@ export class LocalMapView {
     ctx.restore();
   }
 
+  /** Convert terrain/elevation labels into a small continuous height scale. */
+  private elevationHeight(tile: TileData): number {
+    const elev = tile.elevType ?? tile.terrain;
+    switch (elev) {
+      case 'ocean': return -0.25;
+      case 'flat': return 0.0;
+      case 'rolling': return 0.28;
+      case 'hills': return 0.58;
+      case 'mountain': return 1.0;
+      default:
+        // Fallback for worlds where terrain carries the elevation signal.
+        if (tile.terrain === 'ocean') return -0.25;
+        if (tile.terrain === 'hills') return 0.58;
+        if (tile.terrain === 'mountain') return 1.0;
+        return 0.0;
+    }
+  }
+
   /**
-   * Draw elevation shading by painting each triangular segment of the hex
-   * with a linear gradient that simulates a 3D faceted peak lit by a sun
-   * coming from the upper-left (screen space: angle ~225° = SW-facing faces
-   * are lit, NE-facing faces are in shadow).
+   * Find the neighbour that lies across a particular polygon edge.
    *
-   * Each triangle's face normal (in 2D screen space, pointing outward from
-   * the hex centre toward the edge midpoint) is dot-producted against the
-   * sun direction to get a per-face light intensity in [-1, 1].
-   *
-   *   lit face   → bright highlight overlay (apex → edge, warm white)
-   *   shadow face → dark shadow overlay     (apex → edge, cool dark)
-   *   neutral     → subtle mid-tone
-   *
-   * Peak height (peakPull) controls how far the apex is pulled inward:
-   *   rolling  → 0.18  (shallow)
-   *   hills    → 0.38  (medium)
-   *   mountain → 0.62  (sharp)
+   * This is more robust than assuming tile.n[segment] matches the boundary
+   * vertex order: it chooses the visible neighbour whose projected centre is
+   * most aligned with the edge's outward direction.  If no candidate neighbour
+   * is visible at the edge of the local view, it falls back to tile.n[segment].
    */
-  private drawElevationShading(ft: FlatTile, elevType: string): void {
+  private neighbourAcrossSegment(
+    tile: TileData,
+    ft: FlatTile,
+    segment: number,
+    ftByTile: Map<number, FlatTile>,
+  ): TileData | null {
+    if (!tile.n || tile.n.length === 0 || ft.poly.length < 6) return null;
+
+    const v0 = ft.poly[segment % ft.poly.length];
+    const v1 = ft.poly[(segment + 1) % ft.poly.length];
+    const midX = (v0.x + v1.x) / 2;
+    const midY = (v0.y + v1.y) / 2;
+    const outX = midX - ft.cx;
+    const outY = midY - ft.cy;
+    const outLen = Math.sqrt(outX * outX + outY * outY);
+    if (outLen < 1e-8) return null;
+    const normX = outX / outLen;
+    const normY = outY / outLen;
+
+    let bestIdx = tile.n[segment % tile.n.length];
+    let bestDot = -Infinity;
+
+    for (const nIdx of tile.n) {
+      const nft = ftByTile.get(nIdx);
+      if (!nft) continue;
+
+      const dx = nft.cx - ft.cx;
+      const dy = nft.cy - ft.cy;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len < 1e-8) continue;
+
+      const dot = (dx / len) * normX + (dy / len) * normY;
+      if (dot > bestDot) {
+        bestDot = dot;
+        bestIdx = nIdx;
+      }
+    }
+
+    return this.world.tiles[bestIdx] ?? null;
+  }
+
+  /** Convert elevation labels into discrete contour levels. */
+  private elevationLevel(tile: TileData): number {
+    const elev = tile.elevType ?? tile.terrain;
+    switch (elev) {
+      case 'ocean': return -1;
+      case 'flat': return 0;
+      case 'rolling': return 1;
+      case 'hills': return 2;
+      case 'mountain': return 3;
+      default:
+        if (tile.terrain === 'ocean') return -1;
+        if (tile.terrain === 'hills') return 2;
+        if (tile.terrain === 'mountain') return 3;
+        return 0;
+    }
+  }
+
+  /** Convert a #rrggbb colour into RGB components. */
+  private hexToRgb(color: string): { r: number; g: number; b: number } | null {
+    const match = color.trim().match(/^#?([0-9a-f]{6})$/i);
+    if (!match) return null;
+    const value = parseInt(match[1], 16);
+    return {
+      r: (value >> 16) & 255,
+      g: (value >> 8) & 255,
+      b: value & 255,
+    };
+  }
+
+  /** Blend two CSS hex colours.  Falls back to the first colour if parsing fails. */
+  private mixHexColors(a: string, b: string, t: number): string {
+    const ca = this.hexToRgb(a);
+    const cb = this.hexToRgb(b);
+    if (!ca || !cb) return a;
+    const clamped = Math.max(0, Math.min(1, t));
+    const r = Math.round(ca.r + (cb.r - ca.r) * clamped);
+    const g = Math.round(ca.g + (cb.g - ca.g) * clamped);
+    const bl = Math.round(ca.b + (cb.b - ca.b) * clamped);
+    return `rgb(${r},${g},${bl})`;
+  }
+
+  /** Whether a tile should be treated as open water for rendering. */
+  private isWaterTile(tile: TileData): boolean {
+    const terrain = String(tile.terrain ?? '').toLowerCase();
+    const elev = String(tile.elevType ?? '').toLowerCase();
+    return terrain === 'ocean' || terrain === 'water' || terrain === 'lake' || elev === 'ocean' || elev === 'water' || elev === 'lake';
+  }
+
+  /** Base colour for feathering only; cities keep their hard faction fill. */
+  private terrainFillColor(tile: TileData): string {
+    if (tile.city) return factionColor(this.world, tile.city);
+    if (tile.elevType === 'mountain' || tile.terrain === 'mountain') return '#cfcfcf';
+    return baseTerrainColor(tile);
+  }
+
+  /** Draw only the boundary edges where water meets land or the map edge. */
+  private drawWaterBoundaryEdges(
+    ft: FlatTile,
+    tile: TileData,
+    ftByTile: Map<number, FlatTile>,
+  ): void {
+    if (ft.poly.length < 3) return;
+
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(4,18,30,0.22)';
+    ctx.lineWidth = 0.7;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    for (let seg = 0; seg < ft.poly.length; seg++) {
+      const neighbour = this.neighbourAcrossSegment(tile, ft, seg, ftByTile);
+      if (neighbour && this.isWaterTile(neighbour)) continue;
+
+      const v0 = ft.poly[seg];
+      const v1 = ft.poly[(seg + 1) % ft.poly.length];
+      const [ax, ay] = this.worldToScreen(v0.x, v0.y);
+      const [bx, by] = this.worldToScreen(v1.x, v1.y);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  /** Deterministic pseudo-random helper for tiny water-sparkle placement. */
+  private hash01(n: number): number {
+    const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453;
+    return x - Math.floor(x);
+  }
+
+  /** Clip subsequent drawing to a tile polygon in screen space. */
+  private clipToTile(ft: FlatTile): void {
+    const ctx = this.ctx;
+    ctx.beginPath();
+    for (let i = 0; i < ft.poly.length; i++) {
+      const [sx, sy] = this.worldToScreen(ft.poly[i].x, ft.poly[i].y);
+      if (i === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    }
+    ctx.closePath();
+    ctx.clip();
+  }
+
+  /**
+   * Draw connected water bodies as one uniform reflective surface.
+   *
+   * Water should not show per-hex lighting, random shimmer strokes, contour
+   * shading, or tactical texture.  Each connected lake/sea is clipped as one
+   * shape and receives a single broad reflection from the same upper-left sun
+   * direction used by the elevation relief.
+   */
+  private drawWaterSurfaceLighting(ftByTile: Map<number, FlatTile>): void {
+    const waterSet = new Set<number>();
+    for (const ft of this.flatTiles) {
+      if (this.isWaterTile(this.world.tiles[ft.tileIndex])) {
+        waterSet.add(ft.tileIndex);
+      }
+    }
+    if (waterSet.size === 0) return;
+
+    const visited = new Set<number>();
+    const components: FlatTile[][] = [];
+
+    for (const startIdx of waterSet) {
+      if (visited.has(startIdx)) continue;
+
+      const component: FlatTile[] = [];
+      const queue: number[] = [startIdx];
+      visited.add(startIdx);
+
+      while (queue.length > 0) {
+        const idx = queue.shift()!;
+        const ft = ftByTile.get(idx);
+        if (ft) component.push(ft);
+
+        const tile = this.world.tiles[idx];
+        for (const nIdx of tile.n) {
+          if (!waterSet.has(nIdx) || visited.has(nIdx)) continue;
+          visited.add(nIdx);
+          queue.push(nIdx);
+        }
+      }
+
+      if (component.length > 0) components.push(component);
+    }
+
+    const ctx = this.ctx;
+    const SUN_X = -0.707;
+    const SUN_Y = -0.707;
+    const REFLECT_X = -SUN_X;
+    const REFLECT_Y = -SUN_Y;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+
+    for (const component of components) {
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+
+      ctx.save();
+      ctx.beginPath();
+
+      for (const ft of component) {
+        for (let i = 0; i < ft.poly.length; i++) {
+          const [sx, sy] = this.worldToScreen(ft.poly[i].x, ft.poly[i].y);
+          minX = Math.min(minX, sx);
+          minY = Math.min(minY, sy);
+          maxX = Math.max(maxX, sx);
+          maxY = Math.max(maxY, sy);
+          if (i === 0) ctx.moveTo(sx, sy);
+          else ctx.lineTo(sx, sy);
+        }
+        ctx.closePath();
+      }
+
+      if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+        ctx.restore();
+        continue;
+      }
+
+      ctx.clip();
+
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      const w = Math.max(1, maxX - minX);
+      const h = Math.max(1, maxY - minY);
+      const span = Math.sqrt(w * w + h * h);
+      const pad = span * 0.25;
+
+      // A single component-wide reflection gradient.  Because it is clipped to
+      // the whole connected water body, it reads as one flat reflective surface
+      // rather than as shaded individual hexes.
+      const sheen = ctx.createLinearGradient(
+        cx + SUN_X * span * 0.55,
+        cy + SUN_Y * span * 0.55,
+        cx + REFLECT_X * span * 0.55,
+        cy + REFLECT_Y * span * 0.55,
+      );
+      sheen.addColorStop(0.00, 'rgba(255,255,245,0.210)');
+      sheen.addColorStop(0.20, 'rgba(255,255,245,0.110)');
+      sheen.addColorStop(0.52, 'rgba(255,255,245,0.018)');
+      sheen.addColorStop(1.00, 'rgba(0,15,34,0.120)');
+      ctx.fillStyle = sheen;
+      ctx.fillRect(minX - pad, minY - pad, w + pad * 2, h + pad * 2);
+
+      // A broad, soft specular patch on the sun-facing side.  This is uniform
+      // at the water-body scale and deliberately avoids line texture.
+      ctx.save();
+      ctx.translate(cx + SUN_X * w * 0.16, cy + SUN_Y * h * 0.16);
+      ctx.rotate(Math.atan2(REFLECT_Y, REFLECT_X));
+      ctx.scale(Math.max(1, w * 0.72), Math.max(1, h * 0.34));
+      const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+      glow.addColorStop(0.00, 'rgba(255,255,245,0.150)');
+      glow.addColorStop(0.38, 'rgba(255,255,245,0.060)');
+      glow.addColorStop(1.00, 'rgba(255,255,245,0.000)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(0, 0, 1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Soften hard biome edges by washing a mixed colour along shared borders.
+   * This is intentionally a low-alpha pass: the map remains readable as hexes,
+   * but adjacent terrain no longer looks like cut paper.
+   */
+  private drawTerrainFeathering(ftByTile: Map<number, FlatTile>): void {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    for (const ft of this.flatTiles) {
+      const tile = this.world.tiles[ft.tileIndex];
+      if (tile.s !== 6 || ft.poly.length < 6) continue;
+      const color = this.terrainFillColor(tile);
+
+      for (let seg = 0; seg < ft.poly.length; seg++) {
+        const neighbour = this.neighbourAcrossSegment(tile, ft, seg, ftByTile);
+        if (!neighbour) continue;
+        const neighbourIdx = this.world.tiles.indexOf(neighbour);
+        if (neighbourIdx >= 0 && ft.tileIndex > neighbourIdx) continue;
+
+        const nColor = this.terrainFillColor(neighbour);
+        if (nColor === color && neighbour.terrain === tile.terrain && neighbour.elevType === tile.elevType) continue;
+
+        const v0 = ft.poly[seg];
+        const v1 = ft.poly[(seg + 1) % ft.poly.length];
+        const [ax, ay] = this.worldToScreen(v0.x, v0.y);
+        const [bx, by] = this.worldToScreen(v1.x, v1.y);
+
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
+        ctx.strokeStyle = this.mixHexColors(color, nColor, 0.5);
+        ctx.globalAlpha = 0.13;
+        ctx.lineWidth = 10;
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  /** True when this tile sits on the outer edge of an elevation threshold. */
+  private isContourBandTile(tileIdx: number, level: number): boolean {
+    const tile = this.world.tiles[tileIdx];
+    if (!tile || this.elevationLevel(tile) < level) return false;
+    return tile.n.some((nIdx: number) => this.elevationLevel(this.world.tiles[nIdx]) < level);
+  }
+
+  /**
+   * Faint centreline contour helper.
+   *
+   * These lines are now only a nearly invisible guide to the contour path.
+   * The terrain form is carried by the gradient relief painted on the actual
+   * high/low boundary edges, not by this line.
+   */
+  private strokeContourSegment(
+    ax: number,
+    ay: number,
+    bx: number,
+    by: number,
+    level: number,
+  ): void {
+    const ctx = this.ctx;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.strokeStyle = `rgba(18,20,18,${(0.030 + level * 0.008).toFixed(3)})`;
+    ctx.lineWidth = 0.55;
+    ctx.stroke();
+  }
+
+  /** Average screen-space radius for a visible hex. */
+  private screenHexRadius(ft: FlatTile): number {
+    const [csx, csy] = this.worldToScreen(ft.cx, ft.cy);
+    let radius = 0;
+    for (const v of ft.poly) {
+      const [vx, vy] = this.worldToScreen(v.x, v.y);
+      radius += Math.sqrt((vx - csx) ** 2 + (vy - csy) ** 2);
+    }
+    return radius / Math.max(1, ft.poly.length);
+  }
+
+  /** Draw a quadrilateral gradient band extending out from a contour edge. */
+  private fillContourGradientBand(
+    ax: number,
+    ay: number,
+    bx: number,
+    by: number,
+    nx: number,
+    ny: number,
+    width: number,
+    nearColor: string,
+    farColor: string,
+  ): void {
+    const ctx = this.ctx;
+    const grad = ctx.createLinearGradient(
+      (ax + bx) / 2,
+      (ay + by) / 2,
+      (ax + bx) / 2 + nx * width,
+      (ay + by) / 2 + ny * width,
+    );
+    grad.addColorStop(0.0, nearColor);
+    grad.addColorStop(0.45, nearColor.replace(/,([0-9.]+)\)$/, (_m, a) => `,${(parseFloat(a) * 0.45).toFixed(3)})`));
+    grad.addColorStop(1.0, farColor);
+
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.lineTo(bx + nx * width, by + ny * width);
+    ctx.lineTo(ax + nx * width, ay + ny * width);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+  }
+
+  /**
+   * Shade the actual high/low hex edge that creates a contour step.
+   *
+   * The contour centreline is deliberately almost invisible.  Relief is drawn
+   * as wide, feathered bands attached to the boundary between the higher tile
+   * and its lower neighbour:
+   * - shadow starts on the high edge and falls into the lower tile when the
+   *   edge faces away from the sun
+   * - highlight starts on the leading/sun-facing edge and fades back across
+   *   the higher tile
+   *
+   * Both bands graduate to roughly half a hex radius so the effect reads as a
+   * continuous slope rather than as another heavy line.
+   */
+  private drawContourEdgeRelief(
+    ft: FlatTile,
+    tile: TileData,
+    segment: number,
+    level: number,
+    neighbour: TileData,
+  ): void {
+    if (ft.poly.length < 6) return;
+
+    const ctx = this.ctx;
+    const SUN_X = -0.707;
+    const SUN_Y = -0.707;
+
+    const v0 = ft.poly[segment % ft.poly.length];
+    const v1 = ft.poly[(segment + 1) % ft.poly.length];
+    const [ax, ay] = this.worldToScreen(v0.x, v0.y);
+    const [bx, by] = this.worldToScreen(v1.x, v1.y);
+    const [csx, csy] = this.worldToScreen(ft.cx, ft.cy);
+
+    const midX = (ax + bx) / 2;
+    const midY = (ay + by) / 2;
+    const outX = midX - csx;
+    const outY = midY - csy;
+    const outLen = Math.sqrt(outX * outX + outY * outY);
+    if (outLen < 1e-6) return;
+
+    // outward points from the higher contour tile toward the lower neighbour.
+    const nx = outX / outLen;
+    const ny = outY / outLen;
+    const highNx = -nx;
+    const highNy = -ny;
+
+    const heightDrop = Math.max(1, this.elevationLevel(tile) - this.elevationLevel(neighbour));
+    const radius = this.screenHexRadius(ft);
+    const bandWidth = Math.max(8, radius * 0.50);
+    const innerLip = Math.max(2, radius * 0.035);
+
+    const strength = Math.min(1, 0.36 + heightDrop * 0.22 + level * 0.08);
+    const edgeFacesSun = nx * SUN_X + ny * SUN_Y;
+    const awayFromSun = Math.max(0, -edgeFacesSun);
+    const towardSun = Math.max(0, edgeFacesSun);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Cast shadow: attached to the high edge, then feathered deeply into the
+    // lower neighbour.  This is a filled gradient band, not a stroked contour.
+    if (awayFromSun > 0.04) {
+      const shadowAlpha = Math.min(0.42, (0.24 + level * 0.045) * strength * awayFromSun);
+      this.fillContourGradientBand(
+        ax,
+        ay,
+        bx,
+        by,
+        nx,
+        ny,
+        bandWidth,
+        `rgba(5,8,14,${shadowAlpha.toFixed(3)})`,
+        'rgba(5,8,14,0.000)',
+      );
+
+      // A very tight contact shadow exactly at the terrain step helps the
+      // wider feather read as a drop without turning the contour line heavy.
+      this.fillContourGradientBand(
+        ax,
+        ay,
+        bx,
+        by,
+        nx,
+        ny,
+        Math.max(3, radius * 0.10),
+        `rgba(0,0,0,${(shadowAlpha * 0.45).toFixed(3)})`,
+        'rgba(0,0,0,0.000)',
+      );
+    }
+
+    // Leading-edge highlight: attached to the same boundary, but feathered
+    // back across the higher tile on sun-facing edges.
+    if (towardSun > 0.04) {
+      const highlightAlpha = Math.min(0.48, (0.30 + level * 0.055) * strength * towardSun);
+      this.fillContourGradientBand(
+        ax + highNx * innerLip,
+        ay + highNy * innerLip,
+        bx + highNx * innerLip,
+        by + highNy * innerLip,
+        highNx,
+        highNy,
+        bandWidth * 0.92,
+        `rgba(255,252,218,${highlightAlpha.toFixed(3)})`,
+        'rgba(255,252,218,0.000)',
+      );
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Draw contours as centreline traces along the edge of each elevation band.
+   *
+   * A contour for level N passes through centres of all tiles that are at or
+   * above N and touch lower ground.  Adjacent contour-band tile centres are
+   * connected, so protruding one-tile fingers remain part of the contour
+   * instead of being smoothed away.
+   */
+  private drawContourRelief(ftByTile: Map<number, FlatTile>): void {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // First pass: paint relief on the actual high/low hex boundaries that
+    // generate each contour.  This keeps shadow off the contour centreline
+    // and puts the cast shadow onto the lower neighbouring terrain.
+    for (let level = 1; level <= 3; level++) {
+      for (const ft of this.flatTiles) {
+        const tile = this.world.tiles[ft.tileIndex];
+        if (tile.s !== 6 || this.elevationLevel(tile) < level || ft.poly.length < 6) continue;
+
+        for (let seg = 0; seg < ft.poly.length; seg++) {
+          const neighbour = this.neighbourAcrossSegment(tile, ft, seg, ftByTile);
+          if (!neighbour || this.elevationLevel(neighbour) >= level) continue;
+          this.drawContourEdgeRelief(ft, tile, seg, level, neighbour);
+        }
+      }
+    }
+
+    // Second pass: add compact triangular peak shading to every local high
+    // point with four or more lower neighbours.  This preserves protruding
+    // ridges and one-hex summits without reintroducing global triangle noise.
+    for (const ft of this.flatTiles) {
+      const tile = this.world.tiles[ft.tileIndex];
+      if (tile.s !== 6 || ft.poly.length < 6) continue;
+      this.drawPeakTriangularRelief(ft, tile, ftByTile);
+    }
+
+    // Third pass: draw the contour path itself very faintly through the
+    // centres of the contour-band tiles.  These are correct positional lines,
+    // but they should not carry the relief/shadow styling.
+    const drawn = new Set<string>();
+
+    for (let level = 1; level <= 3; level++) {
+      for (const ft of this.flatTiles) {
+        const tile = this.world.tiles[ft.tileIndex];
+        if (tile.s !== 6 || !this.isContourBandTile(ft.tileIndex, level)) continue;
+
+        const [ax, ay] = this.worldToScreen(ft.cx, ft.cy);
+        let connectedSameBand = false;
+
+        for (const nIdx of tile.n) {
+          const nft = ftByTile.get(nIdx);
+          if (!nft || nIdx < ft.tileIndex) continue;
+          if (!this.isContourBandTile(nIdx, level)) continue;
+
+          connectedSameBand = true;
+          drawn.add(`${level}:${ft.tileIndex}`);
+          drawn.add(`${level}:${nIdx}`);
+
+          const [bx, by] = this.worldToScreen(nft.cx, nft.cy);
+          this.strokeContourSegment(ax, ay, bx, by, level);
+        }
+
+        if (!connectedSameBand && !drawn.has(`${level}:${ft.tileIndex}`)) {
+          // One-hex spurs still need a small local mark, but keep it compact
+          // and let drawSingleHexRelief handle the local highlight/shadow.
+          this.drawSingleHexRelief(ft, tile, level, ftByTile);
+          drawn.add(`${level}:${ft.tileIndex}`);
+        }
+      }
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Draw compact triangular peak shading on any hex that stands above most of
+   * its immediate neighbours.
+   *
+   * This is intentionally separate from the contour-edge relief: contour edges
+   * communicate broad slopes, while this local pass makes small summits and
+   * protruding ridge points read as raised terrain.  A hex qualifies when four
+   * or more of its neighbours are lower, so single-hex peaks and ridge noses are
+   * preserved instead of being lost inside the contour network.
+   */
+  private drawPeakTriangularRelief(
+    ft: FlatTile,
+    tile: TileData,
+    ftByTile: Map<number, FlatTile>,
+  ): void {
+    if (ft.poly.length < 6) return;
+
+    const ownLevel = this.elevationLevel(tile);
+    if (ownLevel <= 0) return;
+
+    const neighbourLevels = tile.n.map((nIdx: number) => this.elevationLevel(this.world.tiles[nIdx]));
+    const lowerCount = neighbourLevels.filter((h) => h < ownLevel).length;
+    if (lowerCount < 4) return;
+
+    const maxDrop = Math.max(0, ...neighbourLevels.map((h) => ownLevel - h));
+    const peakStrength = Math.min(1, 0.55 + (lowerCount - 4) * 0.18 + maxDrop * 0.10);
+
+    const [csx, csy] = this.worldToScreen(ft.cx, ft.cy);
+    const SUN_X = -0.707;
+    const SUN_Y = -0.707;
+    const ctx = this.ctx;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+
+    for (let seg = 0; seg < ft.poly.length; seg++) {
+      const v0 = ft.poly[seg];
+      const v1 = ft.poly[(seg + 1) % ft.poly.length];
+      const [ax, ay] = this.worldToScreen(v0.x, v0.y);
+      const [bx, by] = this.worldToScreen(v1.x, v1.y);
+      const midX = (ax + bx) / 2;
+      const midY = (ay + by) / 2;
+      const dx = midX - csx;
+      const dy = midY - csy;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len < 1e-6) continue;
+
+      const neighbour = this.neighbourAcrossSegment(tile, ft, seg, ftByTile);
+      const neighbourLevel = neighbour ? this.elevationLevel(neighbour) : ownLevel;
+      const drop = Math.max(0, ownLevel - neighbourLevel);
+      const edgeWeight = drop > 0 ? Math.min(1.35, 0.82 + drop * 0.22) : 0.25;
+
+      // For a raised hex, each triangular face is treated as sloping outward
+      // from the centre.  Faces pointing toward the sun get a warm highlight;
+      // faces pointing away get a cooler shadow.
+      const facingSun = (dx / len) * SUN_X + (dy / len) * SUN_Y;
+      const baseAlpha = (0.105 + ownLevel * 0.035) * peakStrength * edgeWeight * Math.abs(facingSun);
+      const alpha = Math.min(0.34, baseAlpha);
+      if (alpha < 0.01) continue;
+
+      const grad = ctx.createLinearGradient(csx, csy, midX, midY);
+      if (facingSun >= 0) {
+        grad.addColorStop(0.0, `rgba(255,252,220,${(alpha * 0.10).toFixed(3)})`);
+        grad.addColorStop(0.45, `rgba(255,252,220,${(alpha * 0.38).toFixed(3)})`);
+        grad.addColorStop(1.0, `rgba(255,252,220,${alpha.toFixed(3)})`);
+      } else {
+        grad.addColorStop(0.0, `rgba(7,12,22,${(alpha * 0.12).toFixed(3)})`);
+        grad.addColorStop(0.45, `rgba(7,12,22,${(alpha * 0.48).toFixed(3)})`);
+        grad.addColorStop(1.0, `rgba(7,12,22,${(alpha * 1.12).toFixed(3)})`);
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(csx, csy);
+      ctx.lineTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Compact relief for a one-hex local peak/trough.  This is the only place
+   * where triangular shading is used, and it is deliberately localised.
+   */
+  private drawSingleHexRelief(
+    ft: FlatTile,
+    tile: TileData,
+    level: number,
+    ftByTile: Map<number, FlatTile>,
+  ): void {
+    if (ft.poly.length < 6) return;
+
+    const ownLevel = this.elevationLevel(tile);
+    const neighbourLevels = tile.n.map((nIdx: number) => this.elevationLevel(this.world.tiles[nIdx]));
+    const isPeak = neighbourLevels.every((h) => h < ownLevel);
+    const isTrough = neighbourLevels.every((h) => h > ownLevel);
+    if (isPeak) return; // handled by drawPeakTriangularRelief for all local highs
+    if (!isTrough) return;
+
+    const [csx, csy] = this.worldToScreen(ft.cx, ft.cy);
+    const SUN_X = -0.707;
+    const SUN_Y = -0.707;
+    const ctx = this.ctx;
+
+    for (let seg = 0; seg < ft.poly.length; seg++) {
+      const v0 = ft.poly[seg];
+      const v1 = ft.poly[(seg + 1) % ft.poly.length];
+      const [ax, ay] = this.worldToScreen(v0.x, v0.y);
+      const [bx, by] = this.worldToScreen(v1.x, v1.y);
+      const midX = (ax + bx) / 2;
+      const midY = (ay + by) / 2;
+      const dx = midX - csx;
+      const dy = midY - csy;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len < 1e-6) continue;
+
+      const facingSun = ((dx / len) * SUN_X + (dy / len) * SUN_Y) * (isPeak ? 1 : -1);
+      const alpha = (0.12 + level * 0.045) * Math.abs(facingSun);
+
+      ctx.beginPath();
+      ctx.moveTo(csx, csy);
+      ctx.lineTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.closePath();
+      ctx.fillStyle = facingSun >= 0
+        ? `rgba(255,250,220,${alpha.toFixed(3)})`
+        : `rgba(10,18,30,${(alpha * 1.25).toFixed(3)})`;
+      ctx.fill();
+    }
+
+    // No circular peak/trough contour here: isolated highs/lows now read
+    // through the compact triangular relief shading above.
+  }
+
+  /** Average centre-to-vertex radius in screen pixels. */
+  private getAverageHexScreenRadius(ft: FlatTile): number {
+    const [csx, csy] = this.worldToScreen(ft.cx, ft.cy);
+    let avgRadius = 0;
+    for (const v of ft.poly) {
+      const [vx, vy] = this.worldToScreen(v.x, v.y);
+      avgRadius += Math.sqrt((vx - csx) ** 2 + (vy - csy) ** 2);
+    }
+    return avgRadius / Math.max(1, ft.poly.length);
+  }
+
+  /**
+   * Draw elevation shading using a local height field rather than only the
+   * current hex's elevation type.
+   *
+   * Each triangular face compares this tile's height with the neighbour across
+   * that edge.  A mountain next to lower land produces a lit/shadowed downhill
+   * face; a hill below a higher neighbour shades as an upslope.  This makes
+   * ridges and valleys continue across hex boundaries while preserving the
+   * stronger pointiness of hills and mountains.
+   */
+  private drawElevationShading(
+    ft: FlatTile,
+    tile: TileData,
+    ftByTile: Map<number, FlatTile>,
+  ): void {
     if (ft.poly.length < 6) return;
 
     const [csx, csy] = this.worldToScreen(ft.cx, ft.cy);
@@ -501,36 +1277,38 @@ export class LocalMapView {
     avgRadius /= ft.poly.length;
     if (avgRadius < 5) return;
 
-    // Sun direction in screen space: upper-left at ~315° (NW).
-    // Normalised vector pointing FROM the scene TOWARD the sun.
-    const SUN_X = -0.707;  // left
-    const SUN_Y = -0.707;  // up (screen y increases downward, so negative = up)
+    // Sun direction in screen space: upper-left / north-west.
+    const SUN_X = -0.707;
+    const SUN_Y = -0.707;
 
-    // Per-elevation parameters
-    let peakPull:    number;
-    let litAlpha:    number;   // max highlight opacity on fully-lit face
-    let shadowAlpha: number;   // max shadow opacity on fully-shadowed face
-    let snowCap:     boolean;
+    const centreHeight = this.elevationHeight(tile);
 
-    switch (elevType) {
+    // Base pointiness still comes from this tile, so a lone mountain remains
+    // sharper than rolling land, but face brightness comes from neighbour slope.
+    let peakPull: number;
+    let litAlpha: number;
+    let shadowAlpha: number;
+    let snowCap: boolean; // intentionally disabled below: elevation should read through triangles only
+
+    switch (tile.elevType) {
       case 'rolling':
-        peakPull    = 0.18;
-        litAlpha    = 0.22;
-        shadowAlpha = 0.14;
-        snowCap     = false;
+        peakPull = 0.18;
+        litAlpha = 0.18;
+        shadowAlpha = 0.12;
+        snowCap = false;
         break;
       case 'hills':
-        peakPull    = 0.38;
-        litAlpha    = 0.50;
-        shadowAlpha = 0.28;
-        snowCap     = false;
+        peakPull = 0.38;
+        litAlpha = 0.38;
+        shadowAlpha = 0.24;
+        snowCap = false;
         break;
       case 'mountain':
       default:
-        peakPull    = 0.62;
-        litAlpha    = 0.82;
-        shadowAlpha = 0.52;
-        snowCap     = true;
+        peakPull = 0.62;
+        litAlpha = 0.62;
+        shadowAlpha = 0.42;
+        snowCap = false;
         break;
     }
 
@@ -544,8 +1322,6 @@ export class LocalMapView {
       const [ax, ay] = this.worldToScreen(v0.x, v0.y);
       const [bx, by] = this.worldToScreen(v1.x, v1.y);
 
-      // Outward face normal of this triangle: vector from hex centre to
-      // the midpoint of the outer edge, normalised.
       const midX = (ax + bx) / 2;
       const midY = (ay + by) / 2;
       const outX = midX - csx;
@@ -555,28 +1331,40 @@ export class LocalMapView {
       const normX = outX / outLen;
       const normY = outY / outLen;
 
-      // Dot product: +1 = face points directly at sun, -1 = fully away
-      const dot = normX * SUN_X + normY * SUN_Y;
+      const neighbour = this.neighbourAcrossSegment(tile, ft, seg, ftByTile);
+      const neighbourHeight = neighbour ? this.elevationHeight(neighbour) : centreHeight;
+      const heightDelta = centreHeight - neighbourHeight;
 
-      // Apex point (pulled inward from centre toward edge midpoint)
-      const apexX = csx + (midX - csx) * peakPull;
-      const apexY = csy + (midY - csy) * peakPull;
+      // +1 means the face slopes downward away from this hex centre, so the
+      // outward face normal catches light from SUN_X/Y. -1 means terrain rises
+      // toward the neighbour, so the face normal points back inward.
+      const slopeSign = Math.abs(heightDelta) < 0.03 ? 1 : Math.sign(heightDelta);
+      const sunFacing = (normX * SUN_X + normY * SUN_Y) * slopeSign;
 
-      // Gradient runs from apex → outer edge midpoint
+      // Keep subtle form on broad plateaus, but amplify cliffs/ridges where
+      // neighbouring heights differ strongly.
+      const slopeStrength = Math.min(1, Math.abs(heightDelta) * 1.8 + centreHeight * 0.25);
+      const dot = sunFacing * (0.35 + 0.65 * slopeStrength);
+
+      // Pull the apex a bit farther toward higher neighbouring terrain. This
+      // visually links adjacent high tiles into ranges instead of isolated cones.
+      const neighbourPull = heightDelta < -0.03 ? Math.min(0.18, Math.abs(heightDelta) * 0.12) : 0;
+      const facePeakPull = Math.min(0.78, peakPull + neighbourPull);
+      const apexX = csx + (midX - csx) * facePeakPull;
+      const apexY = csy + (midY - csy) * facePeakPull;
+
       const grad = ctx.createLinearGradient(apexX, apexY, midX, midY);
 
       if (dot >= 0) {
-        // Lit face — warm white highlight, stronger at apex
         const a = dot * litAlpha;
-        grad.addColorStop(0,   `rgba(255,252,240,${(a * 1.0).toFixed(3)})`);
-        grad.addColorStop(0.5, `rgba(255,252,240,${(a * 0.4).toFixed(3)})`);
-        grad.addColorStop(1,   `rgba(255,252,240,0.00)`);
+        grad.addColorStop(0, `rgba(255,252,240,${(a * 1.0).toFixed(3)})`);
+        grad.addColorStop(0.55, `rgba(255,252,240,${(a * 0.35).toFixed(3)})`);
+        grad.addColorStop(1, 'rgba(255,252,240,0.00)');
       } else {
-        // Shadow face — cool dark overlay, stronger at apex
         const a = (-dot) * shadowAlpha;
-        grad.addColorStop(0,   `rgba(20,30,50,${(a * 1.0).toFixed(3)})`);
-        grad.addColorStop(0.5, `rgba(20,30,50,${(a * 0.5).toFixed(3)})`);
-        grad.addColorStop(1,   `rgba(20,30,50,0.00)`);
+        grad.addColorStop(0, `rgba(20,30,50,${(a * 1.0).toFixed(3)})`);
+        grad.addColorStop(0.55, `rgba(20,30,50,${(a * 0.55).toFixed(3)})`);
+        grad.addColorStop(1, 'rgba(20,30,50,0.00)');
       }
 
       ctx.beginPath();
@@ -587,10 +1375,13 @@ export class LocalMapView {
       ctx.fillStyle = grad;
       ctx.fill();
 
-      // Ridge lines: bright on lit side, dim on shadow side
+      // Ridge lines appear mostly where there is real relief against the
+      // neighbour, so continuous ranges get structure without every flat edge
+      // becoming noisy.
+      const relief = Math.min(1, Math.abs(heightDelta) * 2.0 + centreHeight * 0.15);
       const ridgeAlpha = dot >= 0
-        ? dot * (elevType === 'mountain' ? 0.45 : elevType === 'hills' ? 0.25 : 0.12)
-        : 0.04;
+        ? dot * relief * (tile.elevType === 'mountain' ? 0.42 : tile.elevType === 'hills' ? 0.24 : 0.12)
+        : 0.025 * relief;
       ctx.strokeStyle = `rgba(255,255,255,${ridgeAlpha.toFixed(3)})`;
       ctx.lineWidth = 0.5;
       ctx.beginPath();
@@ -601,23 +1392,8 @@ export class LocalMapView {
       ctx.stroke();
     }
 
-    // Snow cap: radial glow at hex centre for mountains, offset slightly
-    // toward the sun so it catches the light naturally.
-    if (snowCap && avgRadius >= 10) {
-      const capRadius = Math.max(1.5, avgRadius * 0.13);
-      // Shift cap centre a little toward the sun direction
-      const shift = capRadius * 0.3;
-      const capX = csx + SUN_X * shift;
-      const capY = csy + SUN_Y * shift;
-      const capGrad = ctx.createRadialGradient(capX, capY, 0, capX, capY, capRadius);
-      capGrad.addColorStop(0,   'rgba(255,255,255,0.92)');
-      capGrad.addColorStop(0.5, 'rgba(245,245,240,0.55)');
-      capGrad.addColorStop(1,   'rgba(220,220,215,0.00)');
-      ctx.beginPath();
-      ctx.arc(capX, capY, capRadius, 0, Math.PI * 2);
-      ctx.fillStyle = capGrad;
-      ctx.fill();
-    }
+    // No separate snow caps/glints here: with fixed base colours, elevation
+    // should come from triangle shading only, not extra symbols per hex.
 
     ctx.restore();
   }
@@ -664,9 +1440,9 @@ export class LocalMapView {
   private drawSegmentLines(ft: FlatTile) {
     const [cx, cy] = this.worldToScreen(ft.cx, ft.cy);
     this.ctx.save();
-    this.ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-    this.ctx.lineWidth = 0.5;
-    this.ctx.setLineDash([3, 4]);
+    this.ctx.strokeStyle = 'rgba(0,0,0,0.14)';
+    this.ctx.lineWidth = 0.45;
+    this.ctx.setLineDash([3, 5]);
 
     for (const v of ft.poly) {
       const [vx, vy] = this.worldToScreen(v.x, v.y);
@@ -1007,8 +1783,9 @@ export class LocalMapView {
       this.offsetX += dx;
       this.offsetY += dy;
       this.lastMouse = { x: event.clientX, y: event.clientY };
+      this.isProgrammaticCentre = false;
       this.render();
-      this.emitDragCentre();
+      this.emitDragCentreThrottled();
       return;
     }
 
@@ -1056,14 +1833,13 @@ export class LocalMapView {
   }
 
   /**
-   * During drag, find the tile at viewport centre. If it's a different tile
-   * than the current centre, rebuild the flat view around it so new territory
-   * appears. Setting offset to 0 is correct because the tile at screen-centre
-   * becomes the new projection centre (placed at screen centre by definition).
-   * Also emit to the globe for smooth sync.
+   * Throttled callback during drag to sync the globe view.
+   * At low zoom, also recenter the local map to prevent drift.
+   * At high zoom, only sync the globe without recentering (smooth pan).
    */
-  private emitDragCentre() {
+  private emitDragCentreThrottled() {
     if (this.dragEmitPending) return;
+    if (this.isProgrammaticCentre) return; // Prevent feedback loop
     this.dragEmitPending = true;
     requestAnimationFrame(() => {
       this.dragEmitPending = false;
@@ -1075,12 +1851,12 @@ export class LocalMapView {
       if (tileIdx === this.lastEmittedCentreTile) return;
       this.lastEmittedCentreTile = tileIdx;
 
-      // Rebuild flat view around the new centre tile — gives real panning
-      if (tileIdx !== this.centreTileIndex) {
+      // At low zoom (< 1.5), recenter immediately to prevent map drift
+      // At high zoom, defer recentering until mouse up for smooth panning
+      if (this.scale < 1.5 && tileIdx !== this.centreTileIndex) {
+        dbg.localMap.log('Recentering during drag (low zoom):', this.scale.toFixed(2));
         this.centreTileIndex = tileIdx;
         this.flatTiles = this.buildFlatView(tileIdx, this.radius);
-        // Reset offset: the tile that was at screen centre is now the
-        // projection origin, so (0,0) lands at screen centre.
         this.offsetX = 0;
         this.offsetY = 0;
         this.render();
@@ -1091,6 +1867,46 @@ export class LocalMapView {
         this.onCentreChange(tileIdx);
       }
     });
+  }
+
+  /**
+   * Recenter the flat view when the user has dragged far enough that
+   * tiles at the edge are running out. Called on mouse up.
+   * At low zoom, recenter aggressively to prevent the whole map drifting.
+   * At high zoom, allow more offset accumulation for smooth panning.
+   */
+  private recenterIfNeeded() {
+    const rect = this.canvas.getBoundingClientRect();
+    const centreX = rect.width / 2;
+    const centreY = rect.height / 2;
+    const tileIdx = this.findTileAt(centreX, centreY);
+    if (tileIdx < 0) return;
+    
+    // Only recenter if we've moved significantly from the projection center
+    if (tileIdx !== this.centreTileIndex) {
+      const currentCentre = this.flatTiles.find(ft => ft.tileIndex === this.centreTileIndex);
+      const newCentre = this.flatTiles.find(ft => ft.tileIndex === tileIdx);
+      
+      if (currentCentre && newCentre) {
+        const dist = Math.sqrt(
+          (newCentre.cx - currentCentre.cx) ** 2 + 
+          (newCentre.cy - currentCentre.cy) ** 2
+        );
+        const avgRadius = this.screenHexRadius(currentCentre) / (this.scale * Math.min(rect.width, rect.height) * 3.5);
+        
+        // At low zoom (< 1.0), recenter after 1 tile. At high zoom, allow 3+ tiles.
+        const threshold = this.scale < 1.0 ? avgRadius * 1.0 : avgRadius * 3.0;
+        
+        if (dist > threshold) {
+          dbg.localMap.log('Recentering after drag: distance =', dist.toFixed(3), 'threshold =', threshold.toFixed(3), 'zoom =', this.scale.toFixed(2));
+          this.centreTileIndex = tileIdx;
+          this.flatTiles = this.buildFlatView(tileIdx, this.radius);
+          this.offsetX = 0;
+          this.offsetY = 0;
+          this.render();
+        }
+      }
+    }
   }
 
   private onWheel(event: WheelEvent) {
@@ -1111,7 +1927,10 @@ export class LocalMapView {
   }
 
   private onMouseUp() {
-    this.dragging = false;
+    if (this.dragging) {
+      this.dragging = false;
+      this.recenterIfNeeded();
+    }
   }
 
   /**
@@ -1800,7 +2619,7 @@ export class LocalMapView {
 
       const reachedTarget = destTileIndex === targetTile;
       const useTargetSegment = reachedTarget && targetSegment >= 0 && movingUnits.length === 1;
-      const occupiedSegments = new Set(existingAtDest.map((u) => u.segment));
+      const occupiedSegments = new Set<number>(existingAtDest.map((u) => u.segment));
       for (const unit of movingUnits) {
         const preferred = useTargetSegment ? targetSegment : unit.segment;
         const freeSegment = this.findPreferredSegment(preferred, occupiedSegments);
@@ -1846,7 +2665,7 @@ export class LocalMapView {
         const reachedTarget = destTileIndex === targetTile;
         const useTarget = reachedTarget && targetSegment >= 0 && movingUnits.length === 1;
         const preferred = useTarget ? targetSegment : unit.segment;
-        const occupiedSegments = new Set(unitsAtDest.map((u) => u.segment));
+        const occupiedSegments = new Set<number>(unitsAtDest.map((u) => u.segment));
         const freeSegment = this.findPreferredSegment(preferred, occupiedSegments);
         if (freeSegment < 0) continue;
 

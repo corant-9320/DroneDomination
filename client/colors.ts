@@ -142,16 +142,32 @@ export function tileColorRGB(tile: Pick<TileData, 'terrain' | 'elevType' | 'f'>)
 // Legacy shims — keep callers that pass terrain string directly working
 // ---------------------------------------------------------------------------
 
-/** @deprecated Use tileColor(tile) instead. */
-export function terrainColor(terrain: string, elevType?: string): string {
-  if (elevType) return tileColor({ terrain, elevType, f: false });
-  return TILE_COLORS[terrain] ?? '#555555';
+/**
+ * Return the base terrain color without any elevation tint.
+ * Use this for the local map's base fill; elevation is shown via triangle shading.
+ */
+export function baseTerrainColor(tile: Pick<TileData, 'terrain' | 'elevType' | 'f'>): string {
+  // Check for specific identity (forested variants)
+  const identity = tileIdentity(tile);
+  if (TILE_COLORS[identity]) return TILE_COLORS[identity];
+
+  // Check terrain:elev combination
+  const terrainElev = `${tile.terrain}:${tile.elevType}`;
+  if (TILE_COLORS[terrainElev]) return TILE_COLORS[terrainElev];
+
+  // Ocean and tundra: terrain color only
+  if (tile.terrain === 'ocean' || tile.terrain === 'tundra') {
+    return TILE_COLORS[tile.terrain];
+  }
+
+  // Mountain is already white in TILE_COLORS
+  if (tile.elevType === 'mountain') return TILE_COLORS['mountain'];
+
+  // Otherwise return base terrain color (no tint)
+  return TILE_COLORS[tile.terrain] ?? '#555555';
 }
 
-/** @deprecated Use tileColorRGB(tile) instead. */
-export function terrainColorRGB(terrain: string, elevType?: string): [number, number, number] {
-  return hexToRGB(terrainColor(terrain, elevType));
-}
+
 
 // ---------------------------------------------------------------------------
 // Faction colors

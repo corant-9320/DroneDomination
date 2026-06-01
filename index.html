@@ -34,29 +34,72 @@
       width: 280px;
       height: 100%;
       background: rgba(10, 10, 10, 0.5);
-      overflow-y: auto;
+      overflow: hidden;
       z-index: 20;
       padding: 12px;
       font-size: 12px;
       color: #ddd;
       pointer-events: auto;
+      transition: width 0.3s ease;
+      display: flex;
+      flex-direction: column;
     }
 
-    /* Detail panel — bottom of local map */
-    #detail-panel {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 280px; /* stop before the combat curtain */
-      height: calc(20 * 1.4em + 16px);
-      background: rgba(10, 10, 10, 0.85);
-      border-top: 1px solid rgba(80, 80, 80, 0.5);
-      padding: 6px 10px;
-      font-size: 12px;
-      color: #ddd;
-      z-index: 20;
+    .curtain.collapsed {
+      width: 32px;
+      padding: 0;
+      background: transparent;
+      border: 1px solid rgba(80, 80, 80, 0.5);
+    }
+
+    .curtain-toggle {
+      position: relative;
+      width: 100%;
+      height: 32px;
+      background: rgba(40, 40, 40, 0.85);
+      border: none;
+      color: #eee;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+      z-index: 30;
+      flex-shrink: 0;
+    }
+
+    .curtain-toggle:hover {
+      background: rgba(70, 70, 70, 0.9);
+    }
+
+    #strategy-panel .curtain-toggle {
+      border-right: 1px solid rgba(80, 80, 80, 0.5);
+    }
+
+    /* Override the generic curtain-toggle border for the right panel —
+       the toggle lives inside .curtain-margin, not at the panel root */
+    #combat-log-panel .curtain-toggle {
+      border: none;
+      width: 24px;
+      height: 24px;
+    }
+
+    /* The generic rule gives flex:1 to all non-toggle direct children.
+       Override for the right panel's two direct children. */
+    #combat-log-panel > .curtain-margin,
+    #combat-log-panel > #combat-log-inner {
+      flex: unset;
+      overflow-y: unset;
+    }
+
+    .curtain > *:not(.curtain-toggle) {
+      flex: 1;
       overflow-y: auto;
-      pointer-events: auto;
+    }
+
+    .curtain.collapsed > *:not(.curtain-toggle) {
+      display: none;
     }
 
     #detail-panel .section {
@@ -217,29 +260,76 @@
       z-index: 10;
     }
 
-    /* Menu bar at top of right curtain */
-    #curtain-menu-bar {
+    /* System menu — top-right of right curtain */
+    #system-menu-wrapper {
       display: flex;
-      gap: 6px;
+      justify-content: flex-end;
+      flex-shrink: 0;
       padding: 6px 0 8px;
       margin-bottom: 8px;
       border-bottom: 1px solid rgba(100, 100, 100, 0.4);
-      flex-wrap: wrap;
+      position: relative;
     }
 
-    #curtain-menu-bar button {
+    #system-menu-btn {
       background: rgba(40, 40, 40, 0.85);
       border: 1px solid #555;
       color: #eee;
       font-size: 12px;
-      padding: 4px 10px;
+      padding: 4px 12px;
       border-radius: 12px;
       cursor: pointer;
       transition: background 0.15s;
       white-space: nowrap;
+      user-select: none;
     }
-    #curtain-menu-bar button:hover {
+    #system-menu-btn:hover,
+    #system-menu-btn.open {
       background: rgba(70, 70, 70, 0.9);
+      border-color: #888;
+    }
+
+    #system-menu-dropdown {
+      display: none;
+      position: absolute;
+      top: calc(100% - 2px);
+      right: 0;
+      background: rgba(20, 20, 20, 0.97);
+      border: 1px solid #555;
+      border-radius: 6px;
+      min-width: 140px;
+      z-index: 100;
+      overflow: hidden;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+    }
+    #system-menu-dropdown.open {
+      display: block;
+    }
+
+    #system-menu-dropdown button {
+      display: block;
+      width: 100%;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid rgba(80, 80, 80, 0.4);
+      color: #eee;
+      font-size: 12px;
+      padding: 8px 14px;
+      text-align: left;
+      cursor: pointer;
+      transition: background 0.12s;
+      white-space: nowrap;
+    }
+    #system-menu-dropdown button:last-child {
+      border-bottom: none;
+    }
+    #system-menu-dropdown button:hover {
+      background: rgba(70, 70, 70, 0.9);
+    }
+    #system-menu-dropdown .menu-divider {
+      height: 1px;
+      background: rgba(100, 100, 100, 0.4);
+      margin: 2px 0;
     }
 
     /* Combat log panel — right curtain */
@@ -247,10 +337,86 @@
       right: 0;
       border-left: 1px solid rgba(80, 80, 80, 0.5);
       display: flex;
-      flex-direction: column;
+      flex-direction: row;
       overflow-y: hidden;
+      padding: 0;  /* override base .curtain padding */
     }
 
+    /* Thin margin strip on the left of the right curtain — holds the toggle */
+    #combat-log-panel .curtain-margin {
+      width: 28px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 8px;
+      border-right: 1px solid rgba(80, 80, 80, 0.4);
+      background: rgba(10, 10, 10, 0.4);
+    }
+
+    #combat-log-panel .curtain-toggle {
+      width: 24px;
+      height: 24px;
+      justify-content: center;
+    }
+
+    /* Inner content column — hidden when collapsed */
+    #combat-log-inner {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 10px 10px 0 10px;
+    }
+
+    #combat-log-panel.collapsed #combat-log-inner {
+      display: none;
+    }
+
+    /* When collapsed the panel shrinks to just the margin strip */
+    #combat-log-panel.collapsed {
+      width: 28px !important;  /* override base .curtain.collapsed width:32px */
+      background: transparent;
+      border-left: 1px solid rgba(80, 80, 80, 0.5);
+    }
+
+    /* Right-panel vertical sections */
+    .rp-section {
+      flex-shrink: 0;
+      margin-bottom: 8px;
+    }
+
+    .rp-section-header {
+      font-size: 11px;
+      font-weight: bold;
+      color: #aaa;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      padding: 4px 0 4px;
+      border-bottom: 1px solid rgba(100, 100, 100, 0.35);
+      margin-bottom: 6px;
+    }
+
+    .rp-section-body {
+      font-size: 11px;
+      color: #ccc;
+    }
+
+    .rp-section-body .empty-msg {
+      color: #666;
+      font-style: italic;
+    }
+
+    /* Hex Info section */
+    #hex-info-section { }
+
+    /* Unit Info section */
+    #unit-info-section { }
+
+    /* Enemy Info section */
+    #enemy-info-section { }
+
+    /* Combat log content (inside the panel, below sections) */
     #combat-log-content {
       flex: 1;
       overflow-y: auto;
@@ -523,27 +689,45 @@
     <div id="globe-panel">
 
       <canvas id="globe-canvas"></canvas>
-      <div id="strategy-panel" class="curtain">
+      <div id="strategy-panel" class="curtain collapsed">
+        <button class="curtain-toggle" title="Toggle panel (T)">›</button>
         <div class="section"><h3>Strategy</h3><div class="empty-msg">Strategic info will appear here</div></div>
       </div>
     </div>
     <div id="local-panel">
 
       <canvas id="local-canvas"></canvas>
-      <div id="detail-panel">
-        <div id="detail-content"></div>
-      </div>
       <div id="combat-log-panel" class="curtain">
-        <div id="curtain-menu-bar">
-          <button id="new-world-btn" title="Generate a new world (N)">+ New</button>
-          <button id="home-btn" title="Centre on home city (Home)">⌂ Home</button>
-          <button id="save-btn" title="Save game (Ctrl+S)">💾 Save</button>
-          <button id="load-btn" title="Load game (Ctrl+L)">📂 Load</button>
-          <button id="test-units-btn" title="Open 3D unit model test grid" onclick="window.open('/test-units.html','_blank')">🤖 Unit Models</button>
+        <div class="curtain-margin">
+          <button class="curtain-toggle" title="Toggle panel">‹</button>
         </div>
-        <div id="combat-log-content"></div>
-        <div id="turn-controls">
-          <button id="next-turn-btn" title="End turn (Space)">Next ▶</button>
+        <div id="combat-log-inner">
+          <div id="system-menu-wrapper">
+            <button id="system-menu-btn" title="System menu">☰ Menu ▾</button>
+            <div id="system-menu-dropdown">
+              <button id="new-world-btn" title="Generate a new world (N)">+ New</button>
+              <button id="save-btn" title="Save game (Ctrl+S)">💾 Save</button>
+              <button id="load-btn" title="Load game (Ctrl+L)">📂 Load</button>
+              <div class="menu-divider"></div>
+              <button id="test-units-btn" title="Open 3D unit model test grid" onclick="window.open('/test-units.html','_blank')">🤖 Unit Designer</button>
+            </div>
+          </div>
+          <div class="rp-section" id="hex-info-section">
+            <div class="rp-section-header">Hex Info</div>
+            <div class="rp-section-body" id="hex-info-body"><span class="empty-msg">Select a hex</span></div>
+          </div>
+          <div class="rp-section" id="unit-info-section">
+            <div class="rp-section-header">Unit Info</div>
+            <div class="rp-section-body" id="unit-info-body"><span class="empty-msg">No unit selected</span></div>
+          </div>
+          <div class="rp-section" id="enemy-info-section">
+            <div class="rp-section-header">Enemy Info</div>
+            <div class="rp-section-body" id="enemy-info-body"><span class="empty-msg">No enemy in range</span></div>
+          </div>
+          <div id="combat-log-content"></div>
+          <div id="turn-controls">
+            <button id="next-turn-btn" title="End turn (Space)">Next ▶</button>
+          </div>
         </div>
       </div>
     </div>

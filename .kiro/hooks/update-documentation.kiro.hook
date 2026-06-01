@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "enabled": true,
+  "name": "Update Documentation",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Update the project's steering files and README as follows:\n\nScan existing steering files and README; identify size, redundancy, and unclear sections.\nIf a steering file grows too large, split it into a clear hierarchical structure (top-level steering + topic-specific steering files). The top-level steering must remain lightweight and always loaded—limit it to a short roadmap that lists other steering files, their purpose, and one-line load guidance.\nCreate or update a user-focused README that assumes 'vibe coding' users: minimal technical detail, clear important commands (install, run, test, common workflows), and short examples; avoid explaining internal code structure.\nFor each new or changed steering file include: purpose, scope, intended audience, one-line summary, and a short navigation list of related files. Keep language concise and action-oriented.\nProduce a proposed file tree showing where new files go, and generate diffs or suggested text for the top-level steering and README.\nCommit changes in a branch with a clear message and include a 2–3 line changelog and checklist of manual verification steps (e.g., load top-level steering, run example commands).\nPrefer conservative edits; when uncertain about content or audience, present both a minimal and an expanded wording and ask which to use."
+  }
+}

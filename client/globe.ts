@@ -130,12 +130,14 @@ export class GlobeView {
    * Radial scale factor per elevation type.
    * Tiles are pushed outward from the unit sphere by this amount,
    * giving a subtle raised appearance proportional to terrain height.
+   * 
+   * Cliff height = 50% larger (mountain creates the biggest visual step).
    */
   private static readonly ELEVATION_SCALE: Record<string, number> = {
     flat:     1.000,
-    rolling:  1.006,
-    hills:    1.013,
-    mountain: 1.022,
+    rolling:  1.010,
+    hills:    1.022,
+    mountain: 1.045,
   };
 
   /** Darken an RGB triple — scales toward black while preserving hue. */
