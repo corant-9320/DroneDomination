@@ -535,21 +535,11 @@ A unit is **encircled** if enemy units occupy **3 or more distinct adjacent dire
 
 ---
 
-## 15. Crossfire Bonus (Optional)
+## 15. Crossfire Bonus (Deprecated)
 
-Crossfire rewards coordinated attacks from multiple angles.
+~~Crossfire rewards coordinated attacks from multiple angles.~~
 
-### Condition
-
-- The attacker is hitting the target from **side or rear** arc.
-- At least **1 other attacker** is also targeting the same unit from a **side or rear** arc in the same resolution window.
-
-### Bonus
-
-- +1 damage to each qualifying attacker's attack.
-- Only applies to attackers that themselves are in side/rear position.
-
-**Note**: This is an optional mechanic and may not be active in all resolution modes.
+**This mechanic is deprecated and no longer active.** `getCrossfireBonus` always returns 0. The continuous orientation bonus already rewards flanking positioning without needing an additional stacking mechanic.
 
 ---
 

@@ -999,28 +999,16 @@ describe('combat', () => {
   });
 
   // =========================================================================
-  // Crossfire
+  // Crossfire (deprecated — always returns 0)
   // =========================================================================
 
   describe('crossfire', () => {
-    it('grants +1 when 2+ attackers from side/rear', () => {
+    it('always returns 0 (deprecated)', () => {
       const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
-
-      // Tile 0 neighbours: [1,2,3,4,5,6]
-      // facing 0 → direction 0,1,5 = front; direction 2,4 = side; direction 3 = rear
-      const attackerA = makeUnit({ id: 'aA', ownerId: 'p1', tileIndex: 3, facing: 0 }); // side (dir 2)
-      const attackerB = makeUnit({ id: 'aB', ownerId: 'p1', tileIndex: 4, facing: 0 }); // rear (dir 3)
+      const attackerA = makeUnit({ id: 'aA', ownerId: 'p1', tileIndex: 3, facing: 0 });
+      const attackerB = makeUnit({ id: 'aB', ownerId: 'p1', tileIndex: 4, facing: 0 });
 
       const bonus = getCrossfireBonus(attackerA, target, [attackerA, attackerB], tiles);
-      expect(bonus).toBe(1);
-    });
-
-    it('does not grant crossfire from front arc', () => {
-      const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
-      const attackerFront = makeUnit({ id: 'af', ownerId: 'p1', tileIndex: 1, facing: 0 }); // front
-      const attackerSide = makeUnit({ id: 'as', ownerId: 'p1', tileIndex: 3, facing: 0 }); // side
-
-      const bonus = getCrossfireBonus(attackerFront, target, [attackerFront, attackerSide], tiles);
       expect(bonus).toBe(0);
     });
   });

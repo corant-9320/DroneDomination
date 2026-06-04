@@ -362,33 +362,14 @@ export function getFacingModifier(arc: AttackArc): number {
 // ---------------------------------------------------------------------------
 
 /**
- * Check if a crossfire bonus applies for an attacker against a target.
- * Crossfire: 2+ friendly units attacking same target from side/rear arcs
- * in the same resolution window grants +1 damage each.
- *
- * Uses the new bearing-based system: qualifies if orientation bonus > 0.7
- * (roughly past the front arc threshold of 60°).
+ * @deprecated Crossfire bonus is deprecated and always returns 0.
+ * Retained for API compatibility — will be removed in a future release.
  */
 export function getCrossfireBonus(
-  attacker: Unit,
-  target: Unit,
-  otherAttackers: Unit[],
-  tiles: Tile[],
+  _attacker: Unit,
+  _target: Unit,
+  _otherAttackers: Unit[],
+  _tiles: Tile[],
 ): number {
-  // Check if this attacker is hitting from side or rear (bonus > ~0.67)
-  const myBonus = calculateOrientationBonus(tiles, attacker.tileIndex, target.tileIndex, target.facing);
-  if (myBonus < 0.7) return 0;
-
-  // Count other attackers also hitting from side/rear
-  let qualifyingOthers = 0;
-  for (const other of otherAttackers) {
-    if (other.id === attacker.id) continue;
-    if (other.currentHealth <= 0) continue;
-    const otherBonus = calculateOrientationBonus(tiles, other.tileIndex, target.tileIndex, target.facing);
-    if (otherBonus >= 0.7) {
-      qualifyingOthers++;
-    }
-  }
-
-  return qualifyingOthers >= 1 ? 1 : 0;
+  return 0;
 }
