@@ -410,18 +410,44 @@ export class CombatPanel {
 
     let body = `<div class="cl-body" style="overflow:hidden;">`;
 
-    // Combat prediction steps only — enemy name/stats live in the Enemy Info section
+    // Filtered preview: show only Orientation, Weapon Selection, then Net Damage + Health
     for (const step of c.steps) {
-      const col = toneColor(step.tone);
-      body += `<div class="cl-step" style="padding:1px 0;border:none;">`;
-      body += `<span class="cl-step-title">${esc(step.title)}</span> `;
-      body += `<span style="color:${col};">${esc(step.result)}</span>`;
+      // Orientation step — show arc label with bonus
+      if (step.title.includes('Orientation')) {
+        const col = toneColor(step.tone);
+        body += `<div class="cl-step" style="padding:1px 0;border:none;">`;
+        body += `<span class="cl-step-title">${esc(step.title)}</span> `;
+        body += `<span style="color:${col};">${esc(step.result)}</span>`;
+        body += `</div>`;
+        continue;
+      }
+
+      // Weapon Selection step — keep as-is
+      if (step.title.includes('Weapon Selection')) {
+        const col = toneColor(step.tone);
+        body += `<div class="cl-step" style="padding:1px 0;border:none;">`;
+        body += `<span class="cl-step-title">${esc(step.title)}</span> `;
+        body += `<span style="color:${col};">${esc(step.result)}</span>`;
+        body += `</div>`;
+        continue;
+      }
+
+      // Skip everything else (Range Check, Defence Power, Chassis Modifier, Kinetic/Splash/AA Fire, Health Update)
+    }
+
+    // Net Damage + Health Update as emphasised pair
+    if (c.wasValid && c.directDamage > 0) {
+      const dmgCol = c.directDamage >= 15 ? '#f66' : c.directDamage >= 5 ? '#fa0' : '#8f8';
+      const hpAfter = c.targetHealthAfter;
+      body += `<div class="cl-preview-result">`;
+      body += `<div class="cl-preview-damage" style="color:${dmgCol};">⚔ ${c.directDamage} damage</div>`;
+      body += `<div class="cl-preview-health">❤ ${hpAfter} HP remaining</div>`;
       body += `</div>`;
     }
 
     if (c.wasValid) {
       if (c.targetDestroyed) {
-        body += `<div class="cl-step" style="color:#f44;padding:1px 0;">☠ Target destroyed</div>`;
+        body += `<div class="cl-step" style="color:#f44;padding:2px 0;font-weight:bold;">☠ Target destroyed</div>`;
       }
       if (c.splash.length > 0) {
         body += `<div class="cl-step" style="color:#fa0;padding:1px 0;">💥 Splash → ${c.splash.length} nearby unit${c.splash.length > 1 ? 's' : ''}</div>`;

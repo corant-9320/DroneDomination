@@ -76,10 +76,23 @@ function invalidExplanation(attacker: Unit, target: Unit, reason: string): Expla
 function formatArcShort(arc: AttackArc): string {
   switch (arc) {
     case 'front': return '🛡 Front';
-    case 'side': return '→ Side';
+    case 'side': return '→ Flank';
     case 'rear': return '🎯 Rear';
     default: return '? Unknown';
   }
+}
+
+/**
+ * Format arc with more granularity based on the angular difference.
+ * 0-40° = Front, 40-80° = Front Flank, 80-100° = Flank,
+ * 100-140° = Rear Flank, 140-180° = Rear
+ */
+function formatArcDetailed(angleDiffDeg: number): string {
+  if (angleDiffDeg <= 40) return '🛡 Front';
+  if (angleDiffDeg <= 80) return '🛡→ Front Flank';
+  if (angleDiffDeg <= 100) return '→ Flank';
+  if (angleDiffDeg <= 140) return '→🎯 Rear Flank';
+  return '🎯 Rear';
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +215,7 @@ export function explainAttack(
   steps.push({
     title: '🧭 Orientation',
     description: `${target.label} facing direction ${target.facing}. Bearing from target to ${attacker.label} differs by ${angleDiffDeg}°. Target orientation: ${arc}.`,
-    result: `${formatArcShort(arc)} → orientation bonus +${orientationBonus.toFixed(1)}`,
+    result: `${formatArcDetailed(angleDiffDeg)} → orientation bonus +${orientationBonus.toFixed(1)}`,
     tone: orientationBonus > 0.3 ? 'positive' : 'neutral',
   });
 
