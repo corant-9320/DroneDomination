@@ -12,6 +12,9 @@ import {
   getApproachDirection,
   classifyAttackArc,
   getFacingModifier,
+  calculateOrientationBonus,
+  classifyArcFromAngle,
+  getAngularDifference,
   getDefencePower,
   isDrone,
   clamp,
@@ -40,6 +43,7 @@ import type {
   SplashExplanation,
   ExplainedCombat,
   ExplainedRepair,
+  CombatBreakdown,
 } from '../shared/combatTypes.js';
 
 // ---------------------------------------------------------------------------
@@ -82,6 +86,77 @@ function formatArcShort(arc: AttackArc): string {
 // Attack explanation
 // ---------------------------------------------------------------------------
 
+/**
+ * Build a structured CombatBreakdown for the preview table.
+ * Called after all attack values are computed — both in-range and out-of-range.
+ */
+function buildBreakdown(
+  attacker: Unit,
+  target: Unit,
+  allUnits: Unit[],
+  tiles: Tile[],
+  dist: number,
+  attackRange: number,
+  rangeAttack: number,
+  meleeAttack: number,
+  antiAirAttack: number,
+  orientationBonus: number,
+  defPower: { armour: number; ew: number; defensiveFormation: number; terrain: number; total: number },
+  chosenMode: WeaponMode | 'none',
+  totalDamage: number,
+): CombatBreakdown {
+  const inRange = dist >= 0 && dist <= attackRange;
+  const chassisModifier = getChassisAttackModifier(attacker);
+  const rangeEfficiency = calculateRangeEfficiency(dist);
+  const targetIsDrone = isDrone(target);
+  const effectiveDefence = defPower.total * DEFENCE_SCALE;
+
+  // Base weapon value depends on chosen mode
+  let baseWeapon = 0;
+  let weaponMode: CombatBreakdown['weaponMode'] = 'none';
+  if (chosenMode === 'direct') { baseWeapon = clamp(meleeAttack, 1, 5); weaponMode = 'kinetic'; }
+  else if (chosenMode === 'splash') { baseWeapon = clamp(attacker.attributes.splashAttack ?? 0, 1, 5); weaponMode = 'splash'; }
+  else if (chosenMode === 'antiAir') { baseWeapon = clamp(antiAirAttack, 1, 5); weaponMode = 'antiAir'; }
+  else if (meleeAttack > 0) { baseWeapon = clamp(meleeAttack, 1, 5); weaponMode = 'kinetic'; }
+  else if ((attacker.attributes.splashAttack ?? 0) > 0) { baseWeapon = clamp(attacker.attributes.splashAttack!, 1, 5); weaponMode = 'splash'; }
+  else if (antiAirAttack > 0) { baseWeapon = clamp(antiAirAttack, 1, 5); weaponMode = 'antiAir'; }
+
+  const attackPower = calculateModifiedAttackPower(attacker, baseWeapon, orientationBonus, dist);
+  const rawDamage = calculateFormulaDamage(attackPower, effectiveDefence);
+
+  // Drone evasion: difference between raw and final damage when target is a drone
+  let droneEvasion = 0;
+  if (targetIsDrone && chosenMode !== 'antiAir') {
+    const multiplier = chosenMode === 'splash'
+      ? (1 - (attacker.attributes.splashAttack ?? 0 > 0 ? 0.50 : 0.33))
+      : 0.67; // direct: 1 - 0.33
+    droneEvasion = Math.max(0, rawDamage - totalDamage);
+  }
+
+  return {
+    inRange,
+    distance: dist,
+    attackRange,
+    weaponMode,
+    baseWeapon,
+    chassisLabel: chassisModifier === DRONE_ATTACK_MODIFIER ? 'Drone'
+      : chassisModifier === SPIDER_ATTACK_MODIFIER ? 'Spider'
+      : 'Tank',
+    chassisModifier,
+    rangeEfficiency: Math.round(rangeEfficiency * 100) / 100,
+    orientationBonus,
+    droneAttackPenalty: 0, // deprecated — chassis modifier is shown via chassisLabel row
+    attackTotal: Math.round(attackPower * 100) / 100,
+    defArmour: defPower.armour,
+    defEW: defPower.ew,
+    defFormation: defPower.defensiveFormation,
+    defTerrain: defPower.terrain,
+    droneEvasion,
+    defTotal: Math.round(effectiveDefence * 100) / 100,
+    netDamage: inRange ? totalDamage : 0,
+  };
+}
+
 export function explainAttack(
   attacker: Unit,
   target: Unit,
@@ -116,34 +191,19 @@ export function explainAttack(
     tone: dist <= attackRange ? 'positive' : 'negative',
   });
 
-  if (dist < 0 || dist > attackRange) {
-    return {
-      attackerId: attacker.id,
-      attackerLabel: attacker.label,
-      targetId: target.id,
-      targetLabel: target.label,
-      wasValid: false,
-      reasonInvalid: 'Out of range',
-      steps,
-      directDamage: 0,
-      targetHealthBefore: target.currentHealth,
-      targetHealthAfter: target.currentHealth,
-      targetDestroyed: false,
-      splash: [],
-      destroyedUnitIds: [],
-    };
-  }
+  const outOfRange = dist < 0 || dist > attackRange;
 
-  // Step 2: Orientation
-  const approachDir = getApproachDirection(tiles, target.tileIndex, attacker.tileIndex);
-  const arc = classifyAttackArc(target.facing, approachDir);
-  const orientationBonus = getFacingModifier(arc);
+  // Step 2: Orientation (bearing-based continuous bonus)
+  const orientationBonus = calculateOrientationBonus(tiles, attacker.tileIndex, target.tileIndex, target.facing);
+  const angleDiff = getAngularDifference(tiles, attacker.tileIndex, target.tileIndex, target.facing);
+  const arc: AttackArc = isNaN(angleDiff) ? 'unknown' : classifyArcFromAngle(angleDiff);
+  const angleDiffDeg = isNaN(angleDiff) ? 0 : Math.round((angleDiff * 180) / Math.PI);
 
   steps.push({
     title: '🧭 Orientation',
-    description: `${target.label} faces direction ${target.facing}. ${attacker.label} approaches from direction ${approachDir}. Target orientation: ${arc}.`,
-    result: `${formatArcShort(arc)} → orientation bonus +${orientationBonus}`,
-    tone: orientationBonus > 0 ? 'positive' : 'neutral',
+    description: `${target.label} facing direction ${target.facing}. Bearing from target to ${attacker.label} differs by ${angleDiffDeg}°. Target orientation: ${arc}.`,
+    result: `${formatArcShort(arc)} → orientation bonus +${orientationBonus.toFixed(1)}`,
+    tone: orientationBonus > 0.3 ? 'positive' : 'neutral',
   });
 
   // Step 3: Defence breakdown
@@ -291,14 +351,24 @@ export function explainAttack(
     attackerLabel: attacker.label,
     targetId: target.id,
     targetLabel: target.label,
-    wasValid: true,
+    wasValid: !outOfRange,
+    reasonInvalid: outOfRange ? 'Out of range' : undefined,
     steps,
-    directDamage: totalDamage,
+    directDamage: outOfRange ? 0 : totalDamage,
     targetHealthBefore: target.currentHealth,
-    targetHealthAfter: healthAfter,
-    targetDestroyed: destroyed,
+    targetHealthAfter: outOfRange ? target.currentHealth : healthAfter,
+    targetDestroyed: outOfRange ? false : destroyed,
     splash: [],
     destroyedUnitIds: [],
+    breakdown: buildBreakdown(
+      attacker, target, allUnits, tiles,
+      dist, attackRange,
+      rangeAttack, meleeAttack, antiAirAttack,
+      orientationBonus,
+      defPower,
+      chosenOption.mode,
+      outOfRange ? 0 : totalDamage,
+    ),
   };
 }
 
@@ -328,13 +398,17 @@ export function explainSplash(
     const effectiveDefence = defPower.total * DEFENCE_SCALE;
     const healthBefore = victim.currentHealth + event.damage;
 
-    // Orientation bonus only for the primary target
+    // Orientation bonus only for the primary target (bearing-based)
     const isSelectedTarget = victim.id === primaryTarget.id;
-    const approachDir = isSelectedTarget
-      ? getApproachDirection(tiles, victim.tileIndex, attacker.tileIndex)
-      : -1;
-    const arc = isSelectedTarget ? classifyAttackArc(victim.facing, approachDir) : 'front';
-    const orientationBonus = isSelectedTarget ? getFacingModifier(arc as AttackArc) : 0;
+    const orientationBonus = isSelectedTarget
+      ? calculateOrientationBonus(tiles, attacker.tileIndex, victim.tileIndex, victim.facing)
+      : 0;
+    const angleDiff = isSelectedTarget
+      ? getAngularDifference(tiles, attacker.tileIndex, victim.tileIndex, victim.facing)
+      : 0;
+    const arc: AttackArc = isSelectedTarget
+      ? (isNaN(angleDiff) ? 'unknown' : classifyArcFromAngle(angleDiff))
+      : 'front';
     const baseSplash = clamp(splashPower, 1, 5);
     const splashAttackPower = calculateModifiedAttackPower(attacker, baseSplash, orientationBonus, dist);
     const chassisModifier = getChassisAttackModifier(attacker);

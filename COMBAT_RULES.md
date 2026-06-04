@@ -150,25 +150,44 @@ Range falloff does **not** apply to Anti-Air Reaction Fire.
 
 Each unit has a **facing** direction (0–5) representing which hex edge it points toward.
 
-### Approach Direction
+### Bearing-Based Orientation (Continuous)
 
-The **approach direction** is the direction from the defender's hex toward the attacker's hex:
-- If adjacent: direct neighbour index lookup.
-- If non-adjacent: BFS from defender toward attacker, first hop direction.
+Orientation bonus is calculated from the **straight-line bearing** between attacker and target, using a flat-earth tangent-plane approximation of the 3D tile positions.
 
-### Attack Arc Classification
+#### Calculation
 
-The difference between the approach direction and defender's facing determines the arc:
+1. Compute the **approach bearing**: the compass bearing from the defender's tile center toward the attacker's tile center (flat projection).
+2. Compute the **facing angle**: the bearing from the defender's tile toward the neighbour indicated by its `facing` index.
+3. Compute the **angular difference**: the absolute angle between approach bearing and facing angle (0° to 180°).
+4. The **orientation bonus** is linearly interpolated:
 
 ```
-diff = ((approachDirection - defenderFacing) mod 6 + 6) mod 6
+angularDifference = abs(approachBearing - facingAngle)  // wrapped to [0°, 180°]
+orientationBonus = (angularDifference / 180°) × 2
+orientationBonus = round(orientationBonus, 1 decimal place)
 ```
 
-| diff | Arc | Orientation Bonus |
-|------|-----|-------------------|
-| 0, 1, 5 | **Front** | +0 |
-| 2, 4 | **Side** | +1 |
-| 3 | **Rear** | +2 |
+| Angular Difference | Orientation Bonus | Arc Label |
+|--------------------|-------------------|-----------|
+| 0° (head-on)      | 0.0               | Front     |
+| 45°               | 0.5               | Front     |
+| 60°               | 0.7               | Front/Side boundary |
+| 90° (perpendicular)| 1.0              | Side      |
+| 120°              | 1.3               | Side/Rear boundary |
+| 135°              | 1.5               | Rear      |
+| 180° (perfect rear)| 2.0              | Rear      |
+
+#### Arc Classification (Display Only)
+
+For UI display and combat logs, the continuous angle is bucketed:
+
+- 0°–60° → **Front**
+- 60°–120° → **Side**
+- 120°–180° → **Rear**
+
+#### Flat-Earth Approximation
+
+The bearing is computed by projecting tile positions onto a tangent plane at the defender's location on the unit sphere. This is valid because combat ranges (1–5 hexes) are small relative to the globe radius. The projection uses the defender's position as the origin, with a consistent local east/north frame.
 
 ### Attack Power
 
@@ -176,9 +195,9 @@ diff = ((approachDirection - defenderFacing) mod 6 + 6) mod 6
 AttackPower = (BaseWeaponValue × ChassisAttackModifier × rangeEfficiency) + orientationBonus
 ```
 
-Where `BaseWeaponValue` is `kinetic`, `splashAttack`, or `antiAir` depending on weapon mode, clamped to [1, 5]. `ChassisAttackModifier` is based on movement type (see §7). `rangeEfficiency` is based on attack distance (see §3). `orientationBonus` is 0, 1, or 2 based on the arc. AttackPower may be a decimal — do not round before the damage formula.
+Where `BaseWeaponValue` is `kinetic`, `splashAttack`, or `antiAir` depending on weapon mode, clamped to [1, 5]. `ChassisAttackModifier` is based on movement type (see §7). `rangeEfficiency` is based on attack distance (see §3). `orientationBonus` is a continuous value from 0.0 to 2.0. AttackPower may be a decimal — do not round before the damage formula.
 
-For distance 1 attacks, `rangeEfficiency = 1.00`. For Anti-Air Reaction Fire, `rangeEfficiency` is not used.
+For distance 1 attacks, `rangeEfficiency = 1.00`. For Anti-Air Reaction Fire, `orientationBonus` is 0 and `rangeEfficiency` is not used.
 
 ---
 
@@ -194,7 +213,7 @@ DefencePower = armour + EW + defensiveFormation + terrain
 |-----------|--------|-------|
 | Armour | Target unit's `armour` attribute | 0–5 |
 | EW | Sum of `defence` attributes of all friendly units in same hex (incl. self), capped at 5 | 0–5 |
-| Defensive Formation | Count of adjacent friendly units (same hex different segment, or neighbouring hex), capped at 2 | 0–2 |
+| Defensive Formation | Count of adjacent friendly units (same hex different segment, or neighbouring hex), capped at 2, then × 0.5 | 0–1 |
 | Terrain | Based on tile's elevation + forest (see §13) | 0–4 |
 
 ### Effective Defence (Scaled)
@@ -446,7 +465,7 @@ Adjacent friendly units provide a defence bonus to the target:
 
 - Count qualifying supporters.
 - **Cap at 2** (even if more friendly units are adjacent).
-- Each support unit adds +1 to the DefencePower.
+- Each support unit adds +0.5 to the DefencePower (max +1.0).
 
 ---
 
@@ -842,7 +861,7 @@ Neither attacker gets priority — both fire at full health.
 | `HP_PER_POINT` | 10 | Each maxHealth point = 10 actual health units. |
 | `MAX_UNITS_PER_TILE` | 5 | Maximum units per hex (one segment must stay free). |
 | `EW_CAP` | 5 | Maximum EW contribution from same-hex allies. |
-| `FORMATION_CAP` | 2 | Maximum defensive formation support count. |
+| `FORMATION_CAP` | 2 | Maximum defensive formation supporter count (each contributes 0.5, so max +1.0 to DefencePower). |
 | `TERRAIN_DEFENCE_CAP` | 4 | Maximum terrain defence value. |
 | `REACTION_FIRE_AIR_ONLY` | true | Reaction Fire only triggers against drone / air units. |
 | `REACTION_FIRE_USES_ANTI_AIR_ONLY` | true | Reaction Fire may only use Anti-Air Fire. |

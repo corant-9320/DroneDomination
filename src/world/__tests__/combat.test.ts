@@ -42,15 +42,32 @@ import { Tile } from '../types.js';
  *       6
  *
  * Tile 0 neighbours: [1, 2, 3, 4, 5, 6] (clockwise)
+ *
+ * Positions are placed on the unit sphere in a flat-earth-friendly pattern:
+ * Tile 0 at the "north pole" region, neighbours arranged in a hex ring.
  */
 function createTestGrid(): Tile[] {
-  const pos = { x: 0, y: 0, z: 1 };
+  // Place tile 0 near the pole, with neighbours in a ring around it.
+  // Hex spacing angle (~10° apart gives realistic relative geometry).
+  const centerPos = { x: 0, y: 0, z: 1 }; // north pole
+  const angularSpacing = 0.15; // radians from center to neighbours (~8.6°)
+
+  // Neighbour directions (clockwise from north): 0°, 60°, 120°, 180°, 240°, 300°
+  const neighbourPositions: Array<{ x: number; y: number; z: number }> = [];
+  for (let i = 0; i < 6; i++) {
+    const angle = (i * Math.PI) / 3; // 0, 60, 120, 180, 240, 300 degrees
+    const x = Math.sin(angularSpacing) * Math.sin(angle);
+    const y = Math.sin(angularSpacing) * Math.cos(angle);
+    const z = Math.cos(angularSpacing);
+    neighbourPositions.push({ x, y, z });
+  }
+
   const baseTile = {
     id: '',
     index: 0,
     sides: 6 as const,
     neighbours: [] as number[],
-    position3d: pos,
+    position3d: centerPos,
     boundary: [],
     terrainType: 'plains' as const,
     elevationType: 'rolling' as const,
@@ -60,7 +77,7 @@ function createTestGrid(): Tile[] {
   const tiles: Tile[] = [];
 
   // Tile 0 — centre, neighbours are 1–6
-  tiles.push({ ...baseTile, id: 't0', index: 0, neighbours: [1, 2, 3, 4, 5, 6] });
+  tiles.push({ ...baseTile, id: 't0', index: 0, position3d: centerPos, neighbours: [1, 2, 3, 4, 5, 6] });
 
   // Tiles 1–6 — outer ring
   for (let i = 1; i <= 6; i++) {
@@ -70,6 +87,7 @@ function createTestGrid(): Tile[] {
       ...baseTile,
       id: `t${i}`,
       index: i,
+      position3d: neighbourPositions[i - 1],
       neighbours: [0, next, prev, 0, next, prev],
     });
   }
@@ -80,20 +98,22 @@ function createTestGrid(): Tile[] {
 /**
  * Create a simple linear grid for range testing.
  * Tiles 0-1-2-3-4-5, each adjacent only to its direct neighbors.
+ * Positions are placed along a line on the sphere surface.
  */
 function createLinearGrid(): Tile[] {
-  const pos = { x: 0, y: 0, z: 1 };
   const baseTile = {
     id: '',
     index: 0,
     sides: 6 as const,
     neighbours: [] as number[],
-    position3d: pos,
+    position3d: { x: 0, y: 0, z: 1 },
     boundary: [],
     terrainType: 'plains' as const,
     elevationType: 'rolling' as const,
     forested: false,
   };
+
+  const spacing = 0.15; // radians between tiles
 
   const tiles: Tile[] = [];
   for (let i = 0; i < 6; i++) {
@@ -101,7 +121,12 @@ function createLinearGrid(): Tile[] {
     if (i > 0) neighbours.push(i - 1);
     if (i < 5) neighbours.push(i + 1);
     while (neighbours.length < 6) neighbours.push(i);
-    tiles.push({ ...baseTile, id: `t${i}`, index: i, neighbours });
+
+    // Position along a line (varying x, z is cos of angle from pole)
+    const theta = (i - 2.5) * spacing; // center around tile 2-3
+    const pos = { x: Math.sin(theta), y: 0, z: Math.cos(theta) };
+
+    tiles.push({ ...baseTile, id: `t${i}`, index: i, position3d: pos, neighbours });
   }
   return tiles;
 }
@@ -230,8 +255,9 @@ describe('combat', () => {
   // =========================================================================
 
   // Helper: build effective defence from raw components
-  function ed(armour: number, ew: number, formation: number, terrain: number): number {
-    return (clamp(armour, 0, 5) + clamp(ew, 0, 5) + clamp(formation, 0, 2) + clamp(terrain, 0, 4)) * DEFENCE_SCALE;
+  // formation parameter is the supporter count (0–2); each contributes 0.5 to DefencePower
+  function ed(armour: number, ew: number, formationCount: number, terrain: number): number {
+    return (clamp(armour, 0, 5) + clamp(ew, 0, 5) + clamp(formationCount, 0, 2) * 0.5 + clamp(terrain, 0, 4)) * DEFENCE_SCALE;
   }
 
   describe('calculateFormulaDamage', () => {
@@ -267,25 +293,25 @@ describe('combat', () => {
     it('attack=3, front, DefPower=8 → 4', () => {
       // AP=3, DefPower=8, ED=6
       const damage = calculateFormulaDamage(3, ed(3, 3, 1, 1));
-      expect(damage).toBe(4);
+      expect(damage).toBe(5);
     });
 
     it('attack=3, side (+1), DefPower=8 → 8', () => {
       // AP=4, DefPower=8, ED=6
       const damage = calculateFormulaDamage(4, ed(3, 3, 1, 1));
-      expect(damage).toBe(8);
+      expect(damage).toBe(9);
     });
 
     it('attack=3, rear (+2), DefPower=8 → 13', () => {
       // AP=5, DefPower=8, ED=6
       const damage = calculateFormulaDamage(5, ed(3, 3, 1, 1));
-      expect(damage).toBe(13);
+      expect(damage).toBe(14);
     });
 
     it('attack=5, front, DefPower=8 → 13', () => {
       // AP=5, DefPower=8, ED=6
       const damage = calculateFormulaDamage(5, ed(3, 3, 1, 1));
-      expect(damage).toBe(13);
+      expect(damage).toBe(14);
     });
 
     it('attack=5, side (+1), DefPower=8 → 16', () => {
@@ -297,7 +323,7 @@ describe('combat', () => {
     it('attack=5, rear (+2), DefPower=8 → 18', () => {
       // AP=7, DefPower=8, ED=6
       const damage = calculateFormulaDamage(7, ed(3, 3, 1, 1));
-      expect(damage).toBe(18);
+      expect(damage).toBe(19);
     });
 
     it('minimum attackPower of 1 gives 6 with no defence', () => {
@@ -452,9 +478,9 @@ describe('combat', () => {
 
       expect(dp.armour).toBe(3);
       expect(dp.ew).toBe(5); // target(2) + ewAlly(4) = 6, capped at 5
-      expect(dp.defensiveFormation).toBe(2); // ewAlly (same hex) + formAlly (adjacent)
+      expect(dp.defensiveFormation).toBe(1); // 2 supporters × 0.5 = 1.0
       expect(dp.terrain).toBe(1); // forested
-      expect(dp.total).toBe(11);
+      expect(dp.total).toBe(10);
     });
 
     it('returns max possible values correctly', () => {
@@ -474,9 +500,9 @@ describe('combat', () => {
 
       expect(dp.armour).toBe(5);
       expect(dp.ew).toBe(5); // 3+3=6, capped at 5
-      expect(dp.defensiveFormation).toBe(2); // ew1 + ew2 same hex, capped at 2
+      expect(dp.defensiveFormation).toBe(1); // ew1 + ew2 same hex + f1 adjacent = 3 supporters, capped at 2, × 0.5 = 1.0
       expect(dp.terrain).toBe(3); // mountain
-      expect(dp.total).toBe(15);
+      expect(dp.total).toBe(14);
     });
   });
 

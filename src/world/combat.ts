@@ -62,6 +62,11 @@ export {
   classifyAttackArc,
   getFacingModifier,
   getCrossfireBonus,
+  calculateOrientationBonus,
+  classifyArcFromAngle,
+  getAngularDifference,
+  getBearingBetweenTiles,
+  getFacingAngle,
 } from './combatFacing.js';
 
 // ---------------------------------------------------------------------------
@@ -88,6 +93,9 @@ import {
   getApproachDirection,
   classifyAttackArc,
   getFacingModifier,
+  calculateOrientationBonus,
+  classifyArcFromAngle,
+  getAngularDifference,
 } from './combatFacing.js';
 
 // ---------------------------------------------------------------------------
@@ -198,7 +206,9 @@ export function getDefencePower(
 ): { armour: number; ew: number; defensiveFormation: number; terrain: number; total: number } {
   const armour = clamp(target.attributes.armour ?? 0, 0, 5);
   const ew = clamp(getEWDefense(target, allUnits), 0, 5);
-  const defensiveFormation = clamp(getAdjacentFriendlySupport(target, allUnits, tiles), 0, 2);
+  // Formation count capped at 2, but each supporter contributes 0.5 to DefencePower
+  const formationCount = clamp(getAdjacentFriendlySupport(target, allUnits, tiles), 0, 2);
+  const defensiveFormation = formationCount * 0.5;
   const terrain = clamp(getTerrainDefense(tiles[target.tileIndex]), 0, 4);
   const total = armour + ew + defensiveFormation + terrain;
 
@@ -226,9 +236,12 @@ export function calculateDirectDamage(
   tiles: Tile[],
   distance: number = 1,
 ): { damage: number; arc: AttackArc; orientationBonus: number; defencePower: ReturnType<typeof getDefencePower>; antiDronePenaltyApplied: boolean } {
-  const approachDir = getApproachDirection(tiles, target.tileIndex, attacker.tileIndex);
-  const arc = classifyAttackArc(target.facing, approachDir);
-  const orientationBonus = getFacingModifier(arc);
+  // New bearing-based orientation bonus (continuous 0–2)
+  const orientationBonus = calculateOrientationBonus(tiles, attacker.tileIndex, target.tileIndex, target.facing);
+
+  // Classify arc for UI/wire display from the angular difference
+  const angleDiff = getAngularDifference(tiles, attacker.tileIndex, target.tileIndex, target.facing);
+  const arc: AttackArc = isNaN(angleDiff) ? 'unknown' : classifyArcFromAngle(angleDiff);
 
   const defencePower = getDefencePower(target, allUnits, tiles);
   const baseAttack = clamp(attacker.attributes.kinetic ?? 0, 1, 5);
@@ -267,12 +280,10 @@ export function calculateSplashDamage(
   const splashPower = attacker.attributes.splashAttack ?? 0;
   if (splashPower <= 0) return 0;
 
-  // Orientation bonus only for the originally selected target
+  // Orientation bonus only for the originally selected target (bearing-based)
   let orientationBonus = 0;
   if (victim.id === selectedTarget.id) {
-    const approachDir = getApproachDirection(tiles, victim.tileIndex, attacker.tileIndex);
-    const arc = classifyAttackArc(victim.facing, approachDir);
-    orientationBonus = getFacingModifier(arc);
+    orientationBonus = calculateOrientationBonus(tiles, attacker.tileIndex, victim.tileIndex, victim.facing);
   }
 
   const baseSplash = clamp(splashPower, 1, 5);
@@ -399,10 +410,10 @@ export function resolveAttack(
     return invalidResult(attackerId, targetId, 'Target out of range');
   }
 
-  // Orientation info (shared across weapon modes)
-  const approachDir = getApproachDirection(tiles, target.tileIndex, attacker.tileIndex);
-  const arc = classifyAttackArc(target.facing, approachDir);
-  const orientationBonus = getFacingModifier(arc);
+  // Orientation info (shared across weapon modes) — bearing-based
+  const orientationBonus = calculateOrientationBonus(tiles, attacker.tileIndex, target.tileIndex, target.facing);
+  const angleDiff = getAngularDifference(tiles, attacker.tileIndex, target.tileIndex, target.facing);
+  const arc: AttackArc = isNaN(angleDiff) ? 'unknown' : classifyArcFromAngle(angleDiff);
   const defencePower = getDefencePower(target, allUnits, tiles);
 
   // Build valid weapon options
