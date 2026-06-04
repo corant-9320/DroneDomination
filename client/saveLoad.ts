@@ -27,8 +27,8 @@ interface BundledSave {
 const BUNDLED_SAVES: BundledSave[] = [
   {
     filename: 'battle-30v30.json',
-    label: 'Battle (30v30)',
-    description: '30 player vs 30 enemy, random unit types, 2-hex gap',
+    label: 'Battle (36v36)',
+    description: '36 player vs 36 enemy — 10 chassis types, EW & Repair specialists, 4×2 formation',
   },
 ];
 

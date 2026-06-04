@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "name": "Run Playwright E2E Tests",
+  "description": "Manually trigger Playwright e2e tests. Requires 'npm run dev' to be running on port 3000 first.",
+  "version": "1.0.0",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "set NODE_OPTIONS=--max-old-space-size=4096 && npx playwright test --reporter=line",
+    "timeout": 90
+  }
+}

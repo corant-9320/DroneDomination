@@ -14,6 +14,9 @@
  * game rules across both tile shapes.
  */
 
+export type { UnitAttributes } from '../../shared/unitTypes.js';
+import type { UnitAttributes } from '../../shared/unitTypes.js';
+
 // ---------------------------------------------------------------------------
 // Segment positioning
 // ---------------------------------------------------------------------------
@@ -28,61 +31,13 @@ export const MAX_UNITS_PER_TILE = 5;
 export const HP_PER_POINT = 10;
 
 // ---------------------------------------------------------------------------
-// Unit attributes
-// ---------------------------------------------------------------------------
-
-/**
- * The full set of attributes a unit *may* have.
- * All fields are optional — a unit only carries the attributes relevant to it.
- *
- * All values are integers within a fixed range:
- *   maxHealth:      1–5  (must be at least 1 if present)
- *   attack:         0–5
- *   armour:         0–5
- *   defence:        0–5
- *   splashAttack:   0–5
- *   rangeAttack:    0–5
- *   wheeledMovement:0–5
- *   limbMovement:   0–5
- *   flightMovement: 0–5
- *   repair:         0–5
- *
- * A unit MUST have at least 1 point in one movement category
- * (wheeledMovement, limbMovement, or flightMovement).
- */
-export interface UnitAttributes {
-  /** Maximum hit points (1–5). */
-  maxHealth?: number;
-  /** Base attack power — determines gun length in icon (0–5). */
-  attack?: number;
-  /** Damage reduction from incoming attacks (0–5). */
-  armour?: number;
-  /** Electronic Warfare (EW) value. Contributes to same-hex allies' DefencePower (0–5). */
-  defence?: number;
-  /** Base splash damage dealt in adjacent combat (0–5). */
-  splashAttack?: number;
-  /** Base damage dealt at range (0–5). */
-  rangeAttack?: number;
-  /** Movement points for wheeled/vehicle traversal (0–5). */
-  wheeledMovement?: number;
-  /** Movement points for organic/legged traversal (0–5). */
-  limbMovement?: number;
-  /** Movement points for aerial traversal (0–5). */
-  flightMovement?: number;
-  /** Repair capability — points of health restored per action (0–5). */
-  repair?: number;
-  /** Anti-air attack power — can only target drones (0–5). */
-  antiAir?: number;
-}
-
-// ---------------------------------------------------------------------------
 // Attribute ranges & validation
 // ---------------------------------------------------------------------------
 
 /** Allowed [min, max] for each attribute. */
 export const ATTRIBUTE_RANGES: Record<keyof UnitAttributes, [min: number, max: number]> = {
   maxHealth: [1, 5],
-  attack: [0, 5],
+  kinetic: [0, 5],
   armour: [0, 5],
   defence: [0, 5],
   splashAttack: [0, 5],
@@ -94,12 +49,8 @@ export const ATTRIBUTE_RANGES: Record<keyof UnitAttributes, [min: number, max: n
   antiAir: [0, 5],
 };
 
-/** The attribute keys that count as movement categories. */
-export const MOVEMENT_ATTRIBUTES: (keyof UnitAttributes)[] = [
-  'wheeledMovement',
-  'limbMovement',
-  'flightMovement',
-];
+export { MOVEMENT_ATTRIBUTES } from '../../shared/movementConstants.js';
+import { MOVEMENT_ATTRIBUTES } from '../../shared/movementConstants.js';
 
 /** Validate a single attribute value against its allowed range. */
 export function isValidAttribute(key: keyof UnitAttributes, value: number): boolean {
@@ -162,69 +113,23 @@ export interface Unit {
 // Naming
 // ---------------------------------------------------------------------------
 
-/** Movement speed words by level (1–5). */
-const SPEED_NAMES: Record<number, string> = {
-  1: 'Loitering',
-  2: 'Plodder',
-  3: 'Walker',
-  4: 'Runner',
-  5: 'Sprinter',
-};
-
-/** Movement type words by movement attribute. */
-const TYPE_NAMES: Record<string, string> = {
-  wheeledMovement: 'Tank',
-  flightMovement: 'Drone',
-  limbMovement: 'Spider',
-};
-
-/** Attribute column words by level (1–5). */
-const ATTRIBUTE_NAMES: Record<string, Record<number, string>> = {
-  attack: { 1: 'Harasser', 2: 'Raider', 3: 'Striker', 4: 'Breaker', 5: 'Executioner' },
-  armour: { 1: 'Flyweight', 2: 'Bantamweight', 3: 'Welterweight', 4: 'Middleweight', 5: 'Heavyweight' },
-  defence: { 1: 'Listener', 2: 'Scrambler', 3: 'Jammer', 4: 'Disruptor', 5: 'Nullifier' },
-  splashAttack: { 1: 'Popper', 2: 'Blaster', 3: 'Bombardier', 4: 'Demolisher', 5: 'Devastator' },
-  rangeAttack: { 1: 'Melee', 2: 'Short', 3: 'Medium', 4: 'Long', 5: 'Distance' },
-  repair: { 1: 'Tinkerer', 2: 'Mechanic', 3: 'Engineer', 4: 'Restorer', 5: 'Fabricator' },
-  antiAir: { 1: 'Spotter', 2: 'Tracker', 3: 'Interceptor', 4: 'Skyhunter', 5: 'Annihilator' },
-};
-
-/** Non-movement attribute keys eligible for naming. */
-const NAMING_ATTRIBUTES: (keyof UnitAttributes)[] = [
-  'attack', 'armour', 'defence', 'splashAttack', 'rangeAttack', 'repair', 'antiAir',
-];
+import { buildUnitNameParts } from '../../shared/unitNaming.js';
 
 /**
  * Generate a unit name from its attributes.
  *
- * Format: "[Top1 Word] [Top2 Word] [Speed Word] [Type Word]"
+ * Format: "[Top1 Word] [Top2 Word] [Speed Word] [Type Word] (stat string)"
  * - Speed comes from the movement value (1–5)
  * - Type comes from the movement category (Tank / Drone / Spider)
  * - Top two words come from the two highest non-movement attributes
  */
 export function generateUnitName(attrs: UnitAttributes): string {
-  // Determine movement type and speed
-  const movementKey = MOVEMENT_ATTRIBUTES.find((k) => (attrs[k] ?? 0) >= 1) ?? 'wheeledMovement';
-  const speed = attrs[movementKey] ?? 1;
-  const speedWord = SPEED_NAMES[Math.min(Math.max(speed, 1), 5)];
-  const typeWord = TYPE_NAMES[movementKey];
+  const { movementKey, speedWord, typeWord, descriptors } = buildUnitNameParts(attrs);
 
-  // Rank non-movement attributes by value (descending), pick top two
-  const ranked = NAMING_ATTRIBUTES
-    .map((key) => ({ key, value: attrs[key] ?? 0 }))
-    .filter((e) => e.value > 0)
-    .sort((a, b) => b.value - a.value);
+  const parts = [...descriptors, speedWord, typeWord];
 
-  const top1 = ranked[0];
-  const top2 = ranked[1];
-
-  const parts: string[] = [];
-  if (top1) parts.push(ATTRIBUTE_NAMES[top1.key]![Math.min(Math.max(top1.value, 1), 5)]);
-  if (top2) parts.push(ATTRIBUTE_NAMES[top2.key]![Math.min(Math.max(top2.value, 1), 5)]);
-  parts.push(speedWord, typeWord);
-
-  const mov = attrs[movementKey] ?? 0;
-  const att = attrs.attack ?? 0;
+  const mov = attrs[movementKey as keyof UnitAttributes] as number ?? 0;
+  const att = attrs.kinetic ?? 0;
   const rng = attrs.rangeAttack ?? 0;
   const spl = attrs.splashAttack ?? 0;
   const aa = attrs.antiAir ?? 0;
@@ -232,7 +137,7 @@ export function generateUnitName(attrs: UnitAttributes): string {
   const ew = attrs.defence ?? 0;
   const rep = attrs.repair ?? 0;
 
-  return `${parts.join(' ')} (Mov ${mov}, Att ${att}, Rng ${rng}, Spl ${spl}, AA ${aa}, Arm ${arm}, EW ${ew}, Rep ${rep})`;
+  return `${parts.join(' ')} (Mov ${mov}, Kin ${att}, Rng ${rng}, Spl ${spl}, AA ${aa}, Arm ${arm}, EW ${ew}, Rep ${rep})`;
 }
 
 // ---------------------------------------------------------------------------

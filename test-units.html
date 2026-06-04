@@ -167,46 +167,6 @@
       color: #ff4444;
     }
 
-    .movement-help .help-text {
-      font-size: 11px;
-      color: #aaa;
-      line-height: 1.6;
-    }
-
-    .movement-help .help-text p {
-      margin-bottom: 6px;
-    }
-
-    .movement-help .help-text .cost-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 6px 0;
-      font-size: 11px;
-    }
-
-    .movement-help .help-text .cost-table th,
-    .movement-help .help-text .cost-table td {
-      padding: 3px 6px;
-      text-align: center;
-      border-bottom: 1px solid #333;
-    }
-
-    .movement-help .help-text .cost-table th {
-      color: #7fdbca;
-      font-weight: normal;
-      text-transform: uppercase;
-      font-size: 10px;
-    }
-
-    .movement-help .help-text .note {
-      color: #f7b731;
-      font-style: italic;
-    }
-
-    .movement-help .help-text .impassable {
-      color: #ff6b6b;
-    }
-
     .unit-name {
       text-align: center;
       padding: 10px;
@@ -216,6 +176,58 @@
       color: #ccc;
       margin-top: 12px;
       line-height: 1.4;
+    }
+
+    .chassis-traits table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+
+    .chassis-traits th {
+      color: #7fdbca;
+      font-weight: normal;
+      text-transform: uppercase;
+      font-size: 10px;
+      padding: 3px 4px;
+      border-bottom: 1px solid #333;
+      text-align: center;
+    }
+
+    .chassis-traits th:first-child {
+      text-align: left;
+    }
+
+    .chassis-traits td {
+      padding: 4px 4px;
+      border-bottom: 1px solid #222;
+      text-align: center;
+      color: #bbb;
+    }
+
+    .chassis-traits td:first-child {
+      text-align: left;
+      color: #999;
+    }
+
+    .chassis-traits tr.active-chassis td {
+      color: #fff;
+      background: rgba(50, 80, 70, 0.25);
+    }
+
+    .chassis-traits tr.active-chassis td:first-child {
+      color: #7fdbca;
+    }
+
+    .chassis-traits .good { color: #7fdbca; }
+    .chassis-traits .bad  { color: #ff6b6b; }
+    .chassis-traits .warn { color: #f7b731; }
+
+    .chassis-traits .section-note {
+      font-size: 10px;
+      color: #666;
+      margin-top: 6px;
+      font-style: italic;
     }
   </style>
 </head>
@@ -246,23 +258,28 @@
             <span class="icon">🚁</span>Drone
           </div>
         </div>
-        <div class="attr-row" style="margin-top: 10px;">
-          <label>Movement</label>
-          <input type="range" min="1" max="5" value="3" data-attr="movement">
-          <span class="attr-val">3</span>
-        </div>
       </div>
 
-      <div class="control-group movement-help" id="movement-help">
-        <h3>Movement Guide</h3>
-        <div class="help-text" id="movement-help-text"></div>
+      <div class="control-group chassis-traits" id="movement-comparison">
+        <h3>Movement Comparison</h3>
+        <div id="movement-comparison-content"></div>
+      </div>
+
+      <div class="control-group chassis-traits" id="chassis-traits">
+        <h3>Combat Comparison</h3>
+        <div id="chassis-traits-content"></div>
       </div>
 
       <div class="control-group">
         <h3>Weapons</h3>
         <div class="attr-row">
-          <label>Attack</label>
-          <input type="range" min="0" max="5" value="0" data-attr="attack">
+          <label>Movement</label>
+          <input type="range" min="1" max="5" value="3" data-attr="movement">
+          <span class="attr-val">3</span>
+        </div>
+        <div class="attr-row">
+          <label>Kinetic</label>
+          <input type="range" min="0" max="5" value="0" data-attr="kinetic">
           <span class="attr-val">0</span>
         </div>
         <div class="attr-row">

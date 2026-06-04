@@ -9,6 +9,8 @@ export * from './validate.js';
 export * from './units.js';
 export * from './spawn.js';
 export * from './compact.js';
+export * from './combatMath.js';
+export * from './combatFacing.js';
 export * from './combat.js';
 export * from './repair.js';
 export * from './movement.js';

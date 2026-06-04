@@ -1,6 +1,6 @@
 /**
  * World generation entry point.
- * Generates the complete authoritative Goldberg G(24,0) world.
+ * Generates the complete authoritative Goldberg G(36,0) world.
  */
 
 import { World, Tile } from './types.js';
@@ -8,7 +8,7 @@ import { generateGeodesicSphere, computeDual } from './goldberg.js';
 import { generateTerrain } from './terrain.js';
 import { placeCities } from './cities.js';
 
-const FREQUENCY = 24;
+const FREQUENCY = 36;
 
 export function generateWorld(seed: number): World {
   console.log(`Generating Goldberg G(${FREQUENCY},0) world with seed ${seed}...`);

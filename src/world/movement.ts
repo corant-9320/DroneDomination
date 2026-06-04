@@ -24,18 +24,21 @@ import { Tile } from './types.js';
 import { Unit, HexSegment, MOVEMENT_ATTRIBUTES } from './units.js';
 import { TurnState, canMove, canPivot, recordMove, recordPivot, movementRemaining } from './turnState.js';
 import { getApproachDirection } from './combat.js';
+import {
+  MovementMode,
+  getMovementMode as getMovementModeFromAttrs,
+  hexEntryCost as hexEntryCostShared,
+} from '../../shared/movementConstants.js';
+
+export type { MovementMode };
 
 // ---------------------------------------------------------------------------
 // Movement type classification
 // ---------------------------------------------------------------------------
 
-export type MovementMode = 'wheeled' | 'limb' | 'flight';
-
 /** Determine a unit's movement mode from its attributes. */
 export function getMovementMode(unit: Unit): MovementMode {
-  if ((unit.attributes.flightMovement ?? 0) >= 1) return 'flight';
-  if ((unit.attributes.limbMovement ?? 0) >= 1) return 'limb';
-  return 'wheeled';
+  return getMovementModeFromAttrs(unit.attributes);
 }
 
 // ---------------------------------------------------------------------------
@@ -67,27 +70,7 @@ export function hexEntryCost(
   mode: MovementMode,
   isFirstHex: boolean,
 ): number {
-  // Impassable for ground units; drones fly over everything
-  if (isImpassable(tile) && mode !== 'flight') {
-    return Infinity;
-  }
-
-  // First hex is always 1 MP
-  if (isFirstHex) return 1;
-
-  // Drone: 1 MP per hex always
-  if (mode === 'flight') return 1;
-
-  // Spider: 3 MP per hex always (terrain-agnostic)
-  if (mode === 'limb') return 3;
-
-  // Tank (wheeled): terrain-dependent
-  const hill = isHillTerrain(tile);
-  const forested = tile.forested === true;
-
-  if (hill && forested) return 4;
-  if (hill || forested) return 3;
-  return 2; // clear/flat
+  return hexEntryCostShared(tile, mode, isFirstHex);
 }
 
 /**

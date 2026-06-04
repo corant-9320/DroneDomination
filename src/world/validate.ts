@@ -20,8 +20,8 @@ export function validateWorld(world: World): ValidationResult {
 
   // Total tile count
   checks.push({
-    name: 'total_tiles == 5762',
-    passed: tiles.length === 5762,
+    name: 'total_tiles == 12962',
+    passed: tiles.length === 12962,
     detail: `Got ${tiles.length}`,
   });
 
@@ -36,8 +36,8 @@ export function validateWorld(world: World): ValidationResult {
   // Hex count
   const hexes = tiles.filter((t) => t.sides === 6);
   checks.push({
-    name: 'hex_count == 5750',
-    passed: hexes.length === 5750,
+    name: 'hex_count == 12950',
+    passed: hexes.length === 12950,
     detail: `Got ${hexes.length}`,
   });
 

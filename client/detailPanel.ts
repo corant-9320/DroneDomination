@@ -1,160 +1,271 @@
 /**
- * Detail Panel — shows terrain, units, and building info for the selected hex.
- * Renders into #detail-panel at the bottom of the local map.
+ * Detail Panel — populates the right curtain's info sections when the player
+ * selects a hex or unit, hovers an enemy, or a combat preview arrives.
+ *
+ * Sections (all in index.html):
+ *   #hex-info-body     — terrain, elevation, city
+ *   #unit-info-body    — selected unit: name + full attribute table
+ *   #squad-info-body   — other friendly units on the same hex
+ *   #enemy-info-body   — hovered enemy unit: name + full attribute table
+ *   #combat-info-body  — combat preview steps (from server)
  */
 
 import { WorldData, TileData, UnitData } from './worldData.js';
 import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
 import { readableUnitName } from './unitNames.js';
+import { esc, capitalize, toneColor } from './htmlUtils.js';
+import type { ExplainedCombat } from '../shared/combatTypes.js';
 
-/** Map facing index (0–5) to compass direction label. */
-const FACING_LABELS: Record<number, string> = {
-  0: 'N',
-  1: 'NE',
-  2: 'SE',
-  3: 'S',
-  4: 'SW',
-  5: 'NW',
-};
+// ---------------------------------------------------------------------------
+// Attribute display config
+// ---------------------------------------------------------------------------
+
+type AttrKey = keyof import('../shared/unitTypes.js').UnitAttributes;
+
+interface AttrRow {
+  label: string;
+  key: AttrKey;
+}
+
+const ATTR_ROWS: AttrRow[] = [
+  { label: 'Max HP',    key: 'maxHealth' },
+  { label: 'Kinetic',   key: 'kinetic' },
+  { label: 'Armour',    key: 'armour' },
+  { label: 'EW',        key: 'defence' },
+  { label: 'Splash',    key: 'splashAttack' },
+  { label: 'Range Att', key: 'rangeAttack' },
+  { label: 'Anti-Air',  key: 'antiAir' },
+  { label: 'Repair',    key: 'repair' },
+  { label: 'Wheeled',   key: 'wheeledMovement' },
+  { label: 'Limb',      key: 'limbMovement' },
+  { label: 'Flight',    key: 'flightMovement' },
+];
+
+// ---------------------------------------------------------------------------
+// DetailPanel
+// ---------------------------------------------------------------------------
 
 export class DetailPanel {
-  private el: HTMLElement;
+  private hexBody: HTMLElement;
+  private unitBody: HTMLElement;
+  private squadBody: HTMLElement;
+  private enemyBody: HTMLElement;
+  private combatBody: HTMLElement;
   private world: WorldData;
 
-  constructor(el: HTMLElement, world: WorldData) {
-    // Render into #detail-content sub-element if present, otherwise use el directly
-    const content = el.querySelector('#detail-content') as HTMLElement | null;
-    this.el = content ?? el;
+  constructor(world: WorldData) {
     this.world = world;
-    this.showEmpty();
+    this.hexBody    = document.getElementById('hex-info-body')!;
+    this.unitBody   = document.getElementById('unit-info-body')!;
+    this.squadBody  = document.getElementById('squad-info-body')!;
+    this.enemyBody  = document.getElementById('enemy-info-body')!;
+    this.combatBody = document.getElementById('combat-info-body')!;
+    this.clear();
   }
 
-  /** Show the detail for a selected tile, optionally focusing a specific segment. */
-  showTile(tileIndex: number, segment?: number) {
+  /** Update world reference after a new world is loaded. */
+  setWorld(world: WorldData): void {
+    this.world = world;
+    this.clear();
+  }
+
+  /**
+   * Show detail for a selected tile + optional focused segment.
+   * Populates Hex, Unit, and Squad sections.
+   * Clears Enemy and Combat (those are driven by hover).
+   */
+  showTile(tileIndex: number, segment?: number): void {
     const tile = this.world.tiles[tileIndex];
     if (!tile) {
       dbg.detail.warn('showTile: invalid tileIndex', tileIndex);
-      this.showEmpty();
+      this.clear();
       return;
     }
 
-    const city = this.world.cities.find((c) => c.tileIndex === tileIndex);
+    const city  = this.world.cities.find((c) => c.tileIndex === tileIndex);
     const units = (this.world.units ?? []).filter((u) => u.tileIndex === tileIndex);
+
     const focusedUnit = segment !== undefined
       ? units.find((u) => u.segment === segment)
       : undefined;
+
     dbg.detail.log('showTile:', tileIndex, {
       terrain: tile.terrain,
-      elevType: tile.elevType,
       city: city?.label,
       units: units.length,
       focusedSegment: segment,
-      focusedUnit: focusedUnit?.label,
     });
+
+    this.renderHex(tile, city);
+    this.renderUnit(focusedUnit);
+    this.renderSquad(units, focusedUnit);
+    // Leave enemy + combat sections as-is (hover-driven)
+  }
+
+  /**
+   * Show the hovered enemy unit in the Enemy Info section.
+   * Pass null to clear it.
+   */
+  showEnemy(unit: UnitData | null): void {
+    if (!unit) {
+      this.enemyBody.innerHTML = '<span class="empty-msg">No enemy in range</span>';
+      return;
+    }
+    this.renderUnitCard(this.enemyBody, unit);
+  }
+
+  /**
+   * Show a combat preview in the Combat Info section.
+   * Pass null to clear it.
+   */
+  showCombat(preview: ExplainedCombat | null): void {
+    if (!preview) {
+      this.combatBody.innerHTML = '<span class="empty-msg">Hover an enemy to preview</span>';
+      return;
+    }
+    this.renderCombatPreview(preview);
+  }
+
+  /** Clear all five sections. */
+  clear(): void {
+    this.hexBody.innerHTML    = '<span class="empty-msg">Select a hex</span>';
+    this.unitBody.innerHTML   = '<span class="empty-msg">No unit selected</span>';
+    this.squadBody.innerHTML  = '<span class="empty-msg">No squad mates</span>';
+    this.enemyBody.innerHTML  = '<span class="empty-msg">No enemy in range</span>';
+    this.combatBody.innerHTML = '<span class="empty-msg">Hover an enemy to preview</span>';
+  }
+
+  // ─── Private renderers ────────────────────────────────────────────────────
+
+  private renderHex(
+    tile: TileData,
+    city?: { id: string; label: string; isPlayerHome?: boolean; neighbourCityIds: string[] },
+  ): void {
+    let html = '';
+    html += dpRow('Terrain',   capitalize(tile.terrain));
+    html += dpRow('Elevation', capitalize(tile.elevType));
+    if (tile.f) html += dpRow('Cover', 'Forested');
+
+    if (city) {
+      const color = factionColor(this.world, city.id);
+      html += `<div class="dp-divider"></div>`;
+      html += dpRow('City',  `<span style="color:${color};font-weight:bold;">${esc(city.label)}</span>`);
+      html += dpRow('Owner', `<span style="color:${color};">${city.isPlayerHome ? 'Player' : 'Enemy'}</span>`);
+    }
+
+    this.hexBody.innerHTML = html;
+  }
+
+  private renderUnit(unit: UnitData | undefined): void {
+    if (!unit) {
+      this.unitBody.innerHTML = '<span class="empty-msg">No unit selected</span>';
+      return;
+    }
+    this.renderUnitCard(this.unitBody, unit);
+  }
+
+  private renderSquad(allUnits: UnitData[], focused: UnitData | undefined): void {
+    // Squad = same-faction units on the hex that are NOT the focused unit
+    const focusedFaction = focused?.ownerId;
+    const mates = allUnits.filter(
+      (u) => u.id !== focused?.id && u.ownerId === focusedFaction,
+    );
+
+    if (mates.length === 0) {
+      this.squadBody.innerHTML = '<span class="empty-msg">No squad mates</span>';
+      return;
+    }
+
+    let html = '';
+    for (const unit of mates) {
+      const color = factionColor(this.world, unit.ownerId);
+      const name  = readableUnitName(unit);
+      const attrs = unit.attributes;
+      const maxHp = (attrs.maxHealth ?? 1) * 10;
+      const mov   = attrs.wheeledMovement ?? attrs.limbMovement ?? attrs.flightMovement ?? 0;
+      const att   = attrs.kinetic ?? 0;
+      const rng   = attrs.rangeAttack ?? 0;
+      const arm   = attrs.armour ?? 0;
+
+      html += `<div class="dp-other-unit">`;
+      html += `<span class="dp-other-name" style="color:${color};">${esc(name)}</span>`;
+      html += `<span class="dp-other-stats">HP ${unit.currentHealth}/${maxHp} · Mov ${mov} · Kin ${att} · Rng ${rng} · Arm ${arm}</span>`;
+      html += `</div>`;
+    }
+
+    this.squadBody.innerHTML = html;
+  }
+
+  /** Render a full unit card (name + HP bar + attribute table) into a target element. */
+  private renderUnitCard(target: HTMLElement, unit: UnitData): void {
+    const color = factionColor(this.world, unit.ownerId);
+    const name  = readableUnitName(unit);
+    const attrs = unit.attributes;
+    const maxHp = (attrs.maxHealth ?? 1) * 10;
+    const hpRatio = Math.max(0, Math.min(1, unit.currentHealth / maxHp));
 
     let html = '';
 
-    // Tile header
-    html += `<div class="section">`;
-    html += `<h3>Tile #${tile.idx}</h3>`;
-    html += `<div>${tile.s === 5 ? 'Pentagon' : 'Hexagon'} · ${tile.n.length} neighbours</div>`;
-    html += `</div>`;
+    // Name in faction colour
+    html += `<div class="dp-unit-name" style="color:${color};">${esc(name)}</div>`;
 
-    // Terrain section
-    html += `<div class="section">`;
-    html += `<h3>Terrain</h3>`;
-    html += `<div>${capitalize(tile.terrain)}</div>`;
-    html += `<div>Elevation: ${capitalize(tile.elevType)}</div>`;
+    // HP bar
+    html += `<div class="dp-hp-bar-wrap">`;
+    html += `  <div class="dp-hp-bar-fill" style="width:${(hpRatio * 100).toFixed(1)}%;"></div>`;
     html += `</div>`;
+    html += dpRow('HP', `${unit.currentHealth} / ${maxHp}`);
 
-    // City section
-    if (city) {
-      const color = factionColor(this.world, city.id);
-      html += `<div class="section">`;
-      html += `<h3>City</h3>`;
-      html += `<div style="color:${color}; font-weight:bold;">${city.label}</div>`;
-      html += `<div>${city.isPlayerHome ? 'Player Home' : 'Enemy'}</div>`;
-      html += `<div>City neighbours: ${city.neighbourCityIds.length}</div>`;
+    // Attribute table — only non-zero defined attributes
+    html += `<table class="dp-attr-table">`;
+    for (const row of ATTR_ROWS) {
+      const val = attrs[row.key];
+      if (val === undefined || val === 0) continue;
+      html += `<tr><td class="dp-key">${row.label}</td><td class="dp-val">${val}</td></tr>`;
+    }
+    html += `</table>`;
+
+    target.innerHTML = html;
+  }
+
+  private renderCombatPreview(c: ExplainedCombat): void {
+    let html = '';
+
+    if (!c.wasValid) {
+      html += `<div class="dp-combat-invalid">✗ ${esc(c.reasonInvalid ?? 'Invalid attack')}</div>`;
+      this.combatBody.innerHTML = html;
+      return;
+    }
+
+    for (const step of c.steps) {
+      const col = toneColor(step.tone);
+      html += `<div class="dp-combat-step">`;
+      html += `<span class="dp-combat-title">${esc(step.title)}</span>`;
+      if (step.formula) {
+        html += ` <span class="dp-combat-formula">${esc(step.formula)}</span>`;
+      }
+      html += ` <span class="dp-combat-result" style="color:${col};">${esc(step.result)}</span>`;
       html += `</div>`;
     }
 
-    // Units section
-    html += `<div class="section">`;
-    html += `<h3>Units (${units.length})</h3>`;
-    if (units.length === 0) {
-      html += `<div class="empty-msg">No units on this tile</div>`;
-    } else {
-      for (const unit of units) {
-        const isFocused = focusedUnit && unit.id === focusedUnit.id;
-        html += this.renderUnitCard(unit, isFocused);
-      }
-    }
-    html += `</div>`;
-
-    // Building section (placeholder for future)
-    html += `<div class="section">`;
-    html += `<h3>Building</h3>`;
-    html += `<div class="empty-msg">None</div>`;
-    html += `</div>`;
-
-    this.el.innerHTML = html;
-  }
-
-  private renderUnitCard(unit: UnitData, focused?: boolean): string {
-    const color = factionColor(this.world, unit.ownerId);
-    const attrs = unit.attributes;
-
-    // Generate the readable name from attributes
-    const readableName = readableUnitName(unit);
-
-    const focusStyle = focused
-      ? 'border:1px solid #fff; background:rgba(255,255,255,0.08);'
-      : '';
-    let html = `<div class="unit-card" style="${focusStyle}">`;
-    const facing = FACING_LABELS[unit.facing] ?? `seg ${unit.facing}`;
-    html += `<div class="unit-label" style="color:${color};">${readableName} <span style="font-weight:normal;color:#888;">(${facing})</span></div>`;
-
-    if (focused) {
-      // Detailed per-line view for selected unit — all attributes in parenthesis order
-      const mov = attrs.wheeledMovement ?? attrs.limbMovement ?? attrs.flightMovement ?? 0;
-      const lines: [string, string][] = [];
-      lines.push(['HP', `${unit.currentHealth}/${(attrs.maxHealth ?? 1) * 10}`]);
-      lines.push(['Movement', `${mov}`]);
-      lines.push(['Attack', `${attrs.attack ?? 0}`]);
-      lines.push(['Range', `${attrs.rangeAttack ?? 0}`]);
-      lines.push(['Splash', `${attrs.splashAttack ?? 0}`]);
-      lines.push(['Armour', `${attrs.armour ?? 0}`]);
-      lines.push(['EW', `${attrs.defence ?? 0}`]);
-      lines.push(['Repair', `${attrs.repair ?? 0}`]);
-
-      html += `<div class="unit-attr-detail">`;
-      for (const [label, value] of lines) {
-        html += `<div class="unit-attr-row"><span class="unit-attr-key">${label}</span><span class="unit-attr-val">${value}</span></div>`;
-      }
-      html += `</div>`;
-    } else {
-      // Compact parenthesized summary for non-selected units
-      const mov = attrs.wheeledMovement ?? attrs.limbMovement ?? attrs.flightMovement ?? 0;
-      const att = attrs.attack ?? 0;
-      const rng = attrs.rangeAttack ?? 0;
-      const spl = attrs.splashAttack ?? 0;
-      const arm = attrs.armour ?? 0;
-      const ew = attrs.defence ?? 0;
-      const rep = attrs.repair ?? 0;
-      html += `<div class="unit-attr">HP ${unit.currentHealth}/${(attrs.maxHealth ?? 1) * 10} (Mov ${mov}, Att ${att}, Rng ${rng}, Spl ${spl}, Arm ${arm}, EW ${ew}, Rep ${rep})</div>`;
+    if (c.targetDestroyed) {
+      html += `<div class="dp-combat-destroyed">☠ Target destroyed</div>`;
     }
 
-    html += `</div>`;
-    return html;
-  }
+    if (c.splash.length > 0) {
+      html += `<div class="dp-combat-splash">💥 Splash → ${c.splash.length} unit${c.splash.length > 1 ? 's' : ''}</div>`;
+    }
 
-  private showEmpty() {
-    this.el.innerHTML = `<div class="section"><h3>Hex Detail</h3><div class="empty-msg">Select a hex to inspect</div></div>`;
+    this.combatBody.innerHTML = html || '<span class="empty-msg">No steps</span>';
   }
 }
 
-function capitalize(s: string | undefined | null): string {
-  if (!s) return '—';
-  return s.charAt(0).toUpperCase() + s.slice(1);
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function dpRow(label: string, value: string): string {
+  return `<div class="dp-row"><span class="dp-key">${label}</span><span class="dp-val">${value}</span></div>`;
 }
+
+

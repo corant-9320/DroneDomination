@@ -1,0 +1,801 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #111; color: #eee; font-family: 'Segoe UI', sans-serif; }
+
+#app {
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
+#globe-panel {
+  width: 40%;
+  height: 100%;
+  position: relative;
+  border-right: 2px solid #333;
+}
+
+#local-panel {
+  width: 60%;
+  height: 100%;
+  position: relative;
+}
+
+/* Curtain shared styles */
+.curtain {
+  position: absolute;
+  top: 0;
+  width: 280px;
+  height: 100%;
+  background: rgba(10, 10, 10, 0.5);
+  overflow: hidden;
+  z-index: 20;
+  padding: 12px;
+  font-size: 12px;
+  color: #ddd;
+  pointer-events: auto;
+  transition: width 0.3s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.curtain.collapsed {
+  width: 32px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid rgba(80, 80, 80, 0.5);
+}
+
+.curtain-toggle {
+  position: relative;
+  width: 100%;
+  height: 32px;
+  background: rgba(40, 40, 40, 0.85);
+  border: none;
+  color: #eee;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  z-index: 30;
+  flex-shrink: 0;
+}
+
+.curtain-toggle:hover {
+  background: rgba(70, 70, 70, 0.9);
+}
+
+#strategy-panel .curtain-toggle {
+  border-right: 1px solid rgba(80, 80, 80, 0.5);
+}
+
+/* Override the generic curtain-toggle border for the right panel —
+   the toggle lives inside .curtain-margin, not at the panel root */
+#combat-log-panel .curtain-toggle {
+  border: none;
+  width: 24px;
+  height: 24px;
+}
+
+/* The generic rule gives flex:1 to all non-toggle direct children.
+   Override for the right panel's two direct children. */
+#combat-log-panel > .curtain-margin,
+#combat-log-panel > #combat-log-inner {
+  flex: unset;
+  overflow-y: unset;
+}
+
+.curtain > *:not(.curtain-toggle) {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.curtain.collapsed > *:not(.curtain-toggle) {
+  display: none;
+}
+
+#detail-panel .section {
+  display: inline-block;
+  vertical-align: top;
+  margin-right: 16px;
+}
+
+#detail-panel h3 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: #fff;
+  border-bottom: 1px solid rgba(100, 100, 100, 0.5);
+  padding-bottom: 4px;
+}
+
+#detail-panel .unit-card {
+  background: rgba(30, 30, 30, 0.6);
+  border: 1px solid rgba(100, 100, 100, 0.4);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+}
+
+#detail-panel .unit-card .unit-label {
+  font-weight: bold;
+  color: #fff;
+  margin-bottom: 2px;
+}
+
+#detail-panel .unit-card .unit-attr {
+  color: #ccc;
+  font-size: 11px;
+}
+
+#detail-panel .unit-card .unit-attr-detail {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+#detail-panel .unit-card .unit-attr-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(80, 80, 80, 0.3);
+}
+
+#detail-panel .unit-card .unit-attr-row:last-child {
+  border-bottom: none;
+}
+
+#detail-panel .unit-card .unit-attr-key {
+  color: #aaa;
+}
+
+#detail-panel .unit-card .unit-attr-val {
+  color: #fff;
+  font-weight: bold;
+}
+
+#detail-panel .empty-msg {
+  color: #999;
+  font-style: italic;
+}
+
+/* Left curtain (strategy panel) */
+#strategy-panel {
+  left: 0;
+  border-right: 1px solid rgba(80, 80, 80, 0.5);
+}
+
+.curtain h3 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: #fff;
+  border-bottom: 1px solid rgba(100, 100, 100, 0.5);
+  padding-bottom: 4px;
+}
+
+.curtain .section {
+  margin-bottom: 12px;
+}
+
+.curtain .unit-card {
+  background: rgba(30, 30, 30, 0.6);
+  border: 1px solid rgba(100, 100, 100, 0.4);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+}
+
+.curtain .unit-card .unit-label {
+  font-weight: bold;
+  color: #fff;
+  margin-bottom: 2px;
+}
+
+.curtain .unit-card .unit-attr {
+  color: #ccc;
+  font-size: 11px;
+}
+
+.curtain .unit-card .unit-attr-detail {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.curtain .unit-card .unit-attr-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(80, 80, 80, 0.3);
+}
+
+.curtain .unit-card .unit-attr-row:last-child {
+  border-bottom: none;
+}
+
+.curtain .unit-card .unit-attr-key {
+  color: #aaa;
+}
+
+.curtain .unit-card .unit-attr-val {
+  color: #fff;
+  font-weight: bold;
+}
+
+.curtain .empty-msg {
+  color: #999;
+  font-style: italic;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.panel-label {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  font-size: 12px;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+#info {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  font-size: 11px;
+  color: #888;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* System menu — top-right of right curtain */
+#system-menu-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  padding: 6px 0 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(100, 100, 100, 0.4);
+  position: relative;
+}
+
+#system-menu-btn {
+  background: rgba(40, 40, 40, 0.85);
+  border: 1px solid #555;
+  color: #eee;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+  user-select: none;
+}
+#system-menu-btn:hover,
+#system-menu-btn.open {
+  background: rgba(70, 70, 70, 0.9);
+  border-color: #888;
+}
+
+#system-menu-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% - 2px);
+  right: 0;
+  background: rgba(20, 20, 20, 0.97);
+  border: 1px solid #555;
+  border-radius: 6px;
+  min-width: 140px;
+  z-index: 100;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+}
+#system-menu-dropdown.open {
+  display: block;
+}
+
+#system-menu-dropdown button {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(80, 80, 80, 0.4);
+  color: #eee;
+  font-size: 12px;
+  padding: 8px 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+  white-space: nowrap;
+}
+#system-menu-dropdown button:last-child {
+  border-bottom: none;
+}
+#system-menu-dropdown button:hover {
+  background: rgba(70, 70, 70, 0.9);
+}
+#system-menu-dropdown .menu-divider {
+  height: 1px;
+  background: rgba(100, 100, 100, 0.4);
+  margin: 2px 0;
+}
+
+/* Combat log panel — right curtain */
+#combat-log-panel {
+  right: 0;
+  border-left: 1px solid rgba(80, 80, 80, 0.5);
+  display: flex;
+  flex-direction: row;
+  overflow-y: hidden;
+  padding: 0;  /* override base .curtain padding */
+}
+
+/* Thin margin strip on the left of the right curtain — holds the toggle */
+#combat-log-panel .curtain-margin {
+  width: 28px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 8px;
+  border-right: 1px solid rgba(80, 80, 80, 0.4);
+  background: rgba(10, 10, 10, 0.4);
+}
+
+#combat-log-panel .curtain-toggle {
+  width: 24px;
+  height: 24px;
+  justify-content: center;
+}
+
+/* Inner content column — hidden when collapsed */
+#combat-log-inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 10px 10px 0 10px;
+}
+
+#combat-log-panel.collapsed #combat-log-inner {
+  display: none;
+}
+
+/* When collapsed the panel shrinks to just the margin strip */
+#combat-log-panel.collapsed {
+  width: 28px !important;  /* override base .curtain.collapsed width:32px */
+  background: transparent;
+  border-left: 1px solid rgba(80, 80, 80, 0.5);
+}
+
+/* Right-panel vertical sections */
+.rp-section {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+
+.rp-section-header {
+  font-size: 11px;
+  font-weight: bold;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 4px 0 4px;
+  border-bottom: 1px solid rgba(100, 100, 100, 0.35);
+  margin-bottom: 6px;
+}
+
+.rp-section-body {
+  font-size: 11px;
+  color: #ccc;
+}
+
+.rp-section-body .empty-msg {
+  color: #666;
+  font-style: italic;
+}
+
+/* Hex Info section */
+#hex-info-section { }
+
+/* Unit Info section */
+#unit-info-section { }
+
+/* Enemy Info section */
+#enemy-info-section { }
+
+/* ── Detail panel shared row styles ─────────────────────────────── */
+.dp-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 2px 0;
+  font-size: 11px;
+}
+.dp-key {
+  color: #888;
+  flex-shrink: 0;
+  margin-right: 8px;
+}
+.dp-val {
+  color: #ddd;
+  font-weight: bold;
+  text-align: right;
+}
+.dp-divider {
+  height: 1px;
+  background: rgba(100,100,100,0.3);
+  margin: 5px 0;
+}
+
+/* Unit name */
+.dp-unit-name {
+  font-size: 12px;
+  font-weight: bold;
+  margin-bottom: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* HP bar */
+.dp-hp-bar-wrap {
+  height: 4px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 2px;
+  margin-bottom: 4px;
+  overflow: hidden;
+}
+.dp-hp-bar-fill {
+  height: 100%;
+  background: #4f4;
+  border-radius: 2px;
+  transition: width 0.2s;
+}
+
+/* Attribute table */
+.dp-attr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.dp-attr-table tr {
+  border-bottom: 1px solid rgba(80,80,80,0.25);
+}
+.dp-attr-table tr:last-child {
+  border-bottom: none;
+}
+.dp-attr-table td {
+  padding: 2px 0;
+}
+.dp-attr-table td.dp-key {
+  color: #888;
+  width: 60%;
+}
+.dp-attr-table td.dp-val {
+  color: #ddd;
+  font-weight: bold;
+  text-align: right;
+}
+
+/* Co-located other units */
+.dp-other-unit {
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(80,80,80,0.25);
+  font-size: 11px;
+}
+.dp-other-unit:last-child {
+  border-bottom: none;
+}
+.dp-other-name {
+  display: block;
+  font-weight: bold;
+  margin-bottom: 1px;
+}
+.dp-other-stats {
+  color: #888;
+}
+
+/* Combat preview */
+.dp-combat-step {
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(80,80,80,0.2);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.dp-combat-step:last-child { border-bottom: none; }
+.dp-combat-title {
+  color: #aaa;
+  font-weight: bold;
+}
+.dp-combat-formula {
+  color: #666;
+  font-family: monospace;
+  font-size: 10px;
+}
+.dp-combat-result {
+  font-weight: bold;
+}
+.dp-combat-destroyed {
+  color: #f44;
+  font-weight: bold;
+  padding: 3px 0;
+  font-size: 11px;
+}
+.dp-combat-splash {
+  color: #fa0;
+  font-size: 11px;
+  padding: 2px 0;
+}
+.dp-combat-invalid {
+  color: #f66;
+  font-size: 11px;
+  padding: 2px 0;
+}
+
+/* Combat log content (inside the panel, below sections) */
+#combat-log-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  font-size: 11px;
+}
+
+#combat-log-panel .cl-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(80, 80, 80, 0.3);
+  padding-bottom: 4px;
+}
+
+#combat-log-panel .cl-nav {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+#combat-log-panel .cl-nav button {
+  background: rgba(40, 40, 40, 0.85);
+  border: 1px solid #555;
+  color: #eee;
+  font-size: 13px;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+#combat-log-panel .cl-nav button:hover {
+  background: rgba(70, 70, 70, 0.9);
+}
+#combat-log-panel .cl-nav button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+#combat-log-panel .cl-counter {
+  color: #555;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+#combat-log-panel .cl-header {
+  font-weight: bold;
+  font-size: 12px;
+}
+
+#combat-log-panel .cl-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+#combat-log-panel .cl-empty {
+  color: #666;
+  font-style: italic;
+  padding-top: 4px;
+}
+
+#combat-log-panel .cl-step {
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(50, 50, 50, 0.4);
+}
+#combat-log-panel .cl-step:last-child {
+  border-bottom: none;
+}
+#combat-log-panel .cl-step-title {
+  color: #aaa;
+  font-weight: bold;
+}
+#combat-log-panel .cl-step-desc {
+  color: #999;
+  margin-left: 8px;
+}
+#combat-log-panel .cl-step-formula {
+  color: #777;
+  margin-left: 8px;
+  font-family: monospace;
+  font-size: 10px;
+}
+#combat-log-panel .cl-step-result {
+  margin-left: 8px;
+  font-weight: bold;
+}
+
+#combat-log-panel .cl-splash-header {
+  color: #fa0;
+  font-weight: bold;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(100, 100, 100, 0.3);
+}
+
+#combat-log-panel .cl-vs-unit {
+  padding: 4px 0;
+}
+#combat-log-panel .cl-vs-name {
+  font-weight: bold;
+  font-size: 12px;
+}
+#combat-log-panel .cl-vs-stats {
+  font-size: 11px;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+#combat-log-panel .cl-vs-stats span {
+  margin-right: 6px;
+}
+#combat-log-panel .cl-vs-divider {
+  color: #888;
+  font-size: 11px;
+  font-weight: bold;
+  text-align: center;
+  padding: 2px 0;
+}
+
+#combat-log-panel .cl-preview {
+  color: #fa0;
+  font-style: italic;
+  padding-top: 4px;
+}
+
+/* AI Playback bar — pinned above turn controls in the flex column */
+#ai-playback-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-top: 1px solid rgba(100, 100, 100, 0.4);
+  background: rgba(10, 10, 10, 0.7);
+}
+
+#ai-playback-bar .ai-pb-label {
+  font-size: 12px;
+  font-weight: bold;
+  color: #fa0;
+}
+
+#ai-playback-bar .ai-pb-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+#ai-playback-bar .ai-pb-btn {
+  background: rgba(40, 40, 40, 0.85);
+  border: 1px solid #555;
+  color: #eee;
+  font-size: 14px;
+  width: 30px;
+  height: 26px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+#ai-playback-bar .ai-pb-btn:hover:not(:disabled) {
+  background: rgba(70, 70, 70, 0.9);
+  border-color: #888;
+}
+#ai-playback-bar .ai-pb-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+#ai-playback-bar .ai-pb-btn.ai-pb-active {
+  background: rgba(80, 60, 0, 0.7);
+  border-color: #fa0;
+  color: #fa0;
+}
+#ai-playback-bar .ai-pb-counter {
+  font-size: 11px;
+  color: #999;
+  min-width: 36px;
+  text-align: right;
+}
+
+#turn-controls {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 8px 0;
+  margin-top: auto;
+  border-top: 1px solid rgba(80, 80, 80, 0.4);
+}
+#next-turn-btn {
+  background: rgba(40, 40, 40, 0.9);
+  border: 1px solid #555;
+  color: #eee;
+  font-size: 13px;
+  font-weight: bold;
+  padding: 8px 18px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+#next-turn-btn:hover {
+  background: rgba(70, 70, 70, 0.95);
+  border-color: #888;
+}
+
+#loading {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #111;
+  z-index: 1000;
+  gap: 20px;
+}
+
+#loading .spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(100, 100, 100, 0.3);
+  border-top-color: #888;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+#loading .loading-text {
+  font-size: 16px;
+  color: #888;
+  letter-spacing: 0.5px;
+}
+
+#loading .loading-status {
+  font-size: 12px;
+  color: #555;
+  min-height: 1.4em;
+  transition: opacity 0.2s;
+}
+
+#loading.error .spinner {
+  animation: none;
+  border-color: #a33;
+  border-top-color: #a33;
+}
+
+#loading.error .loading-text {
+  color: #c55;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

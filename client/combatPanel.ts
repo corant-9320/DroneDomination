@@ -9,6 +9,7 @@
 import { WorldData, UnitData, TileData } from './worldData.js';
 import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
+import { esc, toneColor } from './htmlUtils.js';
 import type {
   ExplanationStep,
   SplashExplanation,
@@ -37,6 +38,8 @@ export class CombatPanel {
   private selectedUnit: UnitData | null = null;
   /** Currently hovered enemy unit (shown in VS section). */
   private hoveredEnemy: UnitData | null = null;
+  /** Optional callback fired when a server preview arrives. */
+  private onPreviewReady: ((preview: ExplainedCombat | null) => void) | null = null;
 
   constructor(el: HTMLElement, world: WorldData) {
     this.el = el;
@@ -52,6 +55,14 @@ export class CombatPanel {
   /** Get the active faction. */
   getActiveFaction(): string {
     return this.activeFaction;
+  }
+
+  /**
+   * Register a callback that fires whenever a server preview result arrives.
+   * Used by the detail panel to populate its Combat Preview section.
+   */
+  setOnPreviewReady(cb: (preview: ExplainedCombat | null) => void): void {
+    this.onPreviewReady = cb;
   }
 
   /**
@@ -77,6 +88,7 @@ export class CombatPanel {
       if (this.preview) {
         this.preview = null;
         this.render();
+        this.onPreviewReady?.(null);
       } else if (this.selectedUnit) {
         // Still showing selected unit, re-render to remove VS section
         this.render();
@@ -113,11 +125,13 @@ export class CombatPanel {
       if (!data.success || data.combats.length === 0) {
         this.preview = null;
         this.render();
+        this.onPreviewReady?.(null);
         return;
       }
 
       this.preview = data.combats[0];
       this.render();
+      this.onPreviewReady?.(this.preview);
     } catch {
       // Silently fail — preview is non-critical
       this.preview = null;
@@ -386,7 +400,7 @@ export class CombatPanel {
     const a = unit.attributes;
     let s = `<div class="cl-vs-stats">`;
     s += `<span>HP: ${unit.currentHealth}/${(a.maxHealth ?? 1) * 10}</span>`;
-    if (a.attack) s += ` <span>ATK: ${a.attack}</span>`;
+    if (a.kinetic) s += ` <span>KIN: ${a.kinetic}</span>`;
     if (a.rangeAttack) s += ` <span>RNG: ${a.rangeAttack}</span>`;
     if (a.splashAttack) s += ` <span>SPL: ${a.splashAttack}</span>`;
     if (a.defence) s += ` <span>DEF: ${a.defence}</span>`;
@@ -538,16 +552,4 @@ function minimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: stri
   return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, f: t.f || undefined };
 }
 
-function toneColor(tone: string): string {
-  switch (tone) {
-    case 'positive': return '#8f8';
-    case 'negative': return '#f88';
-    case 'neutral': return '#ccc';
-    case 'critical': return '#fa0';
-    default: return '#ccc';
-  }
-}
 
-function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}

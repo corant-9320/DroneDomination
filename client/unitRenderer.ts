@@ -81,7 +81,7 @@ const pendingRenders = new Set<string>();
  * Generate a cache key from unit attributes (facing-independent).
  */
 function attrKey(attrs: UnitModelAttrs, factionColor?: string): string {
-  return `${attrs.chassis}:${attrs.movement}:${attrs.attack}:${attrs.rangeAttack}:${attrs.splashAttack}:${attrs.antiAir}:${attrs.armour}:${attrs.defence}:${attrs.repair}:${factionColor ?? ''}`;
+  return `${attrs.chassis}:${attrs.movement}:${attrs.kinetic}:${attrs.rangeAttack}:${attrs.splashAttack}:${attrs.antiAir}:${attrs.armour}:${attrs.defence}:${attrs.repair}:${factionColor ?? ''}`;
 }
 
 /**
@@ -103,7 +103,7 @@ export function unitDataToModelAttrs(unit: UnitData): UnitModelAttrs {
   return {
     chassis,
     movement: Math.max(1, movement),
-    attack: a.attack ?? 0,
+    kinetic: a.kinetic ?? 0,
     rangeAttack: a.rangeAttack ?? 0,
     splashAttack: a.splashAttack ?? 0,
     antiAir: a.antiAir ?? 0,
@@ -178,10 +178,23 @@ async function renderAllFacings(attrs: UnitModelAttrs, key: string, factionHex?:
 }
 
 /**
+ * Dispose the offscreen renderer to free the WebGL context.
+ * Called after all immediate pre-renders complete so the globe can
+ * safely create its own context without hitting browser limits.
+ */
+function disposeRenderer(): void {
+  if (renderer) {
+    renderer.dispose();
+    renderer.forceContextLoss();
+    renderer = null;
+  }
+}
+
+/**
  * Pre-render sprites for all units in the world (call once on load).
  * Also schedules a re-render once the hull texture has finished loading.
  */
-export function preRenderUnits(units: UnitData[], world?: WorldData): void {
+export async function preRenderUnits(units: UnitData[], world?: WorldData): Promise<void> {
   const seen = new Set<string>();
   for (const unit of units) {
     const attrs = unitDataToModelAttrs(unit);
@@ -189,11 +202,28 @@ export function preRenderUnits(units: UnitData[], world?: WorldData): void {
     const key = attrKey(attrs, fc);
     if (seen.has(key)) continue;
     seen.add(key);
-    getUnitSprite(unit, fc); // triggers async render
+    // Serialize renders — they share a single WebGL context and scene.
+    // 10 s timeout guards against WebGL being unavailable (e.g. headless CI).
+    await Promise.race([
+      renderAllFacingsIfNeeded(attrs, key, fc),
+      new Promise<void>((resolve) => setTimeout(resolve, 10_000)),
+    ]);
   }
+
+  // Release the WebGL context so the globe view can create its own
+  disposeRenderer();
 
   // Schedule a full re-render once texture is loaded so sprites get texture detail
   scheduleTextureRerender(units, world);
+}
+
+/**
+ * Render all facings for a unit if not already cached or pending.
+ */
+async function renderAllFacingsIfNeeded(attrs: UnitModelAttrs, key: string, factionHex?: string): Promise<void> {
+  if (spriteCache.has(key) || pendingRenders.has(key)) return;
+  pendingRenders.add(key);
+  await renderAllFacings(attrs, key, factionHex);
 }
 
 /** Track whether we've already queued a texture re-render. */

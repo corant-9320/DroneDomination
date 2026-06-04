@@ -16,7 +16,7 @@ import type { ChassisType, UnitModelAttrs } from './unitModel.js';
 
 let currentChassis: ChassisType = 'wheeled';
 let currentAttrs = {
-  attack: 0,
+  kinetic: 0,
   rangeAttack: 0,
   splashAttack: 0,
   antiAir: 0,
@@ -91,7 +91,7 @@ function rebuildUnit(): void {
   const attrs: UnitModelAttrs = {
     chassis: currentChassis,
     movement: currentAttrs.movement,
-    attack: currentAttrs.attack,
+    kinetic: currentAttrs.kinetic,
     rangeAttack: currentAttrs.rangeAttack,
     splashAttack: currentAttrs.splashAttack,
     antiAir: currentAttrs.antiAir,
@@ -117,7 +117,7 @@ function updateUI(): void {
   const parts: string[] = [];
   parts.push(`Mov${currentAttrs.movement}`);
   parts.push(`HP${currentAttrs.health * 10}`);
-  if (currentAttrs.attack) parts.push(`Att${currentAttrs.attack}`);
+  if (currentAttrs.kinetic) parts.push(`Kin${currentAttrs.kinetic}`);
   if (currentAttrs.rangeAttack) parts.push(`Rng${currentAttrs.rangeAttack}`);
   if (currentAttrs.splashAttack) parts.push(`Spl${currentAttrs.splashAttack}`);
   if (currentAttrs.antiAir) parts.push(`AA${currentAttrs.antiAir}`);
@@ -126,75 +126,186 @@ function updateUI(): void {
   if (currentAttrs.repair) parts.push(`Rep${currentAttrs.repair}`);
   document.getElementById('unit-name')!.textContent = `${chassisName[currentChassis]}: ${parts.join(' / ')}`;
 
-  updateMovementHelp();
+  updateMovementComparison();
+  updateChassisTraits();
 }
 
-function updateMovementHelp(): void {
-  const el = document.getElementById('movement-help-text');
+function updateMovementComparison(): void {
+  const el = document.getElementById('movement-comparison-content');
   if (!el) return;
 
   const mp = currentAttrs.movement;
+  const colIndex: Record<ChassisType, number> = { wheeled: 0, limbed: 1, flight: 2 };
+  const active = colIndex[currentChassis];
 
-  const helpByType: Record<ChassisType, string> = {
-    wheeled: buildWheeledHelp(mp),
-    limbed: buildLimbedHelp(mp),
-    flight: buildFlightHelp(mp),
-  };
+  // Compute "max hexes + can attack?" for each chassis at current MP
+  // Tank: first hex=1, subsequent=2 (clear). hexes = 1 + floor((mp-1)/2), attack if remainder>=1
+  const tankClearHexes = 1 + Math.floor((mp - 1) / 2);
+  const tankCanAttack = (mp - 1 - Math.floor((mp - 1) / 2) * 2) >= 1;
+  // Spider: first hex=1, subsequent=3. hexes = 1 + floor((mp-1)/3), attack if remainder>=1
+  const spiderHexes = 1 + Math.floor((mp - 1) / 3);
+  const spiderCanAttack = (mp - 1 - Math.floor((mp - 1) / 3) * 3) >= 1;
+  // Drone: every hex=1. hexes = mp, or (mp-1) + attack
+  const droneHexes = mp;
+  const droneHexesWithAttack = mp - 1;
 
-  el.innerHTML = helpByType[currentChassis];
-}
+  type Cell = { text: string; cls?: string };
+  type Row = { label: string; cells: [Cell, Cell, Cell] };
 
-function buildWheeledHelp(mp: number): string {
-  const clearHexes = Math.floor((mp - 1) / 2);
-  const canAttackAfterClear = (mp - 1 - clearHexes * 2) >= 1;
+  const rows: Row[] = [
+    {
+      label: 'First hex',
+      cells: [{ text: '1 MP' }, { text: '1 MP' }, { text: '1 MP' }],
+    },
+    {
+      label: 'Clear / flat',
+      cells: [{ text: '2 MP' }, { text: '3 MP', cls: 'warn' }, { text: '1 MP', cls: 'good' }],
+    },
+    {
+      label: 'Hill or forest',
+      cells: [{ text: '3 MP', cls: 'warn' }, { text: '3 MP', cls: 'warn' }, { text: '1 MP', cls: 'good' }],
+    },
+    {
+      label: 'Hill + forest',
+      cells: [{ text: '4 MP', cls: 'bad' }, { text: '3 MP', cls: 'warn' }, { text: '1 MP', cls: 'good' }],
+    },
+    {
+      label: 'Mountain/ocean',
+      cells: [
+        { text: 'blocked', cls: 'bad' },
+        { text: 'blocked', cls: 'bad' },
+        { text: 'passable', cls: 'good' },
+      ],
+    },
+    {
+      label: `With ${mp} MP (clear)`,
+      cells: [
+        { text: `${tankClearHexes}hex${tankClearHexes !== 1 ? 'es' : ''}${tankCanAttack ? '+atk' : ''}`, cls: tankCanAttack ? 'good' : 'warn' },
+        { text: `${spiderHexes}hex${spiderHexes !== 1 ? 'es' : ''}${spiderCanAttack ? '+atk' : ''}`, cls: spiderCanAttack ? 'good' : 'warn' },
+        { text: `${droneHexes}hex${droneHexes !== 1 ? 'es' : ''} or ${droneHexesWithAttack}+atk`, cls: 'good' },
+      ],
+    },
+  ];
 
-  return `
-    <p>Tanks are fastest on open ground but slow through rough terrain.</p>
-    <table class="cost-table">
-      <tr><th>Terrain</th><th>Cost</th></tr>
-      <tr><td>First hex (always)</td><td>1 MP</td></tr>
-      <tr><td>Clear / Flat</td><td>2 MP</td></tr>
-      <tr><td>Hill OR Forest</td><td>3 MP</td></tr>
-      <tr><td>Hill AND Forest</td><td>4 MP</td></tr>
+  const headerRow = `
+    <tr>
+      <th></th>
+      <th${active === 0 ? ' style="color:#fff"' : ''}>🛞 Tank</th>
+      <th${active === 1 ? ' style="color:#fff"' : ''}>🕷️ Spider</th>
+      <th${active === 2 ? ' style="color:#fff"' : ''}>🚁 Drone</th>
+    </tr>`;
+
+  const bodyRows = rows.map(row => {
+    const cells = row.cells.map((cell, i) => {
+      const isActive = i === active;
+      const cls = cell.cls ? ` class="${cell.cls}"` : '';
+      return `<td${isActive ? ` style="font-weight:bold;color:${cell.cls === 'good' ? '#7fdbca' : cell.cls === 'bad' ? '#ff6b6b' : cell.cls === 'warn' ? '#f7b731' : '#fff'}"` : cls}>${cell.text}</td>`;
+    }).join('');
+    return `<tr><td>${row.label}</td>${cells}</tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <table>
+      <thead>${headerRow}</thead>
+      <tbody>${bodyRows}</tbody>
     </table>
-    <p>With <b>${mp} MP</b> on clear ground: move ${1 + clearHexes} hex${clearHexes !== 0 ? 'es' : ''}${canAttackAfterClear ? ' + attack' : ', no attack'}.</p>
-    <p class="impassable">⛔ Cannot enter Mountain or Ocean tiles.</p>
-    <p class="note">Attacking costs 1 MP. Units can move then attack in one turn.</p>
+    <p class="section-note">Last row updates with the Movement slider. Attacking costs 1 MP.</p>
   `;
 }
 
-function buildLimbedHelp(mp: number): string {
-  const hexes = Math.floor((mp - 1) / 3);
-  const canAttack = (mp - 1 - hexes * 3) >= 1;
+function updateChassisTraits(): void {
+  const el = document.getElementById('chassis-traits-content');
+  if (!el) return;
 
-  return `
-    <p>Spiders ignore terrain difficulty — all non-first hexes cost the same.</p>
-    <table class="cost-table">
-      <tr><th>Terrain</th><th>Cost</th></tr>
-      <tr><td>First hex (always)</td><td>1 MP</td></tr>
-      <tr><td>Any traversable hex</td><td>3 MP</td></tr>
+  // Row data: [label, tank value/class, spider value/class, drone value/class]
+  type Cell = { text: string; cls?: string };
+  type Row = { label: string; cells: [Cell, Cell, Cell] };
+
+  const rows: Row[] = [
+    {
+      label: 'Attack modifier',
+      cells: [
+        { text: '1.00×', cls: 'good' },
+        { text: '0.75×', cls: 'warn' },
+        { text: '0.50×', cls: 'bad' },
+      ],
+    },
+    {
+      label: 'Hit by Direct Fire',
+      cells: [
+        { text: '1.00×' },
+        { text: '1.00×' },
+        { text: '0.33×', cls: 'good' },
+      ],
+    },
+    {
+      label: 'Hit by Splash Fire',
+      cells: [
+        { text: '1.00×' },
+        { text: '1.00×' },
+        { text: '0.50×', cls: 'good' },
+      ],
+    },
+    {
+      label: 'Hit by Anti-Air',
+      cells: [
+        { text: 'immune', cls: 'good' },
+        { text: 'immune', cls: 'good' },
+        { text: '1.00×', cls: 'bad' },
+      ],
+    },
+    {
+      label: 'AA Reaction Fire',
+      cells: [
+        { text: 'never', cls: 'good' },
+        { text: 'never', cls: 'good' },
+        { text: 'triggers', cls: 'bad' },
+      ],
+    },
+    {
+      label: 'Terrain defence',
+      cells: [
+        { text: 'full' },
+        { text: 'full' },
+        { text: 'none', cls: 'bad' },
+      ],
+    },
+    {
+      label: 'Mountain / Ocean',
+      cells: [
+        { text: 'blocked', cls: 'bad' },
+        { text: 'blocked', cls: 'bad' },
+        { text: 'passable', cls: 'good' },
+      ],
+    },
+  ];
+
+  const colIndex: Record<ChassisType, number> = { wheeled: 0, limbed: 1, flight: 2 };
+  const active = colIndex[currentChassis];
+
+  const headerRow = `
+    <tr>
+      <th></th>
+      <th${active === 0 ? ' style="color:#fff"' : ''}>🛞 Tank</th>
+      <th${active === 1 ? ' style="color:#fff"' : ''}>🕷️ Spider</th>
+      <th${active === 2 ? ' style="color:#fff"' : ''}>🚁 Drone</th>
+    </tr>`;
+
+  const bodyRows = rows.map(row => {
+    const highlightedCells = row.cells.map((cell, i) => {
+      const isActive = i === active;
+      const cls = cell.cls ? ` class="${cell.cls}"` : '';
+      return `<td${isActive ? ` style="font-weight:bold;color:${cell.cls === 'good' ? '#7fdbca' : cell.cls === 'bad' ? '#ff6b6b' : cell.cls === 'warn' ? '#f7b731' : '#fff'}"` : cls}>${cell.text}</td>`;
+    }).join('');
+    return `<tr><td>${row.label}</td>${highlightedCells}</tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <table>
+      <thead>${headerRow}</thead>
+      <tbody>${bodyRows}</tbody>
     </table>
-    <p>With <b>${mp} MP</b>: move ${1 + hexes} hex${hexes !== 0 ? 'es' : ''}${canAttack ? ' + attack' : ', no attack'}.</p>
-    <p class="impassable">⛔ Cannot enter Mountain or Ocean tiles.</p>
-    <p class="note">Attacking costs 1 MP. Units can move then attack in one turn.</p>
-  `;
-}
-
-function buildFlightHelp(mp: number): string {
-  // First hex: 1 MP, subsequent hexes: 1 MP each
-  const hexes = mp; // 1 + (mp - 1) * 1 = mp hexes total
-  const canAttack = (mp - hexes) >= 1; // No leftover after moving max
-  const hexesWithAttack = mp - 1; // Leave 1 MP for attack
-
-  return `
-    <p>Drones fly over all terrain at minimal cost — including mountains and oceans.</p>
-    <table class="cost-table">
-      <tr><th>Terrain</th><th>Cost</th></tr>
-      <tr><td>First hex (always)</td><td>1 MP</td></tr>
-      <tr><td>Any hex (including mountain/ocean)</td><td>1 MP</td></tr>
-    </table>
-    <p>With <b>${mp} MP</b>: move ${hexes} hexes, or ${hexesWithAttack} hex${hexesWithAttack !== 1 ? 'es' : ''} + attack.</p>
-    <p class="note">Attacking costs 1 MP. Units can move then attack in one turn.</p>
+    <p class="section-note">Bold column = currently selected chassis. Modifiers apply to all weapon modes.</p>
   `;
 }
 

@@ -29,7 +29,7 @@ data.units.forEach(unit => {
   // Ensure any unit with splash, attack, or airdefence > 0 also has range > 0
   const hasOffensiveCapability = 
     (unit.attributes.splash && unit.attributes.splash > 0) ||
-    (unit.attributes.attack && unit.attributes.attack > 0) ||
+    (unit.attributes.kinetic && unit.attributes.kinetic > 0) ||
     (unit.attributes.airdefence && unit.attributes.airdefence > 0);
   
   if (hasOffensiveCapability && (!unit.attributes.range || unit.attributes.range === 0)) {

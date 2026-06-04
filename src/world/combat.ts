@@ -13,256 +13,82 @@
  * - Strong attacks (AttackPower ≥ 5) can still reach 30 against undefended targets
  * - Defence uses a 0.75 scale factor to stay meaningful without being overwhelming
  * - Orientation is additive: front +0, side +1, rear +2
+ *
+ * Pure math lives in combatMath.ts.
+ * Arc/facing geometry lives in combatFacing.ts.
  */
 
 import { Tile } from './types.js';
 import { Unit, HexSegment } from './units.js';
 import { graphDistance } from './pathfinding.js';
 
-
 // ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-export const DEFENCE_SCALE = 0.75;
-export const MAX_DAMAGE = 30;
-export const MIN_DAMAGE = 1;
-export const SPLASH_SCALE = 0.3;
-
-/**
- * AttackPower is reduced by 10% for each hex of attack distance beyond 1.
- * rangeEfficiency = 1 - RANGE_FALLOFF_PER_HEX × max(0, distance - 1)
- * Applies to declared attacks only (Direct Fire, Splash Fire, Anti-Air Fire).
- * Does NOT apply to Anti-Air Reaction Fire.
- */
-export const RANGE_FALLOFF_PER_HEX = 0.10;
-
-/**
- * Maximum possible damage contribution per point of AttackPower before the
- * global cap is applied. Ensures weak attacks cannot deal full damage against
- * undefended targets.
- */
-export const DAMAGE_PER_ATTACK_POWER = 6;
-
-// ---------------------------------------------------------------------------
-// Chassis attack modifiers — outgoing weapon power multiplier by movement type
+// Re-export everything from sub-modules so existing importers stay compatible
 // ---------------------------------------------------------------------------
 
-/** Outgoing weapon power multiplier for wheeled (tank) units. */
-export const TANK_ATTACK_MODIFIER = 1.00;
-/** Outgoing weapon power multiplier for limb/spider units. */
-export const SPIDER_ATTACK_MODIFIER = 0.75;
-/** Outgoing weapon power multiplier for flight/drone units. */
-export const DRONE_ATTACK_MODIFIER = 0.50;
+export {
+  // Constants
+  DEFENCE_SCALE,
+  MAX_DAMAGE,
+  MIN_DAMAGE,
+  SPLASH_SCALE,
+  RANGE_FALLOFF_PER_HEX,
+  DAMAGE_PER_ATTACK_POWER,
+  TANK_ATTACK_MODIFIER,
+  SPIDER_ATTACK_MODIFIER,
+  DRONE_ATTACK_MODIFIER,
+  DRONE_DIRECT_FIRE_DAMAGE_MULTIPLIER,
+  DRONE_SPLASH_FIRE_DAMAGE_MULTIPLIER,
+  DRONE_ANTI_AIR_DAMAGE_MULTIPLIER,
+  // Functions
+  isDrone,
+  getChassisAttackModifier,
+  calculateRangeEfficiency,
+  calculateModifiedAttackPower,
+  applyDroneIncomingDamageModifier,
+  clamp,
+  applyDamage,
+  calculateFormulaDamage,
+} from './combatMath.js';
+
+export {
+  // Types
+  type TargetOrientation,
+  type AttackArc,
+  // Functions
+  getOrientationBonus,
+  getDirectionBetweenAdjacentHexes,
+  getApproachDirection,
+  classifyAttackArc,
+  getFacingModifier,
+  getCrossfireBonus,
+} from './combatFacing.js';
 
 // ---------------------------------------------------------------------------
-// Drone incoming damage multipliers — per weapon mode
+// Local imports from sub-modules (for use within this file)
 // ---------------------------------------------------------------------------
 
-/** Final Direct Fire damage multiplier when the target is a drone. */
-export const DRONE_DIRECT_FIRE_DAMAGE_MULTIPLIER = 0.33;
-/** Final Splash Fire damage multiplier when the affected unit is a drone. */
-export const DRONE_SPLASH_FIRE_DAMAGE_MULTIPLIER = 0.50;
-/** Final Anti-Air damage multiplier when the target is a drone (no penalty). */
-export const DRONE_ANTI_AIR_DAMAGE_MULTIPLIER = 1.00;
+import {
+  DEFENCE_SCALE,
+  MAX_DAMAGE,
+  MIN_DAMAGE,
+  SPLASH_SCALE,
+  isDrone,
+  getChassisAttackModifier,
+  calculateModifiedAttackPower,
+  applyDroneIncomingDamageModifier,
+  clamp,
+  applyDamage,
+  calculateFormulaDamage,
+} from './combatMath.js';
 
-// ---------------------------------------------------------------------------
-// Orientation
-// ---------------------------------------------------------------------------
-
-/** Returns true if the unit has a flight chassis (drone). */
-export function isDrone(unit: Unit): boolean {
-  return (unit.attributes.flightMovement ?? 0) >= 1;
-}
-
-/**
- * Get the chassis attack modifier for a unit based on its movement type.
- * Drones (flightMovement > 0) → 0.50
- * Spiders (limbMovement > 0) → 0.75
- * Tanks (wheeledMovement > 0) → 1.00
- * Default → 1.00
- */
-export function getChassisAttackModifier(unit: Unit): number {
-  if ((unit.attributes.flightMovement ?? 0) > 0) return DRONE_ATTACK_MODIFIER;
-  if ((unit.attributes.limbMovement ?? 0) > 0) return SPIDER_ATTACK_MODIFIER;
-  if ((unit.attributes.wheeledMovement ?? 0) > 0) return TANK_ATTACK_MODIFIER;
-  return TANK_ATTACK_MODIFIER;
-}
-
-/**
- * Calculate range efficiency for a declared attack.
- *
- * rangeEfficiency = 1 - RANGE_FALLOFF_PER_HEX × max(0, distance - 1)
- * Distance 1 → 1.00, distance 2 → 0.90, distance 3 → 0.80, etc.
- * Minimum 0 (clamped). Does NOT apply to Anti-Air Reaction Fire.
- */
-export function calculateRangeEfficiency(distance: number): number {
-  const d = Math.max(1, distance);
-  return Math.max(0, 1 - RANGE_FALLOFF_PER_HEX * Math.max(0, d - 1));
-}
-
-/**
- * Calculate the modified attack power for a weapon, applying the chassis
- * modifier, range efficiency, and orientation bonus.
- *
- * AttackPower = (baseWeaponValue × chassisModifier × rangeEfficiency) + orientationBonus
- * Minimum 0.01 to avoid zero-division in the damage formula.
- *
- * @param distance - graph distance from attacker to target (for range falloff).
- *   Pass 1 for melee / reaction fire (no falloff).
- */
-export function calculateModifiedAttackPower(
-  unit: Unit,
-  baseWeaponValue: number,
-  orientationBonus: number,
-  distance: number = 1,
-): number {
-  const chassisModifier = getChassisAttackModifier(unit);
-  const rangeEfficiency = calculateRangeEfficiency(distance);
-  const attackPower = baseWeaponValue * chassisModifier * rangeEfficiency + orientationBonus;
-  return Math.max(0.01, attackPower);
-}
-
-/**
- * Apply the drone incoming damage modifier based on weapon mode.
- * Only reduces damage when the target is a drone (flightMovement >= 1).
- */
-export function applyDroneIncomingDamageModifier(
-  weaponMode: 'direct' | 'splash' | 'antiAir',
-  targetUnit: Unit,
-  damage: number,
-): number {
-  if (!isDrone(targetUnit)) return damage;
-  switch (weaponMode) {
-    case 'direct':  return Math.max(MIN_DAMAGE, Math.round(damage * DRONE_DIRECT_FIRE_DAMAGE_MULTIPLIER));
-    case 'splash':  return Math.max(MIN_DAMAGE, Math.round(damage * DRONE_SPLASH_FIRE_DAMAGE_MULTIPLIER));
-    case 'antiAir': return damage; // no penalty
-    default:        return damage;
-  }
-}
-
-/** Target orientation relative to the attacker. */
-export type TargetOrientation = 'front' | 'side' | 'rear';
-
-/** Legacy alias kept for API compatibility. */
-export type AttackArc = 'front' | 'side' | 'rear' | 'unknown';
-
-/**
- * Get the orientation bonus based on the target's facing relative to attacker.
- *
- * | Target Orientation | Bonus |
- * |--------------------|-------|
- * | Front-facing       |   0   |
- * | Side-on            |   1   |
- * | Rear / facing away |   2   |
- */
-export function getOrientationBonus(targetOrientation: TargetOrientation | string): number {
-  switch (targetOrientation) {
-    case 'front': return 0;
-    case 'side': return 1;
-    case 'rear': return 2;
-    default: return 0; // invalid defaults to front
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Attack arc classification (hex geometry)
-// ---------------------------------------------------------------------------
-
-/**
- * Get the direction index from one adjacent tile to another using the
- * neighbour array. Returns the index in `fromTile.neighbours` where
- * `toIndex` appears, or -1 if not directly adjacent.
- */
-export function getDirectionBetweenAdjacentHexes(
-  tiles: Tile[],
-  fromIndex: number,
-  toIndex: number,
-): number {
-  return tiles[fromIndex].neighbours.indexOf(toIndex);
-}
-
-/**
- * Calculate the approach direction from the defender's perspective.
- * This is the direction from the defender's hex toward the attacker's hex.
- *
- * For non-adjacent hexes, uses BFS to find the first hop on the shortest
- * path from defender toward attacker, then returns that direction.
- * Returns -1 if no path or same hex.
- */
-export function getApproachDirection(
-  tiles: Tile[],
-  defenderIndex: number,
-  attackerIndex: number,
-): number {
-  if (defenderIndex === attackerIndex) return -1;
-
-  // If adjacent, direct lookup
-  const direct = tiles[defenderIndex].neighbours.indexOf(attackerIndex);
-  if (direct !== -1) return direct;
-
-  // BFS from defender toward attacker, find first step
-  const visited = new Uint8Array(tiles.length);
-  const parent = new Int32Array(tiles.length).fill(-1);
-  const queue: number[] = [defenderIndex];
-  visited[defenderIndex] = 1;
-  let head = 0;
-
-  while (head < queue.length) {
-    const current = queue[head++];
-    for (const neighbour of tiles[current].neighbours) {
-      if (!visited[neighbour]) {
-        visited[neighbour] = 1;
-        parent[neighbour] = current;
-        if (neighbour === attackerIndex) {
-          // Trace back to find first step from defender
-          let step = attackerIndex;
-          while (parent[step] !== defenderIndex) {
-            step = parent[step];
-          }
-          return tiles[defenderIndex].neighbours.indexOf(step);
-        }
-        queue.push(neighbour);
-      }
-    }
-  }
-
-  return -1; // unreachable
-}
-
-/**
- * Classify the target orientation based on the defender's facing and the
- * approach direction (direction from defender toward attacker).
- *
- * Simplified 3-arc system:
- * - diff 0, 1, 5 → front
- * - diff 2, 4 → side
- * - diff 3 → rear
- */
-export function classifyAttackArc(
-  defenderFacing: number,
-  approachDirection: number,
-): AttackArc {
-  if (approachDirection < 0) return 'unknown';
-
-  // Normalize the difference (mod 6)
-  const diff = ((approachDirection - defenderFacing) % 6 + 6) % 6;
-
-  switch (diff) {
-    case 0: return 'front';
-    case 1: return 'front'; // front-right
-    case 5: return 'front'; // front-left
-    case 2: return 'side';  // side-right
-    case 4: return 'side';  // side-left
-    case 3: return 'rear';
-    default: return 'unknown';
-  }
-}
-
-/** Get the orientation bonus for a classified attack arc. */
-export function getFacingModifier(arc: AttackArc): number {
-  return getOrientationBonus(arc === 'unknown' ? 'front' : arc);
-}
+import {
+  type AttackArc,
+  getOrientationBonus,
+  getApproachDirection,
+  classifyAttackArc,
+  getFacingModifier,
+} from './combatFacing.js';
 
 // ---------------------------------------------------------------------------
 // Formation support (defensiveFormation)
@@ -380,135 +206,7 @@ export function getDefencePower(
 }
 
 // ---------------------------------------------------------------------------
-// Legacy compatibility: getEffectiveDefense (used by server/combat.ts)
-// ---------------------------------------------------------------------------
-
-/**
- * @deprecated Use getDefencePower instead. Kept for server compatibility.
- * Returns the DefencePower total (not scaled).
- */
-export function getEffectiveDefense(
-  target: Unit,
-  allUnits: Unit[],
-  tiles: Tile[],
-): number {
-  return getDefencePower(target, allUnits, tiles).total;
-}
-
-// ---------------------------------------------------------------------------
-// Legacy compatibility: getBestNearbyDefense
-// ---------------------------------------------------------------------------
-
-/**
- * @deprecated Legacy function. In the new model, EW is summed from same-hex
- * units (not best-nearby). Kept for API compatibility.
- */
-export function getBestNearbyDefense(
-  target: Unit,
-  allUnits: Unit[],
-  tiles: Tile[],
-): number {
-  return getEWDefense(target, allUnits);
-}
-
-// ---------------------------------------------------------------------------
-// Encirclement (legacy — no longer affects damage formula)
-// ---------------------------------------------------------------------------
-
-/**
- * A unit is encircled if enemy units occupy 3 or more distinct adjacent
- * directions around it. Kept for informational purposes.
- */
-export function isEncircled(
-  target: Unit,
-  allUnits: Unit[],
-  tiles: Tile[],
-): boolean {
-  const targetTile = tiles[target.tileIndex];
-  const occupiedDirections = new Set<number>();
-
-  for (const unit of allUnits) {
-    if (unit.ownerId === target.ownerId) continue;
-    if (unit.currentHealth <= 0) continue;
-
-    const dirIndex = targetTile.neighbours.indexOf(unit.tileIndex);
-    if (dirIndex !== -1) {
-      occupiedDirections.add(dirIndex);
-    }
-  }
-
-  return occupiedDirections.size >= 3;
-}
-
-// ---------------------------------------------------------------------------
-// Damage formula
-// ---------------------------------------------------------------------------
-
-/** Clamp a value to [min, max]. */
-export function clamp(value: number, minValue: number, maxValue: number): number {
-  return Math.max(minValue, Math.min(value, maxValue));
-}
-
-/**
- * Calculate damage using the attack-scaled ratio curve formula.
- *
- * MaxFormulaDamage = min(MAX_DAMAGE, DAMAGE_PER_ATTACK_POWER * AttackPower)
- * Damage = round(MIN_DAMAGE + (MaxFormulaDamage - MIN_DAMAGE) * AttackPower² / (AttackPower² + EffectiveDefence²))
- * Clamped to [MIN_DAMAGE, MAX_DAMAGE].
- *
- * Weak attacks can no longer deal 30 damage just because the target has zero
- * defence. Strong attacks (AttackPower ≥ 5) can still reach 30.
- */
-export function calculateDamage(
-  attack: number,
-  targetOrientation: TargetOrientation | string,
-  armour: number,
-  ew: number,
-  defensiveFormation: number,
-  terrain: number,
-): number {
-  // Clamp inputs
-  attack = clamp(attack, 1, 5);
-  armour = clamp(armour, 0, 5);
-  ew = clamp(ew, 0, 5);
-  defensiveFormation = clamp(defensiveFormation, 0, 2);
-  terrain = clamp(terrain, 0, 4);
-
-  const orientationBonus = getOrientationBonus(targetOrientation);
-  const attackPower = Math.max(1, attack + orientationBonus);
-
-  const defencePower = armour + ew + defensiveFormation + terrain;
-  const effectiveDefence = defencePower * DEFENCE_SCALE;
-
-  const maxFormulaDamage = Math.min(MAX_DAMAGE, DAMAGE_PER_ATTACK_POWER * attackPower);
-
-  const attackPowerSquared = attackPower * attackPower;
-  const effectiveDefenceSquared = effectiveDefence * effectiveDefence;
-
-  const rawDamage =
-    MIN_DAMAGE +
-    (maxFormulaDamage - MIN_DAMAGE) *
-      attackPowerSquared /
-      (attackPowerSquared + effectiveDefenceSquared);
-  const damage = Math.round(rawDamage);
-
-  return clamp(damage, MIN_DAMAGE, MAX_DAMAGE);
-}
-
-/**
- * Apply damage to a unit's current health.
- * Returns the new health value, clamped to [0, 50].
- * Damage minimum is 1 (no upper clamp — combined direct+splash can exceed 30).
- */
-export function applyDamage(currentHealth: number, damage: number): number {
-  currentHealth = clamp(currentHealth, 0, 50);
-  damage = Math.max(1, damage);
-  const newHealth = currentHealth - damage;
-  return clamp(newHealth, 0, 50);
-}
-
-// ---------------------------------------------------------------------------
-// Direct damage calculation (contextual — uses game state)
+// Direct and splash damage calculations (contextual — uses game state)
 // ---------------------------------------------------------------------------
 
 /**
@@ -533,7 +231,7 @@ export function calculateDirectDamage(
   const orientationBonus = getFacingModifier(arc);
 
   const defencePower = getDefencePower(target, allUnits, tiles);
-  const baseAttack = clamp(attacker.attributes.attack ?? 0, 1, 5);
+  const baseAttack = clamp(attacker.attributes.kinetic ?? 0, 1, 5);
   const attackPower = calculateModifiedAttackPower(attacker, baseAttack, orientationBonus, distance);
   const effectiveDefence = defencePower.total * DEFENCE_SCALE;
 
@@ -544,24 +242,6 @@ export function calculateDirectDamage(
   damage = applyDroneIncomingDamageModifier('direct', target, damage);
 
   return { damage, arc, orientationBonus, defencePower, antiDronePenaltyApplied };
-}
-
-/**
- * Core formula damage helper — calculates full formula damage given
- * an attack power and effective defence (already scaled).
- *
- * MaxFormulaDamage = min(MAX_DAMAGE, DAMAGE_PER_ATTACK_POWER * attackPower)
- * Damage = round(MIN_DAMAGE + (MaxFormulaDamage - MIN_DAMAGE) * AP² / (AP² + ED²))
- * Clamped to [MIN_DAMAGE, MAX_DAMAGE].
- */
-export function calculateFormulaDamage(attackPower: number, effectiveDefence: number): number {
-  const maxFormulaDamage = Math.min(MAX_DAMAGE, DAMAGE_PER_ATTACK_POWER * attackPower);
-  const apSq = attackPower * attackPower;
-  const edSq = effectiveDefence * effectiveDefence;
-  const rawDamage =
-    MIN_DAMAGE +
-    (maxFormulaDamage - MIN_DAMAGE) * apSq / (apSq + edSq);
-  return clamp(Math.round(rawDamage), MIN_DAMAGE, MAX_DAMAGE);
 }
 
 /**
@@ -700,9 +380,9 @@ export function resolveAttack(
   if (target.currentHealth <= 0) return invalidResult(attackerId, targetId, 'Target is destroyed');
   if (attacker.ownerId === target.ownerId) return invalidResult(attackerId, targetId, 'Cannot attack friendly unit');
 
-  // Anti-Air validation: if attacker ONLY has antiAir (no attack, no rangeAttack, no splashAttack),
+  // Anti-Air validation: if attacker ONLY has antiAir (no kinetic, no rangeAttack, no splashAttack),
   // it can only target drones.
-  const hasAttack = (attacker.attributes.attack ?? 0) > 0;
+  const hasAttack = (attacker.attributes.kinetic ?? 0) > 0;
   const hasRange = (attacker.attributes.rangeAttack ?? 0) > 0;
   const hasSplash = (attacker.attributes.splashAttack ?? 0) > 0;
   const hasAntiAir = (attacker.attributes.antiAir ?? 0) > 0;
@@ -713,7 +393,7 @@ export function resolveAttack(
 
   // Range check
   const range = attacker.attributes.rangeAttack ?? 0;
-  const attackRange = Math.max(range, (attacker.attributes.attack ?? 0) > 0 ? 1 : 0, hasAntiAir ? 1 : 0);
+  const attackRange = Math.max(range, (attacker.attributes.kinetic ?? 0) > 0 ? 1 : 0, hasAntiAir ? 1 : 0);
   const dist = graphDistance(tiles, attacker.tileIndex, target.tileIndex);
   if (dist < 0 || dist > attackRange) {
     return invalidResult(attackerId, targetId, 'Target out of range');
@@ -729,7 +409,7 @@ export function resolveAttack(
   const validOptions: WeaponOption[] = [];
 
   // --- Direct Fire ---
-  if ((attacker.attributes.attack ?? 0) > 0) {
+  if ((attacker.attributes.kinetic ?? 0) > 0) {
     const { damage } = calculateDirectDamage(attacker, target, allUnits, tiles, dist);
     validOptions.push({
       mode: 'direct',
@@ -922,7 +602,6 @@ export function resolveAntiAirReactionFireForTile(
     reactedThisAction.add(unit.id);
 
     const damage = calculateAntiAirReactionDamage(unit, drone, allUnits, tiles);
-    const healthBefore = drone.currentHealth;
     drone.currentHealth = applyDamage(drone.currentHealth, damage);
     const destroyed = drone.currentHealth <= 0;
 
@@ -1048,42 +727,4 @@ export function resolveSimultaneousAttacks(
   unitB.currentHealth = applyDamage(healthB, resultA.directDamage);
 
   return [resultA, resultB];
-}
-
-// ---------------------------------------------------------------------------
-// Crossfire bonus (optional)
-// ---------------------------------------------------------------------------
-
-/**
- * Check if a crossfire bonus applies for an attacker against a target.
- * Crossfire: 2+ friendly units attacking same target from side/rear arcs
- * in the same resolution window grants +1 damage each.
- *
- * This function checks if the given attacker qualifies for the crossfire bonus
- * given a list of other attackers targeting the same unit this turn.
- */
-export function getCrossfireBonus(
-  attacker: Unit,
-  target: Unit,
-  otherAttackers: Unit[],
-  tiles: Tile[],
-): number {
-  // Check if this attacker is hitting from side or rear
-  const myApproach = getApproachDirection(tiles, target.tileIndex, attacker.tileIndex);
-  const myArc = classifyAttackArc(target.facing, myApproach);
-  if (myArc !== 'side' && myArc !== 'rear') return 0;
-
-  // Count other attackers also hitting from side/rear
-  let qualifyingOthers = 0;
-  for (const other of otherAttackers) {
-    if (other.id === attacker.id) continue;
-    if (other.currentHealth <= 0) continue;
-    const approach = getApproachDirection(tiles, target.tileIndex, other.tileIndex);
-    const arc = classifyAttackArc(target.facing, approach);
-    if (arc === 'side' || arc === 'rear') {
-      qualifyingOthers++;
-    }
-  }
-
-  return qualifyingOthers >= 1 ? 1 : 0;
 }

@@ -15,6 +15,17 @@ Machine-readable reference for AI code generators working on this project.
 
 ```
 client/           → Browser entry (loaded by index.html via Vite)
+```
+
+> **Import rule (enforced by tsconfig.client.json):** Client files MUST NOT
+> import from `src/` or `server/`. The client tsconfig only includes
+> `client/**` and `shared/**`, so any `import from '../src/...'` will fail
+> to type-check. Logic needed by both client and server must live in `shared/`.
+> This is why movement math, pathfinding, and unit naming are currently
+> duplicated between `src/world/` and `client/` — they predate `shared/`.
+
+```
+client/           → Browser entry (loaded by index.html via Vite)
   main.ts           Entry point — initializes GlobeView + LocalMapView + panels + AI playback
   globe.ts          Three.js OrbitControls globe (class GlobeView)
   localMap.ts       Canvas 2D hex map (class LocalMapView)

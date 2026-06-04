@@ -90814,7 +90814,7 @@
         ]
       ],
       "terrain": "plains",
-      "elevType": "mountain"
+      "elevType": "hills"
     },
     {
       "idx": 1775,
@@ -96423,7 +96423,7 @@
         ]
       ],
       "terrain": "desert",
-      "elevType": "mountain"
+      "elevType": "hills"
     },
     {
       "idx": 1885,
@@ -97498,7 +97498,7 @@
         ]
       ],
       "terrain": "desert",
-      "elevType": "mountain"
+      "elevType": "hills"
     },
     {
       "idx": 1906,
@@ -98417,7 +98417,7 @@
         ]
       ],
       "terrain": "plains",
-      "elevType": "mountain"
+      "elevType": "hills"
     },
     {
       "idx": 1924,
@@ -98468,7 +98468,7 @@
         ]
       ],
       "terrain": "plains",
-      "elevType": "mountain"
+      "elevType": "hills"
     },
     {
       "idx": 1925,
@@ -118532,7 +118532,7 @@
         ]
       ],
       "terrain": "desert",
-      "elevType": "mountain"
+      "elevType": "hills"
     },
     {
       "idx": 2318,
@@ -229176,7 +229176,7 @@
           0.48224
         ]
       ],
-      "terrain": "ocean",
+      "terrain": "plains",
       "elevType": "flat"
     },
     {
@@ -230094,7 +230094,7 @@
           0.42052
         ]
       ],
-      "terrain": "ocean",
+      "terrain": "plains",
       "elevType": "flat"
     },
     {
@@ -230145,7 +230145,7 @@
           0.46758
         ]
       ],
-      "terrain": "ocean",
+      "terrain": "plains",
       "elevType": "flat"
     },
     {
@@ -294570,1028 +294570,1100 @@
   "units": [
     {
       "id": "unit_0",
-      "label": "Long Restorer Loitering Tank (Mov 1, Att 0, Rng 4, Spl 2, Arm 0, EW 3, Rep 4)",
+      "label": "Jammer Flyweight Plodder Tank (Mov 2, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 3, Rep 0)",
       "ownerId": "city_0",
-      "tileIndex": 1200,
+      "tileIndex": 1194,
       "segment": 0,
-      "facing": 1,
+      "facing": 0,
       "attributes": {
         "maxHealth": 3,
-        "wheeledMovement": 1,
-        "repair": 4,
-        "rangeAttack": 4,
-        "splashAttack": 2,
-        "defence": 3
+        "wheeledMovement": 2,
+        "defence": 3,
+        "armour": 1
       },
       "currentHealth": 30
     },
     {
       "id": "unit_1",
-      "label": "Restorer Short Walker Drone (Mov 3, Att 1, Rng 2, Spl 0, Arm 0, EW 0, Rep 4)",
+      "label": "Jammer Flyweight Walker Tank (Mov 3, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 3, Rep 0)",
       "ownerId": "city_0",
-      "tileIndex": 1200,
+      "tileIndex": 1194,
       "segment": 1,
-      "facing": 1,
-      "attributes": {
-        "maxHealth": 1,
-        "flightMovement": 3,
-        "attack": 1,
-        "repair": 4,
-        "rangeAttack": 2,
-        "airdefence": 4,
-        "range": 3
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_2",
-      "label": "Raider Blaster Loitering Tank (Mov 1, Att 2, Rng 0, Spl 2, Arm 1, EW 1, Rep 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1200,
-      "segment": 2,
-      "facing": 1,
+      "facing": 0,
       "attributes": {
         "maxHealth": 3,
-        "wheeledMovement": 1,
-        "attack": 2,
-        "armour": 1,
-        "defence": 1,
-        "splashAttack": 2,
-        "airdefence": 3,
-        "range": 1
+        "wheeledMovement": 3,
+        "defence": 3,
+        "armour": 1
       },
       "currentHealth": 30
     },
     {
-      "id": "unit_3",
-      "label": "Scrambler Blaster Runner Tank (Mov 4, Att 0, Rng 1, Spl 2, Arm 0, EW 2, Rep 0)",
+      "id": "unit_2",
+      "label": "Nullifier Flyweight Runner Tank (Mov 4, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 5, Rep 0)",
       "ownerId": "city_0",
-      "tileIndex": 1200,
+      "tileIndex": 1194,
+      "segment": 2,
+      "facing": 0,
+      "attributes": {
+        "maxHealth": 4,
+        "wheeledMovement": 4,
+        "defence": 5,
+        "armour": 1
+      },
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_3",
+      "label": "Nullifier Flyweight Walker Tank (Mov 3, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 5, Rep 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1194,
       "segment": 3,
-      "facing": 1,
+      "facing": 0,
       "attributes": {
         "maxHealth": 3,
-        "wheeledMovement": 4,
-        "splashAttack": 2,
-        "defence": 2,
-        "rangeAttack": 1
+        "wheeledMovement": 3,
+        "defence": 5,
+        "armour": 1
       },
       "currentHealth": 30
     },
     {
       "id": "unit_4",
-      "label": "Blaster Harasser Loitering Drone (Mov 1, Att 1, Rng 0, Spl 2, Arm 0, EW 0, Rep 1)",
+      "label": "Nullifier Bantamweight Plodder Spider (Mov 2, Att 0, Rng 0, Spl 0, AA 0, Arm 2, EW 5, Rep 0)",
       "ownerId": "city_0",
-      "tileIndex": 1200,
-      "segment": 4,
-      "facing": 1,
+      "tileIndex": 1193,
+      "segment": 0,
+      "facing": 0,
       "attributes": {
         "maxHealth": 4,
-        "flightMovement": 1,
-        "splashAttack": 2,
-        "attack": 1,
-        "repair": 1,
-        "range": 3
+        "limbMovement": 2,
+        "defence": 5,
+        "armour": 2
       },
       "currentHealth": 40
     },
     {
       "id": "unit_5",
-      "label": "Harasser Popper Runner Drone (Mov 4, Att 1, Rng 0, Spl 1, Arm 0, EW 0, Rep 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1193,
-      "segment": 0,
-      "facing": 1,
-      "attributes": {
-        "maxHealth": 4,
-        "flightMovement": 4,
-        "splashAttack": 1,
-        "attack": 1,
-        "range": 2
-      },
-      "currentHealth": 40
-    },
-    {
-      "id": "unit_6",
-      "label": "Blaster Short Runner Drone (Mov 4, Att 0, Rng 2, Spl 2, Arm 0, EW 1, Rep 0)",
+      "label": "Jammer Flyweight Walker Spider (Mov 3, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 3, Rep 0)",
       "ownerId": "city_0",
       "tileIndex": 1193,
       "segment": 1,
-      "facing": 1,
+      "facing": 0,
       "attributes": {
-        "maxHealth": 4,
-        "flightMovement": 4,
-        "rangeAttack": 2,
-        "splashAttack": 2,
-        "defence": 1,
-        "airdefence": 5,
-        "range": 1
+        "maxHealth": 3,
+        "limbMovement": 3,
+        "defence": 3,
+        "armour": 1
       },
-      "currentHealth": 40
+      "currentHealth": 30
     },
     {
-      "id": "unit_7",
-      "label": "Middleweight Medium Plodder Spider (Mov 2, Att 1, Rng 3, Spl 0, Arm 4, EW 2, Rep 0)",
+      "id": "unit_6",
+      "label": "Nullifier Bantamweight Runner Spider (Mov 4, Att 0, Rng 0, Spl 0, AA 0, Arm 2, EW 5, Rep 0)",
       "ownerId": "city_0",
       "tileIndex": 1193,
       "segment": 2,
-      "facing": 1,
+      "facing": 0,
       "attributes": {
         "maxHealth": 2,
-        "limbMovement": 2,
-        "rangeAttack": 3,
-        "armour": 4,
-        "attack": 1,
-        "defence": 2,
-        "airdefence": 3,
-        "range": 1
+        "limbMovement": 4,
+        "defence": 5,
+        "armour": 2
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_7",
+      "label": "Jammer Walker Drone (Mov 3, Att 0, Rng 0, Spl 0, AA 0, Arm 0, EW 3, Rep 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1200,
+      "segment": 0,
+      "facing": 0,
+      "attributes": {
+        "maxHealth": 2,
+        "flightMovement": 3,
+        "defence": 3
       },
       "currentHealth": 20
     },
     {
       "id": "unit_8",
-      "label": "Restorer Welterweight Walker Spider (Mov 3, Att 1, Rng 0, Spl 0, Arm 3, EW 2, Rep 4)",
+      "label": "Nullifier Walker Drone (Mov 3, Att 0, Rng 0, Spl 0, AA 0, Arm 0, EW 5, Rep 0)",
       "ownerId": "city_0",
-      "tileIndex": 1193,
-      "segment": 3,
-      "facing": 1,
+      "tileIndex": 1200,
+      "segment": 1,
+      "facing": 0,
       "attributes": {
         "maxHealth": 4,
-        "limbMovement": 3,
-        "repair": 4,
-        "attack": 1,
-        "armour": 3,
-        "defence": 2,
-        "airdefence": 2,
-        "range": 3
+        "flightMovement": 3,
+        "defence": 5
       },
       "currentHealth": 40
     },
     {
       "id": "unit_9",
-      "label": "Breaker Middleweight Walker Spider (Mov 3, Att 4, Rng 0, Spl 3, Arm 4, EW 1, Rep 0)",
+      "label": "Disruptor Runner Drone (Mov 4, Att 0, Rng 0, Spl 0, AA 0, Arm 0, EW 4, Rep 0)",
       "ownerId": "city_0",
-      "tileIndex": 1193,
-      "segment": 4,
-      "facing": 1,
-      "attributes": {
-        "maxHealth": 2,
-        "limbMovement": 3,
-        "armour": 4,
-        "splashAttack": 3,
-        "attack": 4,
-        "defence": 1,
-        "range": 2
-      },
-      "currentHealth": 20
-    },
-    {
-      "id": "unit_10",
-      "label": "Popper Tinkerer Walker Spider (Mov 3, Att 0, Rng 0, Spl 1, Arm 0, EW 0, Rep 1)",
-      "ownerId": "city_0",
-      "tileIndex": 1192,
-      "segment": 0,
-      "facing": 1,
-      "attributes": {
-        "maxHealth": 1,
-        "limbMovement": 3,
-        "splashAttack": 1,
-        "repair": 1,
-        "airdefence": 3,
-        "range": 1
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_11",
-      "label": "Striker Welterweight Plodder Tank (Mov 2, Att 3, Rng 0, Spl 3, Arm 3, EW 0, Rep 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1192,
-      "segment": 1,
-      "facing": 1,
+      "tileIndex": 1200,
+      "segment": 2,
+      "facing": 0,
       "attributes": {
         "maxHealth": 3,
-        "wheeledMovement": 2,
-        "armour": 3,
-        "attack": 3,
-        "splashAttack": 3,
-        "range": 3
+        "flightMovement": 4,
+        "defence": 4
       },
       "currentHealth": 30
     },
     {
-      "id": "unit_12",
-      "label": "Jammer Engineer Loitering Tank (Mov 1, Att 0, Rng 0, Spl 2, Arm 0, EW 3, Rep 3)",
+      "id": "unit_10",
+      "label": "Fabricator Bantamweight Runner Tank (Mov 4, Att 0, Rng 0, Spl 0, AA 0, Arm 2, EW 0, Rep 5)",
       "ownerId": "city_0",
-      "tileIndex": 1192,
-      "segment": 2,
-      "facing": 1,
+      "tileIndex": 1194,
+      "segment": 4,
+      "facing": 0,
       "attributes": {
-        "maxHealth": 1,
-        "wheeledMovement": 1,
-        "splashAttack": 2,
-        "defence": 3,
-        "repair": 3
+        "maxHealth": 4,
+        "wheeledMovement": 4,
+        "repair": 5,
+        "armour": 2
       },
-      "currentHealth": 10
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_11",
+      "label": "Engineer Flyweight Walker Tank (Mov 3, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 0, Rep 3)",
+      "ownerId": "city_0",
+      "tileIndex": 1193,
+      "segment": 3,
+      "facing": 0,
+      "attributes": {
+        "maxHealth": 2,
+        "wheeledMovement": 3,
+        "repair": 3,
+        "armour": 1
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_12",
+      "label": "Fabricator Bantamweight Plodder Tank (Mov 2, Att 0, Rng 0, Spl 0, AA 0, Arm 2, EW 0, Rep 5)",
+      "ownerId": "city_0",
+      "tileIndex": 1193,
+      "segment": 4,
+      "facing": 0,
+      "attributes": {
+        "maxHealth": 3,
+        "wheeledMovement": 2,
+        "repair": 5,
+        "armour": 2
+      },
+      "currentHealth": 30
     },
     {
       "id": "unit_13",
-      "label": "Scrambler Harasser Walker Drone (Mov 3, Att 1, Rng 0, Spl 1, Arm 0, EW 2, Rep 0)",
+      "label": "Engineer Flyweight Walker Tank (Mov 3, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 0, Rep 3)",
       "ownerId": "city_0",
       "tileIndex": 1192,
-      "segment": 3,
-      "facing": 1,
+      "segment": 0,
+      "facing": 0,
       "attributes": {
         "maxHealth": 2,
-        "flightMovement": 3,
-        "attack": 1,
-        "defence": 2,
-        "splashAttack": 1,
-        "range": 1
+        "wheeledMovement": 3,
+        "repair": 3,
+        "armour": 1
       },
       "currentHealth": 20
     },
     {
       "id": "unit_14",
-      "label": "Breaker Long Loitering Drone (Mov 1, Att 4, Rng 4, Spl 0, Arm 0, EW 0, Rep 1)",
+      "label": "Restorer Bantamweight Plodder Spider (Mov 2, Att 0, Rng 0, Spl 0, AA 0, Arm 2, EW 0, Rep 4)",
       "ownerId": "city_0",
       "tileIndex": 1192,
-      "segment": 4,
-      "facing": 1,
-      "attributes": {
-        "maxHealth": 2,
-        "flightMovement": 1,
-        "attack": 4,
-        "rangeAttack": 4,
-        "repair": 1,
-        "airdefence": 5,
-        "range": 1
-      },
-      "currentHealth": 20
-    },
-    {
-      "id": "unit_15",
-      "label": "Middleweight Raider Runner Tank (Mov 4, Att 2, Rng 0, Spl 2, Arm 4, EW 1, Rep 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1199,
-      "segment": 0,
-      "facing": 1,
+      "segment": 1,
+      "facing": 0,
       "attributes": {
         "maxHealth": 4,
-        "wheeledMovement": 4,
-        "attack": 2,
-        "armour": 4,
-        "defence": 1,
-        "splashAttack": 2,
-        "airdefence": 1,
-        "range": 2
+        "limbMovement": 2,
+        "repair": 4,
+        "armour": 2
       },
       "currentHealth": 40
     },
     {
-      "id": "unit_16",
-      "label": "Long Listener Loitering Spider (Mov 1, Att 0, Rng 4, Spl 0, Arm 0, EW 1, Rep 0)",
+      "id": "unit_15",
+      "label": "Fabricator Flyweight Plodder Spider (Mov 2, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 0, Rep 5)",
       "ownerId": "city_0",
-      "tileIndex": 1199,
-      "segment": 1,
-      "facing": 1,
+      "tileIndex": 1192,
+      "segment": 2,
+      "facing": 0,
       "attributes": {
-        "maxHealth": 1,
-        "limbMovement": 1,
-        "defence": 1,
-        "rangeAttack": 4,
-        "airdefence": 2,
-        "range": 2
+        "maxHealth": 3,
+        "limbMovement": 2,
+        "repair": 5,
+        "armour": 1
       },
-      "currentHealth": 10
+      "currentHealth": 30
+    },
+    {
+      "id": "unit_16",
+      "label": "Engineer Flyweight Plodder Spider (Mov 2, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 0, Rep 3)",
+      "ownerId": "city_0",
+      "tileIndex": 1192,
+      "segment": 3,
+      "facing": 0,
+      "attributes": {
+        "maxHealth": 4,
+        "limbMovement": 2,
+        "repair": 3,
+        "armour": 1
+      },
+      "currentHealth": 40
     },
     {
       "id": "unit_17",
-      "label": "Long Restorer Plodder Tank (Mov 2, Att 0, Rng 4, Spl 0, Arm 1, EW 2, Rep 4)",
+      "label": "Fabricator Runner Drone (Mov 4, Att 0, Rng 0, Spl 0, AA 0, Arm 0, EW 0, Rep 5)",
       "ownerId": "city_0",
-      "tileIndex": 1199,
-      "segment": 2,
-      "facing": 1,
+      "tileIndex": 1200,
+      "segment": 3,
+      "facing": 0,
       "attributes": {
         "maxHealth": 3,
-        "wheeledMovement": 2,
-        "repair": 4,
-        "defence": 2,
-        "armour": 1,
-        "rangeAttack": 4
+        "flightMovement": 4,
+        "repair": 5
       },
       "currentHealth": 30
     },
     {
       "id": "unit_18",
-      "label": "Striker Popper Runner Spider (Mov 4, Att 3, Rng 0, Spl 1, Arm 0, EW 0, Rep 0)",
+      "label": "Engineer Runner Drone (Mov 4, Att 0, Rng 0, Spl 0, AA 0, Arm 0, EW 0, Rep 3)",
+      "ownerId": "city_0",
+      "tileIndex": 1200,
+      "segment": 4,
+      "facing": 0,
+      "attributes": {
+        "maxHealth": 2,
+        "flightMovement": 4,
+        "repair": 3
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_19",
+      "label": "Engineer Walker Drone (Mov 3, Att 0, Rng 0, Spl 0, AA 0, Arm 0, EW 0, Rep 3)",
       "ownerId": "city_0",
       "tileIndex": 1199,
-      "segment": 3,
-      "facing": 1,
+      "segment": 0,
+      "facing": 0,
       "attributes": {
+        "maxHealth": 2,
+        "flightMovement": 3,
+        "repair": 3
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_20",
+      "label": "Breaker Middleweight Runner Tank (Mov 4, Att 4, Rng 0, Spl 0, AA 4, Arm 4, EW 4, Rep 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1192,
+      "segment": 4,
+      "facing": 0,
+      "attributes": {
+        "wheeledMovement": 4,
+        "maxHealth": 2,
+        "armour": 4,
+        "antiAir": 4,
+        "defence": 4,
+        "kinetic": 4
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_21",
+      "label": "Bombardier Bantamweight Walker Tank (Mov 3, Att 1, Rng 0, Spl 3, AA 0, Arm 2, EW 1, Rep 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1184,
+      "segment": 0,
+      "facing": 0,
+      "attributes": {
+        "wheeledMovement": 3,
+        "maxHealth": 2,
+        "splashAttack": 3,
+        "armour": 2,
+        "kinetic": 1,
+        "defence": 1
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_22",
+      "label": "Breaker Middleweight Runner Tank (Mov 4, Att 4, Rng 4, Spl 4, AA 0, Arm 4, EW 0, Rep 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1184,
+      "segment": 1,
+      "facing": 0,
+      "attributes": {
+        "wheeledMovement": 4,
         "maxHealth": 1,
-        "limbMovement": 4,
-        "splashAttack": 1,
-        "attack": 3,
-        "airdefence": 2,
-        "range": 3
+        "splashAttack": 4,
+        "rangeAttack": 4,
+        "kinetic": 4,
+        "armour": 4
       },
       "currentHealth": 10
     },
     {
-      "id": "unit_19",
-      "label": "Middleweight Raider Plodder Tank (Mov 2, Att 2, Rng 0, Spl 0, Arm 4, EW 0, Rep 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1199,
-      "segment": 4,
-      "facing": 1,
-      "attributes": {
-        "maxHealth": 4,
-        "wheeledMovement": 2,
-        "attack": 2,
-        "armour": 4,
-        "range": 2
-      },
-      "currentHealth": 40
-    },
-    {
-      "id": "unit_20",
-      "label": "Engineer Harasser Plodder Spider (Mov 2, Att 1, Rng 0, Spl 0, Arm 1, EW 0, Rep 3)",
-      "ownerId": "city_0",
-      "tileIndex": 1206,
-      "segment": 0,
-      "facing": 1,
-      "attributes": {
-        "maxHealth": 4,
-        "limbMovement": 2,
-        "attack": 1,
-        "armour": 1,
-        "repair": 3,
-        "range": 1
-      },
-      "currentHealth": 40
-    },
-    {
-      "id": "unit_21",
-      "label": "Restorer Scrambler Walker Drone (Mov 3, Att 0, Rng 2, Spl 0, Arm 0, EW 2, Rep 4)",
-      "ownerId": "city_0",
-      "tileIndex": 1206,
-      "segment": 1,
-      "facing": 1,
-      "attributes": {
-        "maxHealth": 4,
-        "flightMovement": 3,
-        "rangeAttack": 2,
-        "defence": 2,
-        "repair": 4
-      },
-      "currentHealth": 40
-    },
-    {
-      "id": "unit_22",
-      "label": "Middleweight Bombardier Walker Spider (Mov 3, Att 0, Rng 2, Spl 3, Arm 4, EW 0, Rep 2)",
-      "ownerId": "city_0",
-      "tileIndex": 1206,
-      "segment": 2,
-      "facing": 1,
-      "attributes": {
-        "maxHealth": 4,
-        "limbMovement": 3,
-        "splashAttack": 3,
-        "armour": 4,
-        "repair": 2,
-        "rangeAttack": 2
-      },
-      "currentHealth": 40
-    },
-    {
       "id": "unit_23",
-      "label": "Breaker Popper Walker Drone (Mov 3, Att 4, Rng 0, Spl 1, Arm 0, EW 0, Rep 0)",
+      "label": "Blaster Tracker Plodder Tank (Mov 2, Att 0, Rng 0, Spl 2, AA 2, Arm 0, EW 1, Rep 0)",
       "ownerId": "city_0",
-      "tileIndex": 1206,
-      "segment": 3,
-      "facing": 1,
+      "tileIndex": 1184,
+      "segment": 2,
+      "facing": 0,
       "attributes": {
+        "wheeledMovement": 2,
         "maxHealth": 1,
-        "flightMovement": 3,
-        "splashAttack": 1,
-        "attack": 4,
-        "range": 3
+        "antiAir": 2,
+        "splashAttack": 2,
+        "defence": 1
       },
       "currentHealth": 10
     },
     {
       "id": "unit_24",
-      "label": "Striker Medium Plodder Spider (Mov 2, Att 3, Rng 3, Spl 0, Arm 0, EW 0, Rep 1)",
+      "label": "Breaker Long Runner Spider (Mov 4, Att 4, Rng 4, Spl 0, AA 4, Arm 0, EW 0, Rep 0)",
       "ownerId": "city_0",
-      "tileIndex": 1206,
-      "segment": 4,
-      "facing": 1,
+      "tileIndex": 1184,
+      "segment": 3,
+      "facing": 0,
       "attributes": {
-        "maxHealth": 4,
-        "limbMovement": 2,
-        "attack": 3,
-        "rangeAttack": 3,
-        "repair": 1,
-        "range": 1
+        "limbMovement": 4,
+        "maxHealth": 3,
+        "kinetic": 4,
+        "rangeAttack": 4,
+        "antiAir": 4
       },
-      "currentHealth": 40
+      "currentHealth": 30
     },
     {
       "id": "unit_25",
-      "label": "Restorer Bombardier Walker Tank (Mov 3, Att 2, Rng 2, Spl 3, Arm 0, EW 0, Rep 4)",
+      "label": "Breaker Disruptor Walker Spider (Mov 3, Att 4, Rng 0, Spl 0, AA 0, Arm 0, EW 4, Rep 0)",
       "ownerId": "city_0",
-      "tileIndex": 1207,
-      "segment": 0,
-      "facing": 1,
+      "tileIndex": 1184,
+      "segment": 4,
+      "facing": 0,
       "attributes": {
+        "limbMovement": 3,
         "maxHealth": 3,
-        "wheeledMovement": 3,
-        "repair": 4,
-        "attack": 2,
-        "splashAttack": 3,
-        "rangeAttack": 2,
-        "airdefence": 3,
-        "range": 2
+        "defence": 4,
+        "kinetic": 4
       },
       "currentHealth": 30
     },
     {
       "id": "unit_26",
-      "label": "Long Raider Loitering Tank (Mov 1, Att 2, Rng 4, Spl 0, Arm 0, EW 0, Rep 0)",
+      "label": "Breaker Middleweight Runner Spider (Mov 4, Att 4, Rng 0, Spl 4, AA 0, Arm 4, EW 2, Rep 0)",
       "ownerId": "city_0",
-      "tileIndex": 1207,
+      "tileIndex": 1199,
       "segment": 1,
-      "facing": 1,
+      "facing": 0,
       "attributes": {
+        "limbMovement": 4,
         "maxHealth": 4,
-        "wheeledMovement": 1,
-        "rangeAttack": 4,
-        "attack": 2,
-        "range": 1
+        "armour": 4,
+        "splashAttack": 4,
+        "kinetic": 4,
+        "defence": 2
       },
       "currentHealth": 40
     },
     {
       "id": "unit_27",
-      "label": "Engineer Harasser Loitering Spider (Mov 1, Att 1, Rng 1, Spl 0, Arm 0, EW 0, Rep 3)",
+      "label": "Disruptor Demolisher Plodder Drone (Mov 2, Att 0, Rng 4, Spl 4, AA 4, Arm 0, EW 4, Rep 0)",
       "ownerId": "city_0",
-      "tileIndex": 1207,
+      "tileIndex": 1199,
       "segment": 2,
-      "facing": 1,
+      "facing": 0,
       "attributes": {
-        "maxHealth": 1,
-        "limbMovement": 1,
-        "rangeAttack": 1,
-        "attack": 1,
-        "repair": 3,
-        "range": 3
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_28",
-      "label": "Striker Bantamweight Plodder Spider (Mov 2, Att 3, Rng 0, Spl 0, Arm 2, EW 1, Rep 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1207,
-      "segment": 3,
-      "facing": 1,
-      "attributes": {
-        "maxHealth": 1,
-        "limbMovement": 2,
-        "attack": 3,
-        "armour": 2,
-        "defence": 1,
-        "airdefence": 3,
-        "range": 3
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_29",
-      "label": "Breaker Disruptor Walker Spider (Mov 3, Att 4, Rng 0, Spl 0, Arm 2, EW 4, Rep 2)",
-      "ownerId": "city_0",
-      "tileIndex": 1207,
-      "segment": 4,
-      "facing": 1,
-      "attributes": {
-        "maxHealth": 4,
-        "limbMovement": 3,
-        "defence": 4,
-        "attack": 4,
-        "repair": 2,
-        "armour": 2,
-        "airdefence": 4,
-        "range": 2
-      },
-      "currentHealth": 40
-    },
-    {
-      "id": "unit_30",
-      "label": "Bombardier Scrambler Plodder Drone (Mov 2, Att 0, Rng 0, Spl 3, Arm 0, EW 2, Rep 0)",
-      "ownerId": "city_6",
-      "tileIndex": 1155,
-      "segment": 0,
-      "facing": 4,
-      "attributes": {
-        "maxHealth": 2,
         "flightMovement": 2,
-        "splashAttack": 3,
-        "defence": 2,
-        "airdefence": 2,
-        "range": 2
+        "maxHealth": 2,
+        "splashAttack": 4,
+        "rangeAttack": 4,
+        "antiAir": 4,
+        "defence": 4
       },
       "currentHealth": 20
     },
     {
-      "id": "unit_31",
-      "label": "Disruptor Welterweight Loitering Spider (Mov 1, Att 1, Rng 0, Spl 0, Arm 3, EW 4, Rep 0)",
-      "ownerId": "city_6",
-      "tileIndex": 1155,
-      "segment": 1,
-      "facing": 4,
+      "id": "unit_28",
+      "label": "Breaker Disruptor Plodder Drone (Mov 2, Att 4, Rng 0, Spl 0, AA 0, Arm 0, EW 4, Rep 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1199,
+      "segment": 3,
+      "facing": 0,
       "attributes": {
+        "flightMovement": 2,
+        "maxHealth": 2,
+        "kinetic": 4,
+        "defence": 4
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_29",
+      "label": "Breaker Disruptor Runner Drone (Mov 4, Att 4, Rng 4, Spl 0, AA 0, Arm 0, EW 4, Rep 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1199,
+      "segment": 4,
+      "facing": 0,
+      "attributes": {
+        "flightMovement": 4,
         "maxHealth": 1,
-        "limbMovement": 1,
-        "attack": 1,
-        "armour": 3,
-        "defence": 4,
-        "range": 3
+        "kinetic": 4,
+        "rangeAttack": 4,
+        "defence": 4
+      },
+      "currentHealth": 10
+    },
+    {
+      "id": "unit_30",
+      "label": "Listener Popper Loitering Tank (Mov 1, Att 0, Rng 1, Spl 1, AA 0, Arm 0, EW 1, Rep 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1185,
+      "segment": 0,
+      "facing": 0,
+      "attributes": {
+        "wheeledMovement": 1,
+        "maxHealth": 1,
+        "rangeAttack": 1,
+        "splashAttack": 1,
+        "defence": 1
+      },
+      "currentHealth": 10
+    },
+    {
+      "id": "unit_31",
+      "label": "Blaster Flyweight Loitering Tank (Mov 1, Att 0, Rng 0, Spl 2, AA 0, Arm 1, EW 0, Rep 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1185,
+      "segment": 1,
+      "facing": 0,
+      "attributes": {
+        "wheeledMovement": 1,
+        "maxHealth": 1,
+        "splashAttack": 2,
+        "armour": 1
       },
       "currentHealth": 10
     },
     {
       "id": "unit_32",
-      "label": "Restorer Raider Walker Tank (Mov 3, Att 2, Rng 0, Spl 1, Arm 2, EW 0, Rep 4)",
-      "ownerId": "city_6",
-      "tileIndex": 1155,
+      "label": "Breaker Middleweight Walker Tank (Mov 3, Att 4, Rng 0, Spl 4, AA 0, Arm 4, EW 0, Rep 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1185,
       "segment": 2,
-      "facing": 4,
+      "facing": 0,
       "attributes": {
-        "maxHealth": 1,
         "wheeledMovement": 3,
-        "attack": 2,
-        "armour": 2,
-        "splashAttack": 1,
-        "repair": 4,
-        "airdefence": 3,
-        "range": 3
+        "maxHealth": 1,
+        "splashAttack": 4,
+        "armour": 4,
+        "kinetic": 4
       },
       "currentHealth": 10
     },
     {
       "id": "unit_33",
-      "label": "Raider Bantamweight Plodder Tank (Mov 2, Att 2, Rng 0, Spl 0, Arm 2, EW 0, Rep 0)",
-      "ownerId": "city_6",
-      "tileIndex": 1155,
+      "label": "Breaker Medium Plodder Tank (Mov 2, Att 4, Rng 3, Spl 0, AA 0, Arm 0, EW 0, Rep 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1185,
       "segment": 3,
-      "facing": 4,
+      "facing": 0,
       "attributes": {
-        "maxHealth": 3,
         "wheeledMovement": 2,
-        "attack": 2,
-        "armour": 2,
-        "airdefence": 5,
-        "range": 1
+        "maxHealth": 2,
+        "rangeAttack": 3,
+        "kinetic": 4
       },
-      "currentHealth": 30
+      "currentHealth": 20
     },
     {
       "id": "unit_34",
-      "label": "Breaker Loitering Drone (Mov 1, Att 4, Rng 0, Spl 0, Arm 0, EW 0, Rep 0)",
-      "ownerId": "city_6",
-      "tileIndex": 1155,
+      "label": "Middleweight Disruptor Walker Spider (Mov 3, Att 0, Rng 0, Spl 4, AA 0, Arm 4, EW 4, Rep 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1185,
       "segment": 4,
-      "facing": 4,
+      "facing": 0,
       "attributes": {
-        "maxHealth": 4,
-        "flightMovement": 1,
-        "attack": 4,
-        "range": 2
+        "limbMovement": 3,
+        "maxHealth": 2,
+        "defence": 4,
+        "splashAttack": 4,
+        "armour": 4
       },
-      "currentHealth": 40
+      "currentHealth": 20
     },
     {
       "id": "unit_35",
-      "label": "Engineer Raider Plodder Drone (Mov 2, Att 2, Rng 0, Spl 0, Arm 0, EW 0, Rep 3)",
-      "ownerId": "city_6",
-      "tileIndex": 1154,
+      "label": "Breaker Disruptor Loitering Spider (Mov 1, Att 4, Rng 4, Spl 0, AA 4, Arm 0, EW 4, Rep 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1183,
       "segment": 0,
-      "facing": 4,
+      "facing": 0,
       "attributes": {
-        "maxHealth": 4,
-        "flightMovement": 2,
-        "attack": 2,
-        "repair": 3,
-        "airdefence": 4,
-        "range": 3
+        "limbMovement": 1,
+        "maxHealth": 2,
+        "kinetic": 4,
+        "rangeAttack": 4,
+        "antiAir": 4,
+        "defence": 4
       },
-      "currentHealth": 40
+      "currentHealth": 20
     },
     {
       "id": "unit_36",
-      "label": "Medium Scrambler Walker Spider (Mov 3, Att 0, Rng 3, Spl 2, Arm 0, EW 2, Rep 0)",
+      "label": "Disruptor Bantamweight Walker Tank (Mov 3, Att 0, Rng 0, Spl 0, AA 0, Arm 2, EW 4, Rep 0)",
       "ownerId": "city_6",
-      "tileIndex": 1154,
-      "segment": 1,
-      "facing": 4,
+      "tileIndex": 1142,
+      "segment": 0,
+      "facing": 3,
       "attributes": {
         "maxHealth": 4,
-        "limbMovement": 3,
-        "rangeAttack": 3,
-        "splashAttack": 2,
-        "defence": 2,
-        "airdefence": 2,
-        "range": 2
+        "wheeledMovement": 3,
+        "defence": 4,
+        "armour": 2
       },
       "currentHealth": 40
     },
     {
       "id": "unit_37",
-      "label": "Scrambler Blaster Plodder Drone (Mov 2, Att 0, Rng 0, Spl 2, Arm 0, EW 2, Rep 1)",
+      "label": "Nullifier Flyweight Runner Tank (Mov 4, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 5, Rep 0)",
       "ownerId": "city_6",
-      "tileIndex": 1154,
-      "segment": 2,
-      "facing": 4,
+      "tileIndex": 1142,
+      "segment": 1,
+      "facing": 3,
       "attributes": {
         "maxHealth": 3,
-        "flightMovement": 2,
-        "defence": 2,
-        "splashAttack": 2,
-        "repair": 1
+        "wheeledMovement": 4,
+        "defence": 5,
+        "armour": 1
       },
       "currentHealth": 30
     },
     {
       "id": "unit_38",
-      "label": "Disruptor Demolisher Loitering Tank (Mov 1, Att 0, Rng 0, Spl 4, Arm 3, EW 4, Rep 0)",
+      "label": "Disruptor Flyweight Runner Tank (Mov 4, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 4, Rep 0)",
       "ownerId": "city_6",
-      "tileIndex": 1154,
-      "segment": 3,
-      "facing": 4,
+      "tileIndex": 1142,
+      "segment": 2,
+      "facing": 3,
       "attributes": {
-        "maxHealth": 2,
-        "wheeledMovement": 1,
+        "maxHealth": 3,
+        "wheeledMovement": 4,
         "defence": 4,
-        "armour": 3,
-        "splashAttack": 4
+        "armour": 1
       },
-      "currentHealth": 20
+      "currentHealth": 30
     },
     {
       "id": "unit_39",
-      "label": "Welterweight Bombardier Plodder Spider (Mov 2, Att 0, Rng 0, Spl 3, Arm 3, EW 0, Rep 0)",
+      "label": "Disruptor Flyweight Runner Tank (Mov 4, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 4, Rep 0)",
       "ownerId": "city_6",
-      "tileIndex": 1154,
-      "segment": 4,
-      "facing": 4,
+      "tileIndex": 1142,
+      "segment": 3,
+      "facing": 3,
       "attributes": {
         "maxHealth": 3,
-        "limbMovement": 2,
-        "splashAttack": 3,
-        "armour": 3
+        "wheeledMovement": 4,
+        "defence": 4,
+        "armour": 1
       },
       "currentHealth": 30
     },
     {
       "id": "unit_40",
-      "label": "Breaker Restorer Loitering Tank (Mov 1, Att 4, Rng 0, Spl 0, Arm 3, EW 3, Rep 4)",
+      "label": "Disruptor Flyweight Walker Spider (Mov 3, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 4, Rep 0)",
       "ownerId": "city_6",
-      "tileIndex": 1167,
+      "tileIndex": 1131,
       "segment": 0,
-      "facing": 4,
-      "attributes": {
-        "maxHealth": 3,
-        "wheeledMovement": 1,
-        "attack": 4,
-        "armour": 3,
-        "defence": 3,
-        "repair": 4,
-        "range": 3
-      },
-      "currentHealth": 30
-    },
-    {
-      "id": "unit_41",
-      "label": "Long Engineer Runner Tank (Mov 4, Att 1, Rng 4, Spl 0, Arm 0, EW 0, Rep 3)",
-      "ownerId": "city_6",
-      "tileIndex": 1167,
-      "segment": 1,
-      "facing": 4,
-      "attributes": {
-        "maxHealth": 1,
-        "wheeledMovement": 4,
-        "rangeAttack": 4,
-        "repair": 3,
-        "attack": 1,
-        "range": 1
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_42",
-      "label": "Restorer Harasser Loitering Drone (Mov 1, Att 1, Rng 0, Spl 0, Arm 0, EW 0, Rep 4)",
-      "ownerId": "city_6",
-      "tileIndex": 1167,
-      "segment": 2,
-      "facing": 4,
+      "facing": 3,
       "attributes": {
         "maxHealth": 4,
-        "flightMovement": 1,
-        "attack": 1,
-        "repair": 4,
-        "range": 2
+        "limbMovement": 3,
+        "defence": 4,
+        "armour": 1
       },
       "currentHealth": 40
     },
     {
-      "id": "unit_43",
-      "label": "Striker Medium Walker Tank (Mov 3, Att 3, Rng 3, Spl 1, Arm 0, EW 0, Rep 0)",
+      "id": "unit_41",
+      "label": "Jammer Flyweight Walker Spider (Mov 3, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 3, Rep 0)",
       "ownerId": "city_6",
-      "tileIndex": 1167,
-      "segment": 3,
-      "facing": 4,
+      "tileIndex": 1131,
+      "segment": 1,
+      "facing": 3,
       "attributes": {
-        "maxHealth": 1,
-        "wheeledMovement": 3,
-        "attack": 3,
-        "splashAttack": 1,
-        "rangeAttack": 3,
-        "airdefence": 5,
-        "range": 3
+        "maxHealth": 3,
+        "limbMovement": 3,
+        "defence": 3,
+        "armour": 1
       },
-      "currentHealth": 10
+      "currentHealth": 30
+    },
+    {
+      "id": "unit_42",
+      "label": "Jammer Bantamweight Walker Spider (Mov 3, Att 0, Rng 0, Spl 0, AA 0, Arm 2, EW 3, Rep 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1131,
+      "segment": 2,
+      "facing": 3,
+      "attributes": {
+        "maxHealth": 2,
+        "limbMovement": 3,
+        "defence": 3,
+        "armour": 2
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_43",
+      "label": "Jammer Runner Drone (Mov 4, Att 0, Rng 0, Spl 0, AA 0, Arm 0, EW 3, Rep 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1143,
+      "segment": 0,
+      "facing": 3,
+      "attributes": {
+        "maxHealth": 4,
+        "flightMovement": 4,
+        "defence": 3
+      },
+      "currentHealth": 40
     },
     {
       "id": "unit_44",
-      "label": "Disruptor Bantamweight Plodder Tank (Mov 2, Att 0, Rng 0, Spl 0, Arm 2, EW 4, Rep 0)",
+      "label": "Disruptor Runner Drone (Mov 4, Att 0, Rng 0, Spl 0, AA 0, Arm 0, EW 4, Rep 0)",
       "ownerId": "city_6",
-      "tileIndex": 1167,
-      "segment": 4,
-      "facing": 4,
+      "tileIndex": 1143,
+      "segment": 1,
+      "facing": 3,
       "attributes": {
-        "maxHealth": 1,
-        "wheeledMovement": 2,
-        "defence": 4,
-        "armour": 2,
-        "airdefence": 5,
-        "range": 2
+        "maxHealth": 3,
+        "flightMovement": 4,
+        "defence": 4
       },
-      "currentHealth": 10
+      "currentHealth": 30
     },
     {
       "id": "unit_45",
-      "label": "Scrambler Harasser Loitering Tank (Mov 1, Att 1, Rng 0, Spl 0, Arm 0, EW 2, Rep 0)",
+      "label": "Disruptor Walker Drone (Mov 3, Att 0, Rng 0, Spl 0, AA 0, Arm 0, EW 4, Rep 0)",
       "ownerId": "city_6",
-      "tileIndex": 1153,
-      "segment": 0,
-      "facing": 4,
+      "tileIndex": 1143,
+      "segment": 2,
+      "facing": 3,
       "attributes": {
         "maxHealth": 4,
-        "wheeledMovement": 1,
-        "defence": 2,
-        "attack": 1,
-        "airdefence": 5,
-        "range": 3
+        "flightMovement": 3,
+        "defence": 4
       },
       "currentHealth": 40
     },
     {
       "id": "unit_46",
-      "label": "Striker Bantamweight Loitering Spider (Mov 1, Att 3, Rng 0, Spl 0, Arm 2, EW 0, Rep 0)",
+      "label": "Engineer Bantamweight Walker Tank (Mov 3, Att 0, Rng 0, Spl 0, AA 0, Arm 2, EW 0, Rep 3)",
       "ownerId": "city_6",
-      "tileIndex": 1153,
-      "segment": 1,
-      "facing": 4,
+      "tileIndex": 1142,
+      "segment": 4,
+      "facing": 3,
       "attributes": {
         "maxHealth": 3,
-        "limbMovement": 1,
-        "attack": 3,
-        "armour": 2,
-        "range": 1
+        "wheeledMovement": 3,
+        "repair": 3,
+        "armour": 2
       },
       "currentHealth": 30
     },
     {
       "id": "unit_47",
-      "label": "Long Jammer Plodder Drone (Mov 2, Att 0, Rng 4, Spl 0, Arm 0, EW 3, Rep 0)",
+      "label": "Restorer Bantamweight Plodder Tank (Mov 2, Att 0, Rng 0, Spl 0, AA 0, Arm 2, EW 0, Rep 4)",
       "ownerId": "city_6",
-      "tileIndex": 1153,
-      "segment": 2,
-      "facing": 4,
-      "attributes": {
-        "maxHealth": 1,
-        "flightMovement": 2,
-        "rangeAttack": 4,
-        "defence": 3
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_48",
-      "label": "Demolisher Welterweight Plodder Tank (Mov 2, Att 0, Rng 1, Spl 4, Arm 3, EW 0, Rep 1)",
-      "ownerId": "city_6",
-      "tileIndex": 1153,
-      "segment": 3,
-      "facing": 4,
-      "attributes": {
-        "maxHealth": 1,
-        "wheeledMovement": 2,
-        "armour": 3,
-        "splashAttack": 4,
-        "rangeAttack": 1,
-        "repair": 1,
-        "airdefence": 3,
-        "range": 2
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_49",
-      "label": "Disruptor Blaster Plodder Drone (Mov 2, Att 0, Rng 1, Spl 2, Arm 0, EW 4, Rep 0)",
-      "ownerId": "city_6",
-      "tileIndex": 1153,
-      "segment": 4,
-      "facing": 4,
-      "attributes": {
-        "maxHealth": 3,
-        "flightMovement": 2,
-        "rangeAttack": 1,
-        "splashAttack": 2,
-        "defence": 4
-      },
-      "currentHealth": 30
-    },
-    {
-      "id": "unit_50",
-      "label": "Raider Tinkerer Runner Tank (Mov 4, Att 2, Rng 0, Spl 0, Arm 0, EW 0, Rep 1)",
-      "ownerId": "city_6",
-      "tileIndex": 1178,
+      "tileIndex": 1156,
       "segment": 0,
-      "facing": 4,
-      "attributes": {
-        "maxHealth": 4,
-        "wheeledMovement": 4,
-        "attack": 2,
-        "repair": 1,
-        "range": 3
-      },
-      "currentHealth": 40
-    },
-    {
-      "id": "unit_51",
-      "label": "Restorer Raider Walker Tank (Mov 3, Att 2, Rng 0, Spl 0, Arm 0, EW 1, Rep 4)",
-      "ownerId": "city_6",
-      "tileIndex": 1178,
-      "segment": 1,
-      "facing": 4,
-      "attributes": {
-        "maxHealth": 4,
-        "wheeledMovement": 3,
-        "attack": 2,
-        "repair": 4,
-        "defence": 1,
-        "range": 1
-      },
-      "currentHealth": 40
-    },
-    {
-      "id": "unit_52",
-      "label": "Disruptor Long Loitering Tank (Mov 1, Att 0, Rng 4, Spl 0, Arm 3, EW 4, Rep 0)",
-      "ownerId": "city_6",
-      "tileIndex": 1178,
-      "segment": 2,
-      "facing": 4,
+      "facing": 3,
       "attributes": {
         "maxHealth": 2,
-        "wheeledMovement": 1,
-        "armour": 3,
-        "defence": 4,
-        "rangeAttack": 4
+        "wheeledMovement": 2,
+        "repair": 4,
+        "armour": 2
       },
       "currentHealth": 20
     },
     {
-      "id": "unit_53",
-      "label": "Breaker Engineer Walker Tank (Mov 3, Att 4, Rng 0, Spl 0, Arm 1, EW 0, Rep 3)",
+      "id": "unit_48",
+      "label": "Fabricator Flyweight Plodder Tank (Mov 2, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 0, Rep 5)",
       "ownerId": "city_6",
-      "tileIndex": 1178,
-      "segment": 3,
-      "facing": 4,
-      "attributes": {
-        "maxHealth": 1,
-        "wheeledMovement": 3,
-        "armour": 1,
-        "attack": 4,
-        "repair": 3,
-        "range": 3
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_54",
-      "label": "Restorer Striker Runner Tank (Mov 4, Att 3, Rng 0, Spl 3, Arm 0, EW 0, Rep 4)",
-      "ownerId": "city_6",
-      "tileIndex": 1178,
-      "segment": 4,
-      "facing": 4,
+      "tileIndex": 1156,
+      "segment": 1,
+      "facing": 3,
       "attributes": {
         "maxHealth": 4,
-        "wheeledMovement": 4,
-        "splashAttack": 3,
-        "repair": 4,
-        "attack": 3,
-        "range": 1
+        "wheeledMovement": 2,
+        "repair": 5,
+        "armour": 1
       },
       "currentHealth": 40
     },
     {
-      "id": "unit_55",
-      "label": "Disruptor Bantamweight Runner Spider (Mov 4, Att 0, Rng 0, Spl 0, Arm 2, EW 4, Rep 0)",
+      "id": "unit_49",
+      "label": "Engineer Flyweight Runner Tank (Mov 4, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 0, Rep 3)",
       "ownerId": "city_6",
-      "tileIndex": 1152,
-      "segment": 0,
-      "facing": 4,
+      "tileIndex": 1156,
+      "segment": 2,
+      "facing": 3,
       "attributes": {
-        "maxHealth": 1,
-        "limbMovement": 4,
-        "armour": 2,
-        "defence": 4
+        "maxHealth": 4,
+        "wheeledMovement": 4,
+        "repair": 3,
+        "armour": 1
       },
-      "currentHealth": 10
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_50",
+      "label": "Fabricator Flyweight Plodder Spider (Mov 2, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 0, Rep 5)",
+      "ownerId": "city_6",
+      "tileIndex": 1131,
+      "segment": 3,
+      "facing": 3,
+      "attributes": {
+        "maxHealth": 3,
+        "limbMovement": 2,
+        "repair": 5,
+        "armour": 1
+      },
+      "currentHealth": 30
+    },
+    {
+      "id": "unit_51",
+      "label": "Fabricator Flyweight Plodder Spider (Mov 2, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 0, Rep 5)",
+      "ownerId": "city_6",
+      "tileIndex": 1131,
+      "segment": 4,
+      "facing": 3,
+      "attributes": {
+        "maxHealth": 2,
+        "limbMovement": 2,
+        "repair": 5,
+        "armour": 1
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_52",
+      "label": "Fabricator Flyweight Runner Spider (Mov 4, Att 0, Rng 0, Spl 0, AA 0, Arm 1, EW 0, Rep 5)",
+      "ownerId": "city_6",
+      "tileIndex": 1156,
+      "segment": 3,
+      "facing": 3,
+      "attributes": {
+        "maxHealth": 4,
+        "limbMovement": 4,
+        "repair": 5,
+        "armour": 1
+      },
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_53",
+      "label": "Restorer Runner Drone (Mov 4, Att 0, Rng 0, Spl 0, AA 0, Arm 0, EW 0, Rep 4)",
+      "ownerId": "city_6",
+      "tileIndex": 1143,
+      "segment": 3,
+      "facing": 3,
+      "attributes": {
+        "maxHealth": 3,
+        "flightMovement": 4,
+        "repair": 4
+      },
+      "currentHealth": 30
+    },
+    {
+      "id": "unit_54",
+      "label": "Fabricator Runner Drone (Mov 4, Att 0, Rng 0, Spl 0, AA 0, Arm 0, EW 0, Rep 5)",
+      "ownerId": "city_6",
+      "tileIndex": 1143,
+      "segment": 4,
+      "facing": 3,
+      "attributes": {
+        "maxHealth": 3,
+        "flightMovement": 4,
+        "repair": 5
+      },
+      "currentHealth": 30
+    },
+    {
+      "id": "unit_55",
+      "label": "Engineer Walker Drone (Mov 3, Att 0, Rng 0, Spl 0, AA 0, Arm 0, EW 0, Rep 3)",
+      "ownerId": "city_6",
+      "tileIndex": 1168,
+      "segment": 0,
+      "facing": 3,
+      "attributes": {
+        "maxHealth": 3,
+        "flightMovement": 3,
+        "repair": 3
+      },
+      "currentHealth": 30
     },
     {
       "id": "unit_56",
-      "label": "Bantamweight Harasser Walker Tank (Mov 3, Att 1, Rng 0, Spl 0, Arm 2, EW 0, Rep 0)",
+      "label": "Breaker Middleweight Runner Tank (Mov 4, Att 4, Rng 0, Spl 0, AA 0, Arm 4, EW 0, Rep 0)",
       "ownerId": "city_6",
-      "tileIndex": 1152,
-      "segment": 1,
-      "facing": 4,
+      "tileIndex": 1156,
+      "segment": 4,
+      "facing": 3,
       "attributes": {
+        "wheeledMovement": 4,
         "maxHealth": 2,
-        "wheeledMovement": 3,
-        "armour": 2,
-        "attack": 1,
-        "range": 1
+        "kinetic": 4,
+        "armour": 4
       },
       "currentHealth": 20
     },
     {
       "id": "unit_57",
-      "label": "Demolisher Engineer Loitering Drone (Mov 1, Att 0, Rng 0, Spl 4, Arm 0, EW 2, Rep 3)",
+      "label": "Middleweight Skyhunter Loitering Tank (Mov 1, Att 2, Rng 0, Spl 0, AA 4, Arm 4, EW 0, Rep 0)",
       "ownerId": "city_6",
-      "tileIndex": 1152,
-      "segment": 2,
-      "facing": 4,
+      "tileIndex": 1115,
+      "segment": 0,
+      "facing": 3,
       "attributes": {
+        "wheeledMovement": 1,
         "maxHealth": 1,
-        "flightMovement": 1,
-        "splashAttack": 4,
-        "repair": 3,
-        "defence": 2,
-        "airdefence": 3,
-        "range": 2
+        "antiAir": 4,
+        "armour": 4,
+        "kinetic": 2
       },
       "currentHealth": 10
     },
     {
       "id": "unit_58",
-      "label": "Middleweight Bombardier Loitering Spider (Mov 1, Att 0, Rng 3, Spl 3, Arm 4, EW 0, Rep 0)",
+      "label": "Long Skyhunter Walker Tank (Mov 3, Att 0, Rng 4, Spl 0, AA 4, Arm 0, EW 0, Rep 0)",
       "ownerId": "city_6",
-      "tileIndex": 1152,
-      "segment": 3,
-      "facing": 4,
+      "tileIndex": 1115,
+      "segment": 1,
+      "facing": 3,
       "attributes": {
-        "maxHealth": 4,
-        "limbMovement": 1,
-        "rangeAttack": 3,
-        "splashAttack": 3,
+        "wheeledMovement": 3,
+        "maxHealth": 2,
+        "antiAir": 4,
+        "rangeAttack": 4
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_59",
+      "label": "Breaker Skyhunter Walker Tank (Mov 3, Att 4, Rng 0, Spl 0, AA 4, Arm 0, EW 0, Rep 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1115,
+      "segment": 2,
+      "facing": 3,
+      "attributes": {
+        "wheeledMovement": 3,
+        "maxHealth": 2,
+        "kinetic": 4,
+        "antiAir": 4
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_60",
+      "label": "Breaker Middleweight Runner Spider (Mov 4, Att 4, Rng 4, Spl 0, AA 0, Arm 4, EW 0, Rep 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1115,
+      "segment": 3,
+      "facing": 3,
+      "attributes": {
+        "limbMovement": 4,
+        "maxHealth": 3,
+        "rangeAttack": 4,
+        "kinetic": 4,
         "armour": 4
+      },
+      "currentHealth": 30
+    },
+    {
+      "id": "unit_61",
+      "label": "Striker Bombardier Plodder Spider (Mov 2, Att 3, Rng 0, Spl 3, AA 0, Arm 1, EW 0, Rep 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1115,
+      "segment": 4,
+      "facing": 3,
+      "attributes": {
+        "limbMovement": 2,
+        "maxHealth": 2,
+        "splashAttack": 3,
+        "kinetic": 3,
+        "armour": 1
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_62",
+      "label": "Breaker Demolisher Runner Spider (Mov 4, Att 4, Rng 0, Spl 4, AA 4, Arm 0, EW 0, Rep 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1168,
+      "segment": 1,
+      "facing": 3,
+      "attributes": {
+        "limbMovement": 4,
+        "maxHealth": 1,
+        "antiAir": 4,
+        "splashAttack": 4,
+        "kinetic": 4
+      },
+      "currentHealth": 10
+    },
+    {
+      "id": "unit_63",
+      "label": "Scrambler Blaster Plodder Drone (Mov 2, Att 0, Rng 1, Spl 2, AA 0, Arm 0, EW 2, Rep 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1168,
+      "segment": 2,
+      "facing": 3,
+      "attributes": {
+        "flightMovement": 2,
+        "maxHealth": 1,
+        "defence": 2,
+        "rangeAttack": 1,
+        "splashAttack": 2
+      },
+      "currentHealth": 10
+    },
+    {
+      "id": "unit_64",
+      "label": "Breaker Demolisher Runner Drone (Mov 4, Att 4, Rng 4, Spl 4, AA 0, Arm 0, EW 0, Rep 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1168,
+      "segment": 3,
+      "facing": 3,
+      "attributes": {
+        "flightMovement": 4,
+        "maxHealth": 2,
+        "splashAttack": 4,
+        "kinetic": 4,
+        "rangeAttack": 4
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_65",
+      "label": "Demolisher Long Loitering Drone (Mov 1, Att 0, Rng 4, Spl 4, AA 4, Arm 0, EW 0, Rep 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1168,
+      "segment": 4,
+      "facing": 3,
+      "attributes": {
+        "flightMovement": 1,
+        "maxHealth": 4,
+        "rangeAttack": 4,
+        "antiAir": 4,
+        "splashAttack": 4
       },
       "currentHealth": 40
     },
     {
-      "id": "unit_59",
-      "label": "Striker Popper Plodder Drone (Mov 2, Att 3, Rng 0, Spl 1, Arm 0, EW 0, Rep 0)",
+      "id": "unit_66",
+      "label": "Breaker Long Loitering Tank (Mov 1, Att 4, Rng 4, Spl 0, AA 0, Arm 0, EW 0, Rep 0)",
       "ownerId": "city_6",
-      "tileIndex": 1152,
-      "segment": 4,
-      "facing": 4,
+      "tileIndex": 1116,
+      "segment": 0,
+      "facing": 3,
       "attributes": {
+        "wheeledMovement": 1,
         "maxHealth": 3,
-        "flightMovement": 2,
-        "attack": 3,
-        "splashAttack": 1,
-        "range": 2
+        "kinetic": 4,
+        "rangeAttack": 4
       },
       "currentHealth": 30
+    },
+    {
+      "id": "unit_67",
+      "label": "Middleweight Striker Runner Tank (Mov 4, Att 3, Rng 0, Spl 0, AA 0, Arm 4, EW 3, Rep 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1116,
+      "segment": 1,
+      "facing": 3,
+      "attributes": {
+        "wheeledMovement": 4,
+        "maxHealth": 1,
+        "armour": 4,
+        "kinetic": 3,
+        "defence": 3
+      },
+      "currentHealth": 10
+    },
+    {
+      "id": "unit_68",
+      "label": "Breaker Long Loitering Tank (Mov 1, Att 4, Rng 4, Spl 0, AA 0, Arm 0, EW 0, Rep 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1116,
+      "segment": 2,
+      "facing": 3,
+      "attributes": {
+        "wheeledMovement": 1,
+        "maxHealth": 1,
+        "kinetic": 4,
+        "rangeAttack": 4
+      },
+      "currentHealth": 10
+    },
+    {
+      "id": "unit_69",
+      "label": "Bantamweight Harasser Loitering Tank (Mov 1, Att 1, Rng 0, Spl 0, AA 0, Arm 2, EW 0, Rep 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1116,
+      "segment": 3,
+      "facing": 3,
+      "attributes": {
+        "wheeledMovement": 1,
+        "maxHealth": 1,
+        "armour": 2,
+        "kinetic": 1
+      },
+      "currentHealth": 10
+    },
+    {
+      "id": "unit_70",
+      "label": "Middleweight Disruptor Walker Spider (Mov 3, Att 0, Rng 4, Spl 0, AA 0, Arm 4, EW 4, Rep 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1116,
+      "segment": 4,
+      "facing": 3,
+      "attributes": {
+        "limbMovement": 3,
+        "maxHealth": 2,
+        "defence": 4,
+        "armour": 4,
+        "rangeAttack": 4
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_71",
+      "label": "Breaker Middleweight Loitering Spider (Mov 1, Att 4, Rng 0, Spl 0, AA 0, Arm 4, EW 0, Rep 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1114,
+      "segment": 0,
+      "facing": 3,
+      "attributes": {
+        "limbMovement": 1,
+        "maxHealth": 1,
+        "kinetic": 4,
+        "armour": 4
+      },
+      "currentHealth": 10
     }
   ],
   "playerColor": "#00e5ff",
-  "cameraCenter": {
-    "tileIndex": 1179,
-    "description": "Center view between the two armies"
-  }
+  "battleCentreTile": 1177
 }

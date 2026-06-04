@@ -41,7 +41,7 @@ All attribute values are integers. Ranges are hard-clamped during combat resolut
 | Attribute | Range | Description |
 |-----------|-------|-------------|
 | `maxHealth` | 1–5 | Maximum hit points. Actual HP = maxHealth × 10 (so 10–50 HP). |
-| `attack` | 0–5 | Base attack power for direct (melee/close) damage. Determines gun length in icon. |
+| `kinetic` | 0–5 | Base attack power for direct (melee/close) damage. Determines gun length in icon. |
 | `armour` | 0–5 | Passive damage reduction from incoming attacks. |
 | `defence` | 0–5 | Electronic Warfare (EW) value. Contributes to nearby allies' defence via same-hex stacking. |
 | `splashAttack` | 0–5 | Area-of-effect attack power. When chosen as the weapon mode, damages all enemy units in the target hex. |
@@ -103,10 +103,10 @@ Range is measured as **graph distance** (BFS shortest path in hexes) between the
 ### Effective Attack Range
 
 ```
-attackRange = max(rangeAttack, (attack > 0 ? 1 : 0), (antiAir > 0 ? 1 : 0))
+attackRange = max(rangeAttack, (kinetic > 0 ? 1 : 0), (antiAir > 0 ? 1 : 0))
 ```
 
-- If `rangeAttack = 0` but `attack > 0`: effective range is 1 (melee).
+- If `rangeAttack = 0` but `kinetic > 0`: effective range is 1 (melee).
 - If only `antiAir > 0`: effective range is 1.
 - `rangeAttack` of 2–5 allows attacking from that many hexes away.
 
@@ -176,7 +176,7 @@ diff = ((approachDirection - defenderFacing) mod 6 + 6) mod 6
 AttackPower = (BaseWeaponValue × ChassisAttackModifier × rangeEfficiency) + orientationBonus
 ```
 
-Where `BaseWeaponValue` is `attack`, `splashAttack`, or `antiAir` depending on weapon mode, clamped to [1, 5]. `ChassisAttackModifier` is based on movement type (see §7). `rangeEfficiency` is based on attack distance (see §3). `orientationBonus` is 0, 1, or 2 based on the arc. AttackPower may be a decimal — do not round before the damage formula.
+Where `BaseWeaponValue` is `kinetic`, `splashAttack`, or `antiAir` depending on weapon mode, clamped to [1, 5]. `ChassisAttackModifier` is based on movement type (see §7). `rangeEfficiency` is based on attack distance (see §3). `orientationBonus` is 0, 1, or 2 based on the arc. AttackPower may be a decimal — do not round before the damage formula.
 
 For distance 1 attacks, `rangeEfficiency = 1.00`. For Anti-Air Reaction Fire, `rangeEfficiency` is not used.
 
@@ -244,7 +244,7 @@ Damage = clamp(Damage, 1, 30)
 ### Input Clamping
 
 Before calculation:
-- `attack` clamped to [1, 5]
+- `kinetic` clamped to [1, 5]
 - `armour` clamped to [0, 5]
 - `ew` clamped to [0, 5]
 - `defensiveFormation` clamped to [0, 2]
@@ -322,7 +322,7 @@ Anti-Air remains unpenalised against drones (DRONE_ANTI_AIR_DAMAGE_MULTIPLIER = 
 
 ### Anti-Air Only Units
 
-If a unit has ONLY `antiAir` (no `attack`, no `rangeAttack`, no `splashAttack`), it can **only target drones**. Attempting to attack a non-drone target is invalid.
+If a unit has ONLY `antiAir` (no `kinetic`, no `rangeAttack`, no `splashAttack`), it can **only target drones**. Attempting to attack a non-drone target is invalid.
 
 ---
 
@@ -399,7 +399,7 @@ Each attack uses exactly one weapon mode. The game automatically evaluates all v
 
 | Mode | Valid when | Attack value used | Drone incoming modifier |
 |------|-----------|-------------------|-------------------------|
-| Direct Fire | `attack > 0`, target in range | `(attack × chassisModifier × rangeEfficiency)` + orientation bonus | ×0.33 if target is drone |
+| Direct Fire | `kinetic > 0`, target in range | `(kinetic × chassisModifier × rangeEfficiency)` + orientation bonus | ×0.33 if target is drone |
 | Splash Fire | `splashAttack > 0`, target hex has enemies | `(splashAttack × chassisModifier × rangeEfficiency)` (+ orientation for primary target only) | ×0.50 if affected unit is drone |
 | Anti-Air Fire | `antiAir > 0`, target is a drone | `(antiAir × chassisModifier × rangeEfficiency)` + orientation bonus | ×1.00 (no penalty) |
 
@@ -905,7 +905,7 @@ When evaluating combat for a defending unit, these tile/formation properties mat
 
 | Attacking Attribute | Affected By | Special Rules |
 |--------------------|-------------|---------------|
-| `attack` | Chassis modifier, orientation, DefencePower, drone incoming modifier (×0.33) | Direct Fire weapon mode |
+| `kinetic` | Chassis modifier, orientation, DefencePower, drone incoming modifier (×0.33) | Direct Fire weapon mode |
 | `splashAttack` | Chassis modifier, DefencePower (per victim), SPLASH_SCALE, drone incoming modifier (×0.50) | Splash Fire weapon mode — hits all enemies in target hex only |
 | `antiAir` | Chassis modifier, orientation, DefencePower | Anti-Air Fire weapon mode — only targets drones, no drone incoming penalty |
 | `rangeAttack` | — | Determines max attack distance, does not add damage directly |

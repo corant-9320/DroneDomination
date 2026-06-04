@@ -17,7 +17,7 @@ console.log('\nCamera center:', data.cameraCenter);
 
 // Verify all units with offensive capabilities have range > 0
 const needRange = data.units.filter(u => {
-  const hasOffensive = (u.attributes.splash > 0) || (u.attributes.attack > 0) || (u.attributes.airdefence > 0);
+  const hasOffensive = (u.attributes.splash > 0) || (u.attributes.kinetic > 0) || (u.attributes.airdefence > 0);
   return hasOffensive && (!u.attributes.range || u.attributes.range === 0);
 });
 

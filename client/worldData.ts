@@ -3,6 +3,7 @@
  */
 
 import { dbg } from './debug.js';
+import type { UnitAttributes } from '../shared/unitTypes.js';
 
 export interface TileData {
   idx: number;
@@ -34,19 +35,7 @@ export interface UnitData {
   tileIndex: number;
   segment: 0 | 1 | 2 | 3 | 4 | 5;
   facing: 0 | 1 | 2 | 3 | 4 | 5;
-  attributes: {
-    maxHealth?: number;
-    attack?: number;
-    armour?: number;
-    defence?: number;
-    splashAttack?: number;
-    rangeAttack?: number;
-    wheeledMovement?: number;
-    limbMovement?: number;
-    flightMovement?: number;
-    repair?: number;
-    antiAir?: number;
-  };
+  attributes: UnitAttributes;
   currentHealth: number;
 }
 
@@ -61,6 +50,11 @@ export interface WorldData {
   units: UnitData[];
   /** Player-chosen faction color (hex string). */
   playerColor?: string;
+  /**
+   * Optional tile index to centre the camera on at startup.
+   * Used by battle scenarios to focus on the gap between armies.
+   */
+  battleCentreTile?: number;
 }
 
 let cachedWorld: WorldData | null = null;
@@ -97,10 +91,10 @@ export async function loadWorld(): Promise<WorldData> {
     return cachedWorld;
   }
 
-  dbg.world.log('Fetching /world.json from server');
-  const response = await fetch('/world.json?v=' + Date.now());
+  dbg.world.log('Fetching /battle-30v30.json from server');
+  const response = await fetch('/battle-30v30.json?v=' + Date.now());
   if (!response.ok) {
-    dbg.world.error('Failed to load /world.json, status:', response.status);
+    dbg.world.error('Failed to load /battle-30v30.json, status:', response.status);
     throw new Error(`Failed to load world: ${response.status}`);
   }
   const data: WorldData = await response.json();
@@ -129,7 +123,16 @@ export async function loadWorld(): Promise<WorldData> {
   return cachedWorld;
 }
 
-/** Store a new world and reload the page so all views reinitialize. */
+/** Store a new world and reload the page so all views reinitialize.
+ *
+ * A full page reload is intentional here. The Three.js GlobeView and the
+ * Canvas 2D LocalMapView both build their geometry once at construction time
+ * from the world data. There is no hot-swap path — reinitializing them in
+ * place would require tearing down and rebuilding all WebGL buffers, event
+ * listeners, and cached tile projections. A reload is simpler and more
+ * reliable. The new world is passed via sessionStorage so it survives the
+ * reload without a round-trip to the server.
+ */
 export function applyNewWorld(data: unknown): void {
   dbg.world.log('applyNewWorld called, storing to sessionStorage and reloading');
   sessionStorage.setItem('drone-domination-world', JSON.stringify(data));

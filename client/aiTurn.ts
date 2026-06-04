@@ -16,6 +16,7 @@ import { CombatPanel } from './combatPanel.js';
 import { AiPlaybackController } from './aiPlayback.js';
 import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
+import { getMovementMode, hexEntryCost } from '../shared/movementConstants.js';
 
 // ---------------------------------------------------------------------------
 // Callback types for visual feedback during AI turns
@@ -298,41 +299,6 @@ function getMovement(unit: UnitData): number {
   );
 }
 
-/** Determine movement mode for cost calculation. */
-function getMovementMode(unit: UnitData): 'wheeled' | 'limb' | 'flight' {
-  if ((unit.attributes.flightMovement ?? 0) >= 1) return 'flight';
-  if ((unit.attributes.limbMovement ?? 0) >= 1) return 'limb';
-  return 'wheeled';
-}
-
-/** Whether a terrain type is impassable for ground units. */
-function isImpassableTerrain(terrain: string): boolean {
-  return terrain === 'mountain' || terrain === 'ocean';
-}
-
-/** Whether a tile counts as hill terrain for movement cost. */
-function isHillTerrain(terrain: string): boolean {
-  return terrain === 'hills';
-}
-
-/**
- * Calculate MP cost to enter a tile.
- * isFirstHex: whether this is the first hex the unit moves into this turn.
- */
-function hexCost(tile: TileData, mode: 'wheeled' | 'limb' | 'flight', isFirstHex: boolean): number {
-  if (isImpassableTerrain(tile.terrain) && mode !== 'flight') return Infinity;
-  if (isFirstHex) return 1;
-  if (mode === 'flight') return 1;
-  if (mode === 'limb') return 3;
-
-  // Tank/wheeled
-  const hill = isHillTerrain(tile.terrain);
-  const forested = tile.f === true;
-  if (hill && forested) return 4;
-  if (hill || forested) return 3;
-  return 2;
-}
-
 /**
  * Compute how many steps along a path the unit can afford, reserving
  * 1 MP for attack if wantAttack is true.
@@ -344,14 +310,14 @@ function affordableSteps(
   wantAttack: boolean,
 ): number {
   const totalMP = getMovement(unit);
-  const mode = getMovementMode(unit);
+  const mode = getMovementMode(unit.attributes);
   const reserve = wantAttack ? 1 : 0;
   let spent = 0;
   let steps = 0;
 
   for (let i = 1; i < path.length; i++) {
     const isFirst = (i - 1) === 0;
-    const cost = hexCost(tiles[path[i]], mode, isFirst);
+    const cost = hexEntryCost(tiles[path[i]], mode, isFirst);
     if (cost === Infinity) break;
     spent += cost;
     if (spent + reserve > totalMP) break;
@@ -363,6 +329,6 @@ function affordableSteps(
 /** Effective attack range (ranged or melee). */
 function getAttackRange(unit: UnitData): number {
   const range = unit.attributes.rangeAttack ?? 0;
-  const melee = unit.attributes.attack ?? 0;
+  const melee = unit.attributes.kinetic ?? 0;
   return Math.max(range, melee > 0 ? 1 : 0);
 }

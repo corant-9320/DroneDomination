@@ -9,4 +9,7 @@ export default defineConfig({
     open: true,
   },
   plugins: [apiPlugin()],
+  test: {
+    exclude: ['e2e/**', 'node_modules/**'],
+  },
 });

@@ -14,7 +14,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const SEED = 137;
-const OUTPUT_DIR = join(__dirname, '..', 'data');
+const OUTPUT_DIR = join(__dirname, '..', '..', 'data');
 
 // Generate
 const world = generateWorld(SEED);

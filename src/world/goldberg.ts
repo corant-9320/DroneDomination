@@ -1,14 +1,14 @@
 /**
- * Goldberg G(24,0) polyhedron generation.
+ * Goldberg G(36,0) polyhedron generation.
  *
- * Approach: Subdivide icosahedron faces into a frequency-24 triangular grid,
+ * Approach: Subdivide icosahedron faces into a frequency-36 triangular grid,
  * project vertices to the unit sphere, then compute the dual polyhedron.
  * The dual of a subdivided icosahedron gives us the Goldberg polyhedron:
  * - 12 pentagonal faces (at original icosahedron vertices)
- * - 5750 hexagonal faces
- * - Total: 5762 tiles
+ * - 12950 hexagonal faces
+ * - Total: 12962 tiles
  *
- * Formula: F = 10*T^2 + 2 where T=24 → 10*576+2 = 5762
+ * Formula: F = 10*T^2 + 2 where T=36 → 10*1296+2 = 12962
  */
 
 import { Vec3 } from './types.js';

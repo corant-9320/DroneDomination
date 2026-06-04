@@ -7,6 +7,7 @@ import { loadWorld, WorldData, applyNewWorld } from './worldData.js';
 import { GlobeView } from './globe.js';
 import { LocalMapView } from './localMap.js';
 import { CombatPanel } from './combatPanel.js';
+import { DetailPanel } from './detailPanel.js';
 import { showNewWorldModal } from './newWorldModal.js';
 import { saveGame, showLoadModal } from './saveLoad.js';
 import { executeAiTurn } from './aiTurn.js';
@@ -14,6 +15,7 @@ import { AiPlaybackController } from './aiPlayback.js';
 import { preRenderUnits } from './unitRenderer.js';
 import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
+import { TurnManager } from './turnManager.js';
 
 async function main() {
   dbg.init.log('main() starting');
@@ -38,14 +40,20 @@ async function main() {
 
     // Pre-render 3D unit sprites for all unique unit configurations
     setLoadingStatus('Rendering unit sprites…');
-    preRenderUnits(world.units, world);
+    await preRenderUnits(world.units, world);
 
     const globeCanvas = document.getElementById('globe-canvas') as HTMLCanvasElement;
     const localCanvas = document.getElementById('local-canvas') as HTMLCanvasElement;
 
+    // Detail panel — populates Hex Info / Unit Info / co-located units in the right curtain
+    const detailPanel = new DetailPanel(world);
+
     // Combat panel — right curtain on local map, shows one combat at a time with nav
     const combatLogEl = document.getElementById('combat-log-content') as HTMLElement;
     const combatPanel = new CombatPanel(combatLogEl, world);
+
+    // Wire combat preview results into the detail panel's Combat Preview section
+    combatPanel.setOnPreviewReady((preview) => detailPanel.showCombat(preview));
 
     // AI playback controller — video-style buttons for enemy turn pacing
     // Mounted directly in the combat-log-inner (flex column) so it stays
@@ -55,22 +63,14 @@ async function main() {
     const aiPlayback = new AiPlaybackController(playbackContainer, turnControlsEl);
 
     // ─── Turn Management ─────────────────────────────────────────────────
-    // Derive factions from cities (each city id is a faction/owner id)
-    const factions = world.cities.map((c) => c.id);
-    const playerFaction = world.cities.find((c) => c.isPlayerHome)?.id ?? factions[0];
-    let activeFactionIndex = factions.indexOf(playerFaction);
-    if (activeFactionIndex < 0) activeFactionIndex = 0;
-
-    function getActiveFaction(): string {
-      return factions[activeFactionIndex];
-    }
+    // TurnManager owns faction cycling, turn counter, and per-unit MP/action state.
+    const turnManager = new TurnManager(world);
 
     function isPlayerTurn(): boolean {
-      return getActiveFaction() === playerFaction;
+      return turnManager.isPlayerTurn();
     }
 
-    /** Turn counter */
-    let turnNumber = 1;
+    /** Turn counter display */
     const turnIndicator = document.createElement('span');
     turnIndicator.id = 'turn-indicator';
     turnIndicator.style.cssText = 'font-size:13px;font-weight:bold;color:#ccc;pointer-events:none;';
@@ -78,11 +78,11 @@ async function main() {
     turnControls.insertBefore(turnIndicator, turnControls.firstChild);
 
     function updateTurnIndicator(): void {
-      turnIndicator.textContent = `Turn ${turnNumber}`;
+      turnIndicator.textContent = `Turn ${turnManager.turnNumber}`;
     }
 
     // Initialize combat panel with player faction
-    combatPanel.setActiveFaction(getActiveFaction());
+    combatPanel.setActiveFaction(turnManager.getActiveFaction());
     updateTurnIndicator();
 
     /**
@@ -116,10 +116,13 @@ async function main() {
         },
       };
 
+      const factions = turnManager.getFactions();
+      const playerFaction = turnManager.getPlayerFaction();
+
       // Cycle through all non-player factions
       for (let i = 1; i < factions.length; i++) {
-        activeFactionIndex = (activeFactionIndex + 1) % factions.length;
-        const faction = getActiveFaction();
+        turnManager.activeFactionIndex = (turnManager.activeFactionIndex + 1) % factions.length;
+        const faction = turnManager.getActiveFaction();
         if (faction === playerFaction) break; // Back to the player
 
         dbg.input.log('AI faction turn:', faction);
@@ -134,14 +137,14 @@ async function main() {
       aiPlayback.end();
 
       // Ensure we land back on the player faction
-      activeFactionIndex = factions.indexOf(playerFaction);
-      turnNumber++;
-      combatPanel.setActiveFaction(getActiveFaction());
-      localMap.setActiveFaction(getActiveFaction());
+      turnManager.activeFactionIndex = factions.indexOf(playerFaction);
+      turnManager.turnNumber++;
+      combatPanel.setActiveFaction(turnManager.getActiveFaction());
+      localMap.setActiveFaction(turnManager.getActiveFaction());
       updateTurnIndicator();
       localMap.endTurn(); // Reset movement points for the new player turn
       localMap.render(); // Refresh map to show AI moves
-      dbg.input.log('All AI turns complete — player turn begins, turn:', turnNumber);
+      dbg.input.log('All AI turns complete — player turn begins, turn:', turnManager.turnNumber);
     }
 
     // Shared tile selection handler
@@ -153,6 +156,9 @@ async function main() {
     function onLocalTileSelected(tileIndex: number, segment?: number) {
       dbg.input.log('LocalMap tile selected:', tileIndex, 'segment:', segment);
       globe.panToTile(tileIndex);
+
+      // Update detail panel — hex info + selected unit + co-located units
+      detailPanel.showTile(tileIndex, segment);
 
       // Update combat panel with selected unit (shows stats immediately)
       const selected = localMap.getSelectedUnits();
@@ -175,8 +181,11 @@ async function main() {
     const localMap = new LocalMapView(localCanvas, world, onLocalTileSelected);
     dbg.init.timeEnd('LocalMapView');
 
+    // Wire TurnManager into LocalMapView
+    localMap.setTurnManager(turnManager);
+
     // Initialize localMap with the starting active faction
-    localMap.setActiveFaction(getActiveFaction());
+    localMap.setActiveFaction(turnManager.getActiveFaction());
 
     // ─── Curtain Toggle Setup ───────────────────────────────────────────
     // Left curtain (strategy panel) toggle
@@ -280,6 +289,10 @@ async function main() {
 
     // Hover-over-enemy attack preview
     localMap.setOnHoverEnemy((attacker, target) => {
+      detailPanel.showEnemy(target);
+      if (!attacker || !target) {
+        detailPanel.showCombat(null);
+      }
       combatPanel.showPreview(attacker, target);
     });
 
@@ -298,12 +311,20 @@ async function main() {
       }
     });
 
-    // Start centred on the player's home city
+    // Start centred on the battle gap tile (if present) or the player's home city
     const homeCity = world.cities.find((c) => c.isPlayerHome);
     dbg.init.log('Home city:', homeCity?.label, 'tile:', homeCity?.tileIndex);
-    localMap.goHome();
-    if (homeCity) {
-      globe.panToTile(homeCity.tileIndex);
+
+    if (world.battleCentreTile !== undefined) {
+      // Battle scenario: centre on the gap between the two armies
+      dbg.init.log('Battle scenario — centring on gap tile:', world.battleCentreTile);
+      localMap.setCentre(world.battleCentreTile);
+      globe.panToTile(world.battleCentreTile);
+    } else {
+      localMap.goHome();
+      if (homeCity) {
+        globe.panToTile(homeCity.tileIndex);
+      }
     }
 
     // Home key (keyboard)
@@ -376,15 +397,6 @@ async function main() {
         event.preventDefault();
         showLoadModal();
       }
-    });
-
-    // Double-click on local map recenters
-    localCanvas.addEventListener('dblclick', (event) => {
-      const rect = localCanvas.getBoundingClientRect();
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
-      // Find nearest tile and recenter on it
-      // (The localMap handles this internally via setCentre, but we expose it here)
     });
 
   } catch (err) {

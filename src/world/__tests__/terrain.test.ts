@@ -75,8 +75,30 @@ describe('terrain', () => {
     });
 
     it('produces different results for different seeds', () => {
-      const r1 = generateTerrain(positions, neighbours, sides, 1);
-      const r2 = generateTerrain(positions, neighbours, sides, 2);
+      // Use a longer linear chain so tiles in the middle are far from both
+      // polar pentagons (distance > 9) and reach the noise-dependent code path.
+      // Pentagon at index 0 (north pole), pentagon at index 24 (south pole),
+      // tiles 1–23 form the equatorial band — middle tiles are distance 12 from
+      // both poles, well past the hard tundra/ocean caps at distance ≤ 4.
+      const chainLength = 25;
+      const chainPositions: Vec3[] = Array.from({ length: chainLength }, (_, i) => {
+        const t = i / (chainLength - 1); // 0 → 1
+        const lat = Math.PI * t - Math.PI / 2; // -90° → +90°
+        return { x: Math.cos(lat), y: Math.sin(lat), z: 0 };
+      });
+      const chainNeighbours = chainPositions.map((_, i) => {
+        const nb: number[] = [];
+        if (i > 0) nb.push(i - 1);
+        if (i < chainLength - 1) nb.push(i + 1);
+        return nb;
+      });
+      // First and last are pentagons (poles), rest are hexagons
+      const chainSides = chainPositions.map((_, i) =>
+        i === 0 || i === chainLength - 1 ? 5 : 6
+      );
+
+      const r1 = generateTerrain(chainPositions, chainNeighbours, chainSides, 1);
+      const r2 = generateTerrain(chainPositions, chainNeighbours, chainSides, 2);
       // At least one position should differ
       const same = r1.every(
         (v, i) => v.terrainType === r2[i].terrainType && v.elevationType === r2[i].elevationType

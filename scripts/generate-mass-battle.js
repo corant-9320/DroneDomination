@@ -133,7 +133,7 @@ function generateUnit(id, label, ownerId, tileIndex, segment) {
   const attrs = { maxHealth, [moveType]: moveValue };
 
   // Randomly add 2-4 additional attributes
-  const otherAttrs = ['attack', 'armour', 'defence', 'splashAttack', 'rangeAttack', 'repair'];
+  const otherAttrs = ['kinetic', 'armour', 'defence', 'splashAttack', 'rangeAttack', 'repair'];
   const numExtra = randInt(2, 4);
   const shuffled = otherAttrs.sort(() => rng() - 0.5);
   for (let i = 0; i < numExtra; i++) {

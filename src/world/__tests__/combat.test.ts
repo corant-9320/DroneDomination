@@ -9,9 +9,7 @@ import {
   getEWDefense,
   getTerrainDefense,
   getDefencePower,
-  isEncircled,
   clamp,
-  calculateDamage,
   calculateFormulaDamage,
   applyDamage,
   calculateDirectDamage,
@@ -22,6 +20,7 @@ import {
   moveUnit,
   resolveSimultaneousAttacks,
   getCrossfireBonus,
+  DEFENCE_SCALE,
   type AttackArc,
   type TargetOrientation,
 } from '../combat.js';
@@ -113,7 +112,7 @@ function makeUnit(overrides: Partial<Unit> & { id: string; ownerId: string }): U
     tileIndex: 0,
     segment: 0,
     facing: 0,
-    attributes: { maxHealth: 3, attack: 2, limbMovement: 1 },
+    attributes: { maxHealth: 3, kinetic: 2, limbMovement: 1 },
     currentHealth: 30,
     ...overrides,
   };
@@ -227,96 +226,93 @@ describe('combat', () => {
   });
 
   // =========================================================================
-  // Damage formula — spec examples from Section 7
+  // Damage formula — spec examples using calculateFormulaDamage
   // =========================================================================
 
-  describe('calculateDamage', () => {
+  // Helper: build effective defence from raw components
+  function ed(armour: number, ew: number, formation: number, terrain: number): number {
+    return (clamp(armour, 0, 5) + clamp(ew, 0, 5) + clamp(formation, 0, 2) + clamp(terrain, 0, 4)) * DEFENCE_SCALE;
+  }
+
+  describe('calculateFormulaDamage', () => {
     it('weakest attack vs strongest defence = 1', () => {
-      // attack=1, front, armour=5, EW=5, formation=2, terrain=4
-      const damage = calculateDamage(1, 'front', 5, 5, 2, 4);
+      // attackPower=1 (front), defencePower=16, ED=12
+      const damage = calculateFormulaDamage(1, ed(5, 5, 2, 4));
       expect(damage).toBe(1);
     });
 
     it('strongest attack vs weakest defence = 30', () => {
-      // attack=5, rear, armour=0, EW=0, formation=0, terrain=0
-      const damage = calculateDamage(5, 'rear', 0, 0, 0, 0);
+      // attackPower=7 (attack=5 + rear +2), no defence
+      const damage = calculateFormulaDamage(7, ed(0, 0, 0, 0));
       expect(damage).toBe(30);
     });
 
     it('attack=5, front, no defence = 30', () => {
-      const damage = calculateDamage(5, 'front', 0, 0, 0, 0);
+      const damage = calculateFormulaDamage(5, ed(0, 0, 0, 0));
       expect(damage).toBe(30);
     });
 
-    it('attack=1, side, max defence = 1', () => {
-      // AP=2, DefPower=16, ED=12, maxFD=min(30,12)=12
-      // Damage = round(1 + 11*4/(4+144)) = round(1 + 44/148) = round(1.297) = 1
-      const damage = calculateDamage(1, 'side', 5, 5, 2, 4);
+    it('attack=1, side (+1), max defence = 1', () => {
+      // AP=2, DefPower=16, ED=12
+      const damage = calculateFormulaDamage(2, ed(5, 5, 2, 4));
       expect(damage).toBe(1);
     });
 
-    it('attack=1, rear, max defence = 2', () => {
-      // AP=3, DefPower=16, ED=12, maxFD=min(30,18)=18
-      // Damage = round(1 + 17*9/(9+144)) = round(1 + 153/153) = round(2.0) = 2
-      const damage = calculateDamage(1, 'rear', 5, 5, 2, 4);
+    it('attack=1, rear (+2), max defence = 2', () => {
+      // AP=3, DefPower=16, ED=12
+      const damage = calculateFormulaDamage(3, ed(5, 5, 2, 4));
       expect(damage).toBe(2);
     });
 
     it('attack=3, front, DefPower=8 → 4', () => {
-      // AP=3, DefPower=8, ED=6, maxFD=min(30,18)=18
-      // Damage = round(1 + 17*9/(9+36)) = round(1 + 153/45) = round(4.4) = 4
-      const damage = calculateDamage(3, 'front', 3, 3, 1, 1);
+      // AP=3, DefPower=8, ED=6
+      const damage = calculateFormulaDamage(3, ed(3, 3, 1, 1));
       expect(damage).toBe(4);
     });
 
-    it('attack=3, side, DefPower=8 → 8', () => {
-      // AP=4, DefPower=8, ED=6, maxFD=min(30,24)=24
-      // Damage = round(1 + 23*16/(16+36)) = round(1 + 368/52) = round(8.077) = 8
-      const damage = calculateDamage(3, 'side', 3, 3, 1, 1);
+    it('attack=3, side (+1), DefPower=8 → 8', () => {
+      // AP=4, DefPower=8, ED=6
+      const damage = calculateFormulaDamage(4, ed(3, 3, 1, 1));
       expect(damage).toBe(8);
     });
 
-    it('attack=3, rear, DefPower=8 → 13', () => {
+    it('attack=3, rear (+2), DefPower=8 → 13', () => {
       // AP=5, DefPower=8, ED=6
-      // Damage = round(1 + 29*25/(25+36)) = round(1 + 725/61) = round(12.885) = 13
-      const damage = calculateDamage(3, 'rear', 3, 3, 1, 1);
+      const damage = calculateFormulaDamage(5, ed(3, 3, 1, 1));
       expect(damage).toBe(13);
     });
 
     it('attack=5, front, DefPower=8 → 13', () => {
       // AP=5, DefPower=8, ED=6
-      const damage = calculateDamage(5, 'front', 3, 3, 1, 1);
+      const damage = calculateFormulaDamage(5, ed(3, 3, 1, 1));
       expect(damage).toBe(13);
     });
 
-    it('attack=5, side, DefPower=8 → 16', () => {
+    it('attack=5, side (+1), DefPower=8 → 16', () => {
       // AP=6, DefPower=8, ED=6
-      // Damage = round(1 + 29*36/(36+36)) = round(1 + 1044/72) = round(15.5) = 16
-      const damage = calculateDamage(5, 'side', 3, 3, 1, 1);
+      const damage = calculateFormulaDamage(6, ed(3, 3, 1, 1));
       expect(damage).toBe(16);
     });
 
-    it('attack=5, rear, DefPower=8 → 18', () => {
+    it('attack=5, rear (+2), DefPower=8 → 18', () => {
       // AP=7, DefPower=8, ED=6
-      // Damage = round(1 + 29*49/(49+36)) = round(1 + 1421/85) = round(17.718) = 18
-      const damage = calculateDamage(5, 'rear', 3, 3, 1, 1);
+      const damage = calculateFormulaDamage(7, ed(3, 3, 1, 1));
       expect(damage).toBe(18);
     });
 
-    it('clamps attack below 1 to 1', () => {
-      const damage = calculateDamage(0, 'front', 0, 0, 0, 0);
-      // Clamped to attack=1, AP=1, ED=0, maxFD=min(30,6)=6, damage=6
+    it('minimum attackPower of 1 gives 6 with no defence', () => {
+      // AP=1, ED=0, maxFD=min(30,6)=6, damage=6
+      const damage = calculateFormulaDamage(1, ed(0, 0, 0, 0));
       expect(damage).toBe(6);
     });
 
     it('damage is always at least 1', () => {
-      // Even with maximum defence
-      const damage = calculateDamage(1, 'front', 5, 5, 2, 4);
+      const damage = calculateFormulaDamage(1, ed(5, 5, 2, 4));
       expect(damage).toBeGreaterThanOrEqual(1);
     });
 
     it('damage never exceeds 30', () => {
-      const damage = calculateDamage(5, 'rear', 0, 0, 0, 0);
+      const damage = calculateFormulaDamage(7, ed(0, 0, 0, 0));
       expect(damage).toBeLessThanOrEqual(30);
     });
   });
@@ -528,7 +524,7 @@ describe('combat', () => {
       // With chassis modifier applied equally to both modes, splash wins when it
       // hits enough targets (4+ enemies at 30% each exceeds single-target direct).
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      attacker.attributes.attack = 3;
+      attacker.attributes.kinetic = 3;
       attacker.attributes.splashAttack = 3;
 
       const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
@@ -558,7 +554,7 @@ describe('combat', () => {
 
     it('direct fire is chosen when only one enemy is in the target hex', () => {
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      attacker.attributes.attack = 5;
+      attacker.attributes.kinetic = 5;
       attacker.attributes.splashAttack = 5;
 
       const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
@@ -576,7 +572,7 @@ describe('combat', () => {
 
     it('splash only affects enemies in the target hex, not adjacent hexes', () => {
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 2, facing: 0 });
-      attacker.attributes.attack = 3;
+      attacker.attributes.kinetic = 3;
       attacker.attributes.splashAttack = 3;
       attacker.attributes.rangeAttack = 2;
 
@@ -601,7 +597,7 @@ describe('combat', () => {
 
     it('splash hits all enemies in the target hex', () => {
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      attacker.attributes.attack = 2;
+      attacker.attributes.kinetic = 2;
       attacker.attributes.splashAttack = 5;
 
       const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
@@ -625,7 +621,7 @@ describe('combat', () => {
 
     it('splash does not hit friendly units', () => {
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      attacker.attributes.attack = 2;
+      attacker.attributes.kinetic = 2;
       attacker.attributes.splashAttack = 5;
 
       const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
@@ -646,7 +642,7 @@ describe('combat', () => {
 
     it('splash damage is reduced by victim defence', () => {
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      attacker.attributes.attack = 2;
+      attacker.attributes.kinetic = 2;
       attacker.attributes.splashAttack = 2;
 
       const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
@@ -672,7 +668,7 @@ describe('combat', () => {
 
     it('splash always deals at least 1 damage per unit', () => {
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      attacker.attributes.attack = 1;
+      attacker.attributes.kinetic = 1;
       attacker.attributes.splashAttack = 1;
 
       const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
@@ -736,7 +732,7 @@ describe('combat', () => {
       const linear = createLinearGrid();
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 0, facing: 0 });
       attacker.attributes.rangeAttack = 2;
-      attacker.attributes.attack = 0;
+      attacker.attributes.kinetic = 0;
 
       const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 3, facing: 0 });
 
@@ -748,7 +744,7 @@ describe('combat', () => {
 
     it('melee attack (attack > 0, range 0) works at distance 1', () => {
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      attacker.attributes.attack = 2;
+      attacker.attributes.kinetic = 2;
       attacker.attributes.rangeAttack = 0;
 
       const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
@@ -762,7 +758,7 @@ describe('combat', () => {
     it('melee attack fails at distance > 1', () => {
       const linear = createLinearGrid();
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 0, facing: 0 });
-      attacker.attributes.attack = 2;
+      attacker.attributes.kinetic = 2;
       attacker.attributes.rangeAttack = 0;
 
       const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 2, facing: 0 });
@@ -780,12 +776,12 @@ describe('combat', () => {
   describe('simultaneous resolution', () => {
     it('resolves both attacks simultaneously — both can kill each other', () => {
       const unitA = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      unitA.attributes.attack = 5;
+      unitA.attributes.kinetic = 5;
       unitA.attributes.armour = 0;
       unitA.currentHealth = 1;
 
       const unitB = makeUnit({ id: 'b', ownerId: 'p2', tileIndex: 0, facing: 0 });
-      unitB.attributes.attack = 5;
+      unitB.attributes.kinetic = 5;
       unitB.attributes.armour = 0;
       unitB.currentHealth = 1;
 
@@ -855,7 +851,7 @@ describe('combat', () => {
 
     it('does not trigger when enemy has no antiAir', () => {
       const groundUnit = makeUnit({ id: 'd', ownerId: 'p2', tileIndex: 1, facing: 0 });
-      groundUnit.attributes.attack = 3; // has attack but no antiAir
+      groundUnit.attributes.kinetic = 3; // has attack but no antiAir
 
       const drone = makeUnit({ id: 'm', ownerId: 'p1', tileIndex: 3, facing: 0 });
       drone.attributes.flightMovement = 3;
@@ -888,29 +884,6 @@ describe('combat', () => {
   });
 
   // =========================================================================
-  // Encirclement (informational, no longer affects damage)
-  // =========================================================================
-
-  describe('encirclement', () => {
-    it('unit is encircled with 3+ enemy directions', () => {
-      const target = makeUnit({ id: 't', ownerId: 'p1', tileIndex: 0 });
-      const e1 = makeUnit({ id: 'e1', ownerId: 'p2', tileIndex: 1 });
-      const e2 = makeUnit({ id: 'e2', ownerId: 'p2', tileIndex: 3 });
-      const e3 = makeUnit({ id: 'e3', ownerId: 'p2', tileIndex: 5 });
-
-      expect(isEncircled(target, [target, e1, e2, e3], tiles)).toBe(true);
-    });
-
-    it('unit is not encircled with fewer than 3 enemy directions', () => {
-      const target = makeUnit({ id: 't', ownerId: 'p1', tileIndex: 0 });
-      const e1 = makeUnit({ id: 'e1', ownerId: 'p2', tileIndex: 1 });
-      const e2 = makeUnit({ id: 'e2', ownerId: 'p2', tileIndex: 3 });
-
-      expect(isEncircled(target, [target, e1, e2], tiles)).toBe(false);
-    });
-  });
-
-  // =========================================================================
   // Full attack resolution
   // =========================================================================
 
@@ -919,7 +892,7 @@ describe('combat', () => {
       const linear = createLinearGrid();
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 0, facing: 0 });
       attacker.attributes.rangeAttack = 1;
-      attacker.attributes.attack = 0;
+      attacker.attributes.kinetic = 0;
 
       const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 3, facing: 0 });
 
@@ -938,7 +911,7 @@ describe('combat', () => {
 
     it('destroys unit when health reaches 0', () => {
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      attacker.attributes.attack = 5;
+      attacker.attributes.kinetic = 5;
 
       const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 3 });
       // Attacker at tile 1 approaches from direction 0. Target faces 3 (rear).
@@ -958,7 +931,7 @@ describe('combat', () => {
     it('always deals at least 1 damage', () => {
       tiles[0] = { ...tiles[0], elevationType: 'mountain' };
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      attacker.attributes.attack = 1;
+      attacker.attributes.kinetic = 1;
 
       const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
       target.attributes.armour = 5;
@@ -979,7 +952,7 @@ describe('combat', () => {
 
     it('correctly reports combat result fields', () => {
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      attacker.attributes.attack = 3;
+      attacker.attributes.kinetic = 3;
 
       const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
       target.attributes.armour = 1;
