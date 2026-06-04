@@ -410,32 +410,7 @@ export class CombatPanel {
 
     let body = `<div class="cl-body" style="overflow:hidden;">`;
 
-    // Filtered preview: show only Orientation, Weapon Selection, then Net Damage + Health
-    for (const step of c.steps) {
-      // Orientation step — show arc label with bonus
-      if (step.title.includes('Orientation')) {
-        const col = toneColor(step.tone);
-        body += `<div class="cl-step" style="padding:1px 0;border:none;">`;
-        body += `<span class="cl-step-title">${esc(step.title)}</span> `;
-        body += `<span style="color:${col};">${esc(step.result)}</span>`;
-        body += `</div>`;
-        continue;
-      }
-
-      // Weapon Selection step — keep as-is
-      if (step.title.includes('Weapon Selection')) {
-        const col = toneColor(step.tone);
-        body += `<div class="cl-step" style="padding:1px 0;border:none;">`;
-        body += `<span class="cl-step-title">${esc(step.title)}</span> `;
-        body += `<span style="color:${col};">${esc(step.result)}</span>`;
-        body += `</div>`;
-        continue;
-      }
-
-      // Skip everything else (Range Check, Defence Power, Chassis Modifier, Kinetic/Splash/AA Fire, Health Update)
-    }
-
-    // Net Damage + Health Update as emphasised pair
+    // Net Damage + Health Update as emphasised pair (all info now lives in the Attack table)
     if (c.wasValid && c.directDamage > 0) {
       const dmgCol = c.directDamage >= 15 ? '#f66' : c.directDamage >= 5 ? '#fa0' : '#8f8';
       const hpAfter = c.targetHealthAfter;

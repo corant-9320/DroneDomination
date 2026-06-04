@@ -124,6 +124,17 @@ function buildBreakdown(
   const targetIsDrone = isDrone(target);
   const effectiveDefence = defPower.total * DEFENCE_SCALE;
 
+  // Orientation label from angular difference
+  const angleDiff = getAngularDifference(tiles, attacker.tileIndex, target.tileIndex, target.facing);
+  const angleDiffDeg = isNaN(angleDiff) ? 0 : Math.round((angleDiff * 180) / Math.PI);
+  const orientationLabel = formatArcDetailed(angleDiffDeg);
+
+  // Weapon selection label
+  const weaponLabels: Record<string, string> = { direct: 'Direct Fire', splash: 'Splash Fire', antiAir: 'Anti-Air Fire', none: '—' };
+  const weaponSelectionLabel = chosenMode !== 'none'
+    ? `${weaponLabels[chosenMode]}: ${totalDamage}${targetIsDrone && chosenMode === 'direct' ? ' (×0.33 drone)' : ''}${targetIsDrone && chosenMode === 'splash' ? ' (×0.50 drone)' : ''}`
+    : '—';
+
   // Base weapon value depends on chosen mode
   let baseWeapon = 0;
   let weaponMode: CombatBreakdown['weaponMode'] = 'none';
@@ -158,6 +169,7 @@ function buildBreakdown(
     chassisModifier,
     rangeEfficiency: Math.round(rangeEfficiency * 100) / 100,
     orientationBonus,
+    orientationLabel,
     droneAttackPenalty: 0, // deprecated — chassis modifier is shown via chassisLabel row
     attackTotal: Math.round(attackPower * 100) / 100,
     defArmour: defPower.armour,
@@ -167,6 +179,7 @@ function buildBreakdown(
     droneEvasion,
     defTotal: Math.round(effectiveDefence * 100) / 100,
     netDamage: inRange ? totalDamage : 0,
+    weaponSelectionLabel,
   };
 }
 

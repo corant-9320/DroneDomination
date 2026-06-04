@@ -44,6 +44,48 @@ export interface ExplainedCombat {
   targetDestroyed: boolean;
   splash: SplashExplanation[];
   destroyedUnitIds: string[];
+  /** Structured breakdown for the combat preview table. Present on preview responses. */
+  breakdown?: CombatBreakdown;
+}
+
+/** Structured numbers for the combat preview table. */
+export interface CombatBreakdown {
+  inRange: boolean;
+  distance: number;
+  attackRange: number;
+  weaponMode: 'kinetic' | 'splash' | 'antiAir' | 'none';
+  /** Base weapon value before any modifiers. */
+  baseWeapon: number;
+  /** Chassis type label for display (e.g. 'Tank', 'Spider', 'Drone'). */
+  chassisLabel: 'Tank' | 'Spider' | 'Drone';
+  /** Chassis modifier (e.g. 1.0 tank, 0.75 spider, 0.5 drone). */
+  chassisModifier: number;
+  /** Range efficiency (0–1). */
+  rangeEfficiency: number;
+  /** Orientation bonus (+0 front, +1 side, +2 rear). Now continuous 0–2. */
+  orientationBonus: number;
+  /** Human-readable orientation label (e.g. 'Front', 'Front Flank', 'Rear Flank', 'Rear'). */
+  orientationLabel: string;
+  /** @deprecated — always 0, kept for wire compatibility. Will be removed. */
+  droneAttackPenalty: number;
+  /** Attack total (after all attack modifiers). */
+  attackTotal: number;
+  /** Armour component of defence. */
+  defArmour: number;
+  /** EW component of defence. */
+  defEW: number;
+  /** Formation component of defence. */
+  defFormation: number;
+  /** Terrain component of defence. */
+  defTerrain: number;
+  /** Damage absorbed by drone evasion (0 if target is not a drone, or antiAir mode). */
+  droneEvasion: number;
+  /** Total effective defence. */
+  defTotal: number;
+  /** Final damage dealt (0 if out of range). */
+  netDamage: number;
+  /** Human-readable best weapon mode summary (e.g. 'Direct Fire: 12'). */
+  weaponSelectionLabel: string;
 }
 
 /** Response from the combat endpoint. Generic over the unit wire shape. */

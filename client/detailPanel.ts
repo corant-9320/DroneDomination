@@ -229,34 +229,117 @@ export class DetailPanel {
   }
 
   private renderCombatPreview(c: ExplainedCombat): void {
-    let html = '';
-
-    if (!c.wasValid) {
-      html += `<div class="dp-combat-invalid">✗ ${esc(c.reasonInvalid ?? 'Invalid attack')}</div>`;
-      this.combatBody.innerHTML = html;
+    const b = c.breakdown;
+    if (!b) {
+      // Fallback: no structured breakdown available
+      this.combatBody.innerHTML = '<span class="empty-msg">No preview data</span>';
       return;
     }
 
-    for (const step of c.steps) {
-      const col = toneColor(step.tone);
-      html += `<div class="dp-combat-step">`;
-      html += `<span class="dp-combat-title">${esc(step.title)}</span>`;
-      if (step.formula) {
-        html += ` <span class="dp-combat-formula">${esc(step.formula)}</span>`;
-      }
-      html += ` <span class="dp-combat-result" style="color:${col};">${esc(step.result)}</span>`;
-      html += `</div>`;
+    const weaponLabel: Record<string, string> = {
+      kinetic: 'Kinetic',
+      splash: 'Splash',
+      antiAir: 'Anti-Air',
+      none: '—',
+    };
+
+    const rangeCol = b.inRange ? '#8f8' : '#f66';
+    const rangeNote = b.inRange
+      ? `✓ In range (${b.distance}/${b.attackRange})`
+      : `✗ Out of range (${b.distance}/${b.attackRange})`;
+
+    let html = `<table class="dp-combat-table">`;
+
+    // ── Attack section ───────────────────────────────────────────────────
+    html += `<tr><td colspan="2" class="dp-combat-section">Attack (${weaponLabel[b.weaponMode]})</td></tr>`;
+    html += cpRow('Range',            `<span style="color:${rangeCol};">${rangeNote}</span>`);
+    html += cpRow('Base weapon',      b.baseWeapon);
+    html += cpRow(`${b.chassisLabel} ×`, b.chassisModifier.toFixed(2));
+    html += cpRow('Range efficiency', b.rangeEfficiency.toFixed(2));
+    html += cpRow('Orientation',      `${b.orientationLabel ?? ''} +${b.orientationBonus}`);
+    html += `<tr><td class="dp-combat-total" colspan="2">Attack total&nbsp;&nbsp;<span class="dp-combat-total-val">${b.attackTotal.toFixed(2)}</span></td></tr>`;
+    html += cpRow('Weapon',           b.weaponSelectionLabel ?? weaponLabel[b.weaponMode]);
+    html += cpNote(
+      `<b>Attack total</b> is the attacker's <b>AttackPower</b>: ` +
+      `base weapon (${b.baseWeapon}) × ${b.chassisLabel.toLowerCase()} chassis (${b.chassisModifier.toFixed(2)}) × range eff. (${b.rangeEfficiency.toFixed(2)})` +
+      `${b.orientationBonus > 0 ? ` + orientation (${b.orientationBonus})` : ''} = ${b.attackTotal.toFixed(2)}. ` +
+      `It both scales the attack and sets the damage ceiling.`,
+    );
+
+    // ── Defence section ──────────────────────────────────────────────────
+    html += `<tr><td colspan="2" class="dp-combat-section">Defence</td></tr>`;
+    html += cpRow('Armour',    b.defArmour);
+    html += cpRow('EW',        b.defEW);
+    html += cpRow('Formation', b.defFormation);
+    html += cpRow('Terrain',   b.defTerrain);
+    if (b.droneEvasion > 0) {
+      html += cpRow('Drone target evasion −', b.droneEvasion);
+    }
+    const defRaw = b.defArmour + b.defEW + b.defFormation + b.defTerrain;
+    html += `<tr><td class="dp-combat-total" colspan="2">Defence power&nbsp;&nbsp;<span class="dp-combat-total-val">${defRaw}</span></td></tr>`;
+    html += cpRow('× 0.75 = Effective def', b.defTotal.toFixed(2));
+    html += cpNote(
+      `<b>Defence power</b> is the raw sum of components (${b.defArmour} + ${b.defEW} + ${b.defFormation} + ${b.defTerrain} = ${defRaw}). ` +
+      `Multiplied by 0.75 to give <b>Effective defence</b> (${b.defTotal.toFixed(2)}), which feeds the damage formula. ` +
+      `Higher effective defence shrinks the share of the ceiling that actually lands.` +
+      (b.droneEvasion > 0
+        ? ` <b>Drone target evasion</b> is additional damage absorbed because the target is a drone — small profile, hard to hit with direct/splash fire. Anti-Air weapons bypass this.`
+        : ''),
+    );
+
+    // ── Net damage ───────────────────────────────────────────────────────
+    const dmgCol = b.netDamage >= 15 ? '#f66' : b.netDamage >= 5 ? '#fa0' : '#fff';
+    html += `<tr><td class="dp-combat-net" colspan="2">Net damage&nbsp;&nbsp;<span style="color:${dmgCol};font-weight:bold;">${b.inRange ? b.netDamage : '—'}</span></td></tr>`;
+
+    // ── How the two totals become damage ─────────────────────────────────
+    if (b.inRange) {
+      html += this.buildDamageExplanation(b);
     }
 
     if (c.targetDestroyed) {
-      html += `<div class="dp-combat-destroyed">☠ Target destroyed</div>`;
+      html += `<tr><td colspan="2" style="color:#f44;padding:2px 4px;">☠ Target destroyed</td></tr>`;
     }
 
-    if (c.splash.length > 0) {
-      html += `<div class="dp-combat-splash">💥 Splash → ${c.splash.length} unit${c.splash.length > 1 ? 's' : ''}</div>`;
-    }
+    html += `</table>`;
+    this.combatBody.innerHTML = html;
+  }
 
-    this.combatBody.innerHTML = html || '<span class="empty-msg">No steps</span>';
+  /**
+   * Build the worked "how damage is calculated" footnote.
+   *
+   * Damage is NOT attack minus defence. The two totals feed a ratio curve:
+   *   ceiling = min(30, 6 × AttackPower)
+   *   share   = AttackPower² / (AttackPower² + EffectiveDefence²)
+   *   damage  = round(1 + (ceiling − 1) × share)
+   *
+   * Plugs in this combat's actual numbers so the player can see, e.g., how an
+   * Attack total of 2.5 against light defence becomes ~14 damage.
+   */
+  private buildDamageExplanation(b: NonNullable<ExplainedCombat['breakdown']>): string {
+    const ap = b.attackTotal;
+    const ed = b.defTotal;
+    const ceiling = Math.min(30, 6 * ap);
+    const apSq = ap * ap;
+    const edSq = ed * ed;
+    const share = apSq + edSq > 0 ? apSq / (apSq + edSq) : 1;
+    // Raw formula damage, before any drone-evasion reduction (droneEvasion = raw − net).
+    const formulaDamage = b.netDamage + b.droneEvasion;
+
+    let html = `<tr><td colspan="2" class="dp-combat-section">How damage is calculated</td></tr>`;
+    html += cpNote(
+      `Damage is a ratio of Attack total to Effective defence, not a subtraction. ` +
+      `A bigger gap lands a bigger share of the damage ceiling.`,
+    );    html += cpCalc(`Ceiling = min(30, 6 × ${ap.toFixed(2)}) = ${ceiling.toFixed(1)}`);
+    html += cpCalc(
+      `Share landed = AP² / (AP² + ED²) = ${apSq.toFixed(2)} / (${apSq.toFixed(2)} + ${edSq.toFixed(2)}) = ${(share * 100).toFixed(0)}%`,
+    );
+    html += cpCalc(
+      `Damage = 1 + (${ceiling.toFixed(1)} − 1) × ${(share * 100).toFixed(0)}% ≈ ${formulaDamage}`,
+    );
+    if (b.droneEvasion > 0) {
+      html += cpCalc(`Drone evasion: ${formulaDamage} − ${b.droneEvasion} = ${b.netDamage}`);
+    }
+    return html;
   }
 }
 
@@ -266,6 +349,20 @@ export class DetailPanel {
 
 function dpRow(label: string, value: string): string {
   return `<div class="dp-row"><span class="dp-key">${label}</span><span class="dp-val">${value}</span></div>`;
+}
+
+function cpRow(label: string, value: string | number): string {
+  return `<tr><td class="dp-key">${label}</td><td class="dp-val">${value}</td></tr>`;
+}
+
+/** Explanatory note row spanning both columns, shown under a table section. */
+function cpNote(text: string): string {
+  return `<tr><td colspan="2" class="dp-combat-note">${text}</td></tr>`;
+}
+
+/** Monospace worked-calculation row spanning both columns. */
+function cpCalc(text: string): string {
+  return `<tr><td colspan="2" class="dp-combat-calc">${esc(text)}</td></tr>`;
 }
 
 
