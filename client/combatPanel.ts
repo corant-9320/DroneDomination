@@ -364,31 +364,24 @@ export class CombatPanel {
   }
 
   /**
-   * Build HTML showing the selected unit's stats (and optionally VS enemy stats).
-   * Shown as soon as a player unit is selected, before any server preview arrives.
+   * Build HTML showing the targeting panel.
+   * Only shows enemy stats when hovering; player unit info lives in the
+   * bottom detail panel's "Unit Info" section exclusively.
    */
   private buildSelectionHtml(): string {
-    const unit = this.selectedUnit!;
-    const unitColor = factionColor(this.world, unit.ownerId);
-
     let html = `<div class="cl-toolbar"><span class="cl-header" style="color:#fa0;">⚔ Targeting</span></div>`;
     html += `<div class="cl-body" style="overflow:hidden;">`;
 
-    // Player unit stats
-    html += `<div class="cl-vs-unit" style="color:${esc(unitColor)};">`;
-    html += `<div class="cl-vs-name">${esc(unit.label)}</div>`;
-    html += this.buildUnitStats(unit);
-    html += `</div>`;
-
-    // VS + enemy stats (if hovering)
     if (this.hoveredEnemy) {
+      // Show enemy stats only
       const enemy = this.hoveredEnemy;
       const enemyColor = factionColor(this.world, enemy.ownerId);
-      html += `<div class="cl-vs-divider">— VS —</div>`;
       html += `<div class="cl-vs-unit" style="color:${esc(enemyColor)};">`;
       html += `<div class="cl-vs-name">${esc(enemy.label)}</div>`;
       html += this.buildUnitStats(enemy);
       html += `</div>`;
+    } else {
+      html += `<div class="cl-empty">Hover an enemy to see targeting info</div>`;
     }
 
     html += `</div>`;
@@ -414,44 +407,19 @@ export class CombatPanel {
 
   private buildPreviewHtml(): string {
     const c = this.preview!;
-    const attacker = this.selectedUnit;
-    const enemy = this.hoveredEnemy;
-
-    let toolbar = `<div class="cl-toolbar">`;
-    toolbar += `<span class="cl-header" style="color:#fa0;">⚔ Preview</span>`;
-    toolbar += `</div>`;
 
     let body = `<div class="cl-body" style="overflow:hidden;">`;
 
-    // Show VS-style unit cards with faction colors
-    if (attacker) {
-      const unitColor = factionColor(this.world, attacker.ownerId);
-      body += `<div class="cl-vs-unit" style="color:${esc(unitColor)};">`;
-      body += `<div class="cl-vs-name">${esc(attacker.label)}</div>`;
-      body += this.buildUnitStats(attacker);
-      body += `</div>`;
-    }
-    if (enemy) {
-      const enemyColor = factionColor(this.world, enemy.ownerId);
-      body += `<div class="cl-vs-divider">— VS —</div>`;
-      body += `<div class="cl-vs-unit" style="color:${esc(enemyColor)};">`;
-      body += `<div class="cl-vs-name">${esc(enemy.label)}</div>`;
-      body += this.buildUnitStats(enemy);
+    // Combat prediction steps only — enemy name/stats live in the Enemy Info section
+    for (const step of c.steps) {
+      const col = toneColor(step.tone);
+      body += `<div class="cl-step" style="padding:1px 0;border:none;">`;
+      body += `<span class="cl-step-title">${esc(step.title)}</span> `;
+      body += `<span style="color:${col};">${esc(step.result)}</span>`;
       body += `</div>`;
     }
 
-    // Combat prediction breakdown
-    if (!c.wasValid) {
-      body += `<div class="cl-step"><span style="color:#f66;">✗ ${esc(c.reasonInvalid ?? 'Invalid')}</span></div>`;
-    } else {
-      body += `<div class="cl-vs-divider" style="color:#666;">— Prediction —</div>`;
-      for (const step of c.steps) {
-        const col = toneColor(step.tone);
-        body += `<div class="cl-step" style="padding:1px 0;border:none;">`;
-        body += `<span class="cl-step-title">${esc(step.title)}</span> `;
-        body += `<span style="color:${col};">${esc(step.result)}</span>`;
-        body += `</div>`;
-      }
+    if (c.wasValid) {
       if (c.targetDestroyed) {
         body += `<div class="cl-step" style="color:#f44;padding:1px 0;">☠ Target destroyed</div>`;
       }
@@ -461,7 +429,7 @@ export class CombatPanel {
     }
 
     body += `</div>`;
-    return toolbar + body;
+    return body;
   }
 
   private buildEntryHtml(c: ExplainedCombat): string {
@@ -548,8 +516,8 @@ export class CombatPanel {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function minimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; f?: boolean } {
-  return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, f: t.f || undefined };
+function minimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; f?: boolean; pos: [number, number, number] } {
+  return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, f: t.f || undefined, pos: t.pos };
 }
 
 
