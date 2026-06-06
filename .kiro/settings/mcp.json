@@ -1,5 +1,14 @@
 {
   "mcpServers": {
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ],
+      "disabled": true,
+      "autoApprove": []
+    },
     "chrome-devtools": {
       "command": "npx",
       "args": [

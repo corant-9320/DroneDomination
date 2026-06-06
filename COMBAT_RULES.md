@@ -476,8 +476,20 @@ EW defence is contributed by friendly units stacked in the **same hex** as the t
 ### Calculation
 
 ```
-EW = min(5, sum of defence attributes of all same-hex friendly units including target)
+EW_raw = min(5, sum of defence attributes of all same-hex friendly units including target)
+EW = EW_raw × ewMultiplier
 ```
+
+### EW Effectiveness by Weapon Mode
+
+EW represents electronic countermeasures that are better at disrupting electronic targeting systems than raw kinetic fire. Its effectiveness depends on the incoming weapon mode:
+
+| Weapon Mode | EW Multiplier | Rationale |
+|-------------|---------------|-----------|
+| Direct Fire (kinetic) | ×0.50 | Bullets and shells bypass most ECM |
+| Splash Fire | ×0.75 | Area weapons are partially jammed |
+| Anti-Air Fire | ×1.00 | AA targeting is fully countered by EW |
+| Anti-Air Reaction Fire | ×1.00 | Same as Anti-Air Fire |
 
 ### Rules
 
@@ -485,7 +497,7 @@ EW = min(5, sum of defence attributes of all same-hex friendly units including t
 - The target's own `defence` attribute **counts** toward its own EW.
 - Destroyed units (`currentHealth ≤ 0`) do not contribute.
 - Enemy units do not contribute.
-- Capped at 5.
+- Raw EW capped at 5 before multiplier is applied.
 
 ---
 

@@ -43,6 +43,8 @@ inclusion: always
 | `src/world/types.ts` | `client/worldData.ts` mirrors compact format |
 | `src/world/compact.ts` | Wire format affects `client/worldData.ts` interfaces |
 | `src/world/units.ts` | `client/unitIcons.ts` renders from unit attributes |
+| `src/world/combatFacing.ts` | `client/localMapUnits.ts` (getCorrectedFacing) must agree on facing semantics |
+| `client/unitRenderer.ts` | `client/localMapUnits.ts` sprite selection assumes 6 fixed directions |
 | `client/colors.ts` | Single source for terrain + faction palettes |
 | `server/generate.ts` | Uses `spawnInitialUnits` + `toCompactWorld` from `src/world/` |
 

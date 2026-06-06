@@ -36,6 +36,7 @@ export interface AiTurnCallbacks {
     factionColor: string,
     damage: number,
     targetDestroyed: boolean,
+    splashVictims?: Array<{ unitId: string; damage: number; destroyed: boolean }>,
   ): Promise<void>;
 }
 
@@ -186,17 +187,23 @@ export async function executeAiTurn(
       const updated = await combatPanel.resolveAttack(unit.id, nearestEnemy.id);
       if (updated) {
         // Calculate damage and destruction before syncing state
-        const newTarget = updated.find((u) => u.id === nearestEnemy.id);
+        const { units, combat } = updated;
+        const newTarget = units.find((u) => u.id === nearestEnemy.id);
         const damage = newTarget
           ? targetHealthBefore - newTarget.currentHealth
           : targetHealthBefore;
         const targetDestroyed = newTarget ? newTarget.currentHealth <= 0 : true;
         const color = factionColor(world, unit.ownerId);
 
-        // Play attack animation (missile → explosion → smoke)
-        await callbacks.playAttackAnimation(unit.id, nearestEnemy.id, color, damage, targetDestroyed);
+        // Build splash victim list from the ExplainedCombat splash array
+        const splashVictims = combat.splash
+          .filter((s) => s.victimId !== nearestEnemy.id)
+          .map((s) => ({ unitId: s.victimId, damage: s.damage, destroyed: s.victimDestroyed }));
 
-        world.units = updated;
+        // Play attack animation (missile → explosions → smoke)
+        await callbacks.playAttackAnimation(unit.id, nearestEnemy.id, color, damage, targetDestroyed, splashVictims);
+
+        world.units = units;
       }
       callbacks.clearHighlight();
       callbacks.renderMap();
@@ -257,14 +264,19 @@ export async function executeAiTurn(
               const targetHpBefore = target.currentHealth;
               const updated2 = await combatPanel.resolveAttack(unit.id, target.id);
               if (updated2) {
-                const newTgt = updated2.find((u) => u.id === target.id);
+                const { units: units2, combat: combat2 } = updated2;
+                const newTgt = units2.find((u) => u.id === target.id);
                 const dmg = newTgt ? targetHpBefore - newTgt.currentHealth : targetHpBefore;
                 const destroyed = newTgt ? newTgt.currentHealth <= 0 : true;
                 const clr = factionColor(world, unit.ownerId);
 
-                await callbacks.playAttackAnimation(unit.id, target.id, clr, dmg, destroyed);
+                const splashVictims2 = combat2.splash
+                  .filter((s) => s.victimId !== target.id)
+                  .map((s) => ({ unitId: s.victimId, damage: s.damage, destroyed: s.victimDestroyed }));
 
-                world.units = updated2;
+                await callbacks.playAttackAnimation(unit.id, target.id, clr, dmg, destroyed, splashVictims2);
+
+                world.units = units2;
               }
               callbacks.clearHighlight();
               callbacks.renderMap();

@@ -3,7 +3,7 @@
  * Each save is keyed by a timestamp-based name.
  */
 
-import { getWorld, applyNewWorld, WorldData } from './worldData.js';
+import { getCompactSave, applyNewWorld } from './worldData.js';
 import { dbg } from './debug.js';
 
 const SAVE_PREFIX = 'drone-domination-save-';
@@ -26,27 +26,32 @@ interface BundledSave {
 
 const BUNDLED_SAVES: BundledSave[] = [
   {
-    filename: 'battle-30v30.json',
-    label: 'Battle (36v36)',
-    description: '36 player vs 36 enemy — 10 chassis types, EW & Repair specialists, 4×2 formation',
+    filename: 'battle-20v20.json',
+    label: 'Battle (20v20)',
+    description: '20 player vs 20 enemy — randomized 27-point units, 5 hexes wide formation',
+  },
+  {
+    filename: 'orientation-scenario.json',
+    label: 'Orientation Test',
+    description: '1 player vs 30 enemies — 6 hexes at range 3, all enemies facing away from centre',
   },
 ];
 
-/** Save the current world to localStorage with a timestamp key. */
+/** Save the current world to localStorage in compact format (no tiles). */
 export function saveGame(): void {
-  const world = getWorld();
-  if (!world) {
+  const compact = getCompactSave();
+  if (!compact) {
     dbg.world.warn('saveGame: no world loaded');
     return;
   }
 
   const now = Date.now();
   const key = SAVE_PREFIX + now;
-  const payload = JSON.stringify(world);
+  const payload = JSON.stringify(compact);
 
   try {
     localStorage.setItem(key, payload);
-    dbg.world.log('Game saved:', key, `(${(payload.length / 1024).toFixed(1)} KB)`);
+    dbg.world.log('Game saved (compact):', key, `(${(payload.length / 1024).toFixed(1)} KB)`);
     showToast('Game saved');
   } catch (e) {
     dbg.world.error('Failed to save game:', e);
@@ -68,7 +73,7 @@ function listSaves(): SaveEntry[] {
     try {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
-      const data: WorldData = JSON.parse(raw);
+      const data = JSON.parse(raw);
       entries.push({
         key,
         timestamp,

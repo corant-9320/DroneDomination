@@ -8,10 +8,9 @@
 
 import { generateWorld } from '../src/world/generate.js';
 import { validateWorld } from '../src/world/validate.js';
-import { World, City, Tile } from '../src/world/types.js';
+import { World, City } from '../src/world/types.js';
 import { graphDistance } from '../src/world/pathfinding.js';
 import { spawnInitialUnits } from '../src/world/spawn.js';
-import { toCompactWorld } from '../src/world/compact.js';
 import { CITY_COUNT } from '../src/world/cities.js';
 
 export interface GenerateConfig {
@@ -96,11 +95,24 @@ export function handleGenerate(config: GenerateConfig): GenerateResult {
   const units = spawnInitialUnits(world.tiles, filteredCities);
   console.log('[DD][api] Spawned %d units for %d cities', units.length, filteredCities.length);
 
-  // Build compact format using the canonical helper (keeps server in sync with CLI)
-  const compactBase = toCompactWorld(world.seed, world.tiles, world.pentagonIndices, filteredCities, units);
+  // Build compact save format (no tiles — client regenerates from seed)
+  const compactUnits = units.map((u) => ({
+    id: u.id,
+    label: u.label,
+    ownerId: u.ownerId,
+    tileIndex: u.tileIndex,
+    segment: u.segment,
+    facing: u.facing,
+    attributes: u.attributes,
+    currentHealth: u.currentHealth,
+  }));
 
-  // Override cities with the role-annotated versions built above
-  const compact = { ...compactBase, cities: compactCities };
+  const compact = {
+    format: 'compact',
+    seed: world.seed,
+    cities: compactCities,
+    units: compactUnits,
+  };
 
   console.log('[DD][api] handleGenerate complete in %dms — cities: %d, units: %d',
     Date.now() - startMs, compactCities.length, units.length);

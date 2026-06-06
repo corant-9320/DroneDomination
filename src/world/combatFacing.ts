@@ -10,6 +10,17 @@
  * The bonus is continuous from 0 (head-on) to +2 (perfect rear shot),
  * linearly interpolated based on the angular difference.
  *
+ * ─── COORDINATE SYSTEM NOTE ──────────────────────────────────────────────────
+ *
+ * Facing index N means the unit points toward tile.neighbours[N].
+ * This file computes bearings on the unit sphere using tangent-plane projection.
+ * The rendering system (client/unitRenderer.ts) uses a SEPARATE fixed mapping
+ * (facing N = screen angle N×60° from north). The local map compensates for
+ * the difference in client/localMapUnits.ts via getCorrectedFacing().
+ *
+ * The combat math here is always correct — it uses actual 3D geometry.
+ * The rendering is approximate (quantized to 6 directions).
+ *
  * Pure functions — no damage calculations, no state mutation.
  */
 

@@ -5,6 +5,20 @@
  *
  * The 3D model is rotated around Y to match the unit's facing direction
  * before rendering, so the 2D sprite is drawn without rotation on the map.
+ *
+ * ─── FACING ASSUMPTION ───────────────────────────────────────────────────────
+ *
+ * This renderer assumes facing index N visually points at screen angle
+ * (N × 60°) from north (up). Facing 0 = north, 1 = 60° clockwise (NE), etc.
+ *
+ * On the local map, the actual screen direction of tile.neighbours[N] varies
+ * by tile position on the sphere. The caller (localMapUnits.ts) compensates
+ * by selecting the sprite whose baked direction best matches the real screen
+ * angle via getCorrectedFacing(). This avoids 2D canvas rotation which breaks
+ * the isometric perspective.
+ *
+ * NEVER apply ctx.rotate() to these sprites on the map. Always select the
+ * nearest pre-rendered facing index instead.
  */
 
 import * as THREE from 'three';
@@ -49,10 +63,18 @@ function ensureRenderer(): void {
 
   scene = new THREE.Scene();
 
-  // 45° isometric camera offset to the side so north/south units show their flank.
-  const frustum = 1.8;
+  // Camera shifted 30° to the left of dead-behind (toward unit's left flank).
+  // Original (2.5, 3.5, 2.5) was 45° azimuth = dead-on rear, no side visible.
+  // New: 75° azimuth from +Z (30° further into +X) reveals the left flank.
+  // XZ radius preserved at 3.54. Rotation compensation unchanged so the unit
+  // still faces "north" on screen but the camera now catches the left side.
+  // Frustum sized to 2.5 to prevent tall add-ons (anti-air launchers, repair
+  // poles) from being clipped by the near/far planes of the orthographic camera.
+  // unitIcons.ts compensates with a proportionally larger spriteSize multiplier
+  // so the on-screen model size stays the same.
+  const frustum = 2.5;
   camera = new THREE.OrthographicCamera(-frustum, frustum, frustum, -frustum, 0.1, 50);
-  camera.position.set(2.5, 3.5, 2.5);
+  camera.position.set(3.42, 3.5, 0.916);
   camera.lookAt(0, 0, 0);
 
   // Lighting — bright enough that models read clearly even at small sprite sizes
@@ -78,10 +100,16 @@ const spriteCache = new Map<string, (ImageBitmap | null)[]>();
 const pendingRenders = new Set<string>();
 
 /**
+ * Bump this whenever camera position or sprite rendering changes so that
+ * HMR / cached-module scenarios automatically invalidate old sprites.
+ */
+const SPRITE_VERSION = 'cam75deg-v3';
+
+/**
  * Generate a cache key from unit attributes (facing-independent).
  */
 function attrKey(attrs: UnitModelAttrs, factionColor?: string): string {
-  return `${attrs.chassis}:${attrs.movement}:${attrs.kinetic}:${attrs.rangeAttack}:${attrs.splashAttack}:${attrs.antiAir}:${attrs.armour}:${attrs.defence}:${attrs.repair}:${factionColor ?? ''}`;
+  return `${SPRITE_VERSION}:${attrs.chassis}:${attrs.movement}:${attrs.kinetic}:${attrs.rangeAttack}:${attrs.splashAttack}:${attrs.antiAir}:${attrs.armour}:${attrs.defence}:${attrs.repair}:${factionColor ?? ''}`;
 }
 
 /**
@@ -120,9 +148,20 @@ export function unitDataToModelAttrs(unit: UnitData): UnitModelAttrs {
  * @param factionHex  Faction color (#RRGGBB) to tint bolt-on parts.
  */
 export function getUnitSprite(unit: UnitData, factionHex?: string): ImageBitmap | null {
+  return getUnitSpriteAtFacing(unit, factionHex, unit.facing);
+}
+
+/**
+ * Get a cached sprite for a unit at a specific facing index.
+ * This allows the caller to override the facing (e.g. to correct for
+ * tile geometry on the local map projection).
+ *
+ * @param factionHex  Faction color (#RRGGBB) to tint bolt-on parts.
+ * @param facing      Facing index (0–5) to retrieve.
+ */
+export function getUnitSpriteAtFacing(unit: UnitData, factionHex: string | undefined, facing: number): ImageBitmap | null {
   const attrs = unitDataToModelAttrs(unit);
   const key = attrKey(attrs, factionHex);
-  const facing = unit.facing;
 
   const cached = spriteCache.get(key);
   if (cached && cached[facing]) return cached[facing];

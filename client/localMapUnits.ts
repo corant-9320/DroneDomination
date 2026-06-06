@@ -3,11 +3,25 @@
  *
  * Extracted from LocalMapView (P1 refactor).
  * All functions are stateless; they take all required data as parameters.
+ *
+ * ─── FACING CORRECTION ───────────────────────────────────────────────────────
+ *
+ * Unit facing is stored as an index (0–5) into the tile's neighbour array.
+ * The 3D sprite renderer pre-renders 6 sprites assuming facing N is at
+ * screen angle (N × 60°) from north. But on a Goldberg sphere, a tile's
+ * neighbour[N] can be at ANY screen angle depending on where the tile sits.
+ *
+ * To fix this, getCorrectedFacing() computes the actual screen direction of
+ * the unit's faced hex edge, then picks the pre-rendered sprite whose baked-in
+ * direction best matches it. This avoids 2D canvas rotation which would break
+ * the isometric 3D perspective.
+ *
+ * See also: .kiro/steering/ui-defaults.md § "Unit Facing & Rendering"
  */
 
-import { WorldData, UnitData } from './worldData.js';
+import { WorldData, UnitData, TileData } from './worldData.js';
 import { factionColor } from './colors.js';
-import { drawUnitIcon, segmentAngle } from './unitIcons.js';
+import { drawUnitIcon } from './unitIcons.js';
 import { FlatTile } from './localMapProjection.js';
 import { getMaxMovement as sharedGetMaxMovement } from '../shared/movementConstants.js';
 
@@ -80,11 +94,59 @@ function pointToEdgeDist(
   return Math.abs((px - x1) * dy - (py - y1) * dx) / len;
 }
 
+// ─── Facing correction ────────────────────────────────────────────────────────
+
+/**
+ * Compute the corrected facing index for rendering.
+ *
+ * The 3D sprite renderer pre-renders 6 sprites assuming facing N points at
+ * screen angle (N * 60°) from north. But on the actual local-map projection,
+ * tile.neighbours[N] may be at a different screen angle on the tangent plane.
+ *
+ * Rather than applying a 2D canvas rotation (which breaks the isometric
+ * perspective), we pick the pre-rendered sprite whose baked-in direction
+ * best matches the actual screen direction of the unit's faced neighbour.
+ *
+ * @returns The corrected facing index (0–5) to use when fetching the sprite.
+ */
+function getCorrectedFacing(
+  tile: TileData,
+  facing: number,
+  ft: FlatTile,
+  wts: (wx: number, wy: number) => [number, number],
+): number {
+  // Screen position of the tile's centre
+  const [cx, cy] = wts(ft.cx, ft.cy);
+
+  // Direction toward the faced edge: midpoint of boundary edge facing→(facing+1)
+  if (ft.poly.length < 6) return facing;
+  const v0 = ft.poly[facing % 6];
+  const v1 = ft.poly[(facing + 1) % 6];
+  const edgeMidX = (v0.x + v1.x) / 2;
+  const edgeMidY = (v0.y + v1.y) / 2;
+  const [ex, ey] = wts(edgeMidX, edgeMidY);
+
+  // Actual screen angle from tile centre to faced edge midpoint
+  // atan2(dx, -dy) gives angle from screen-north (up), clockwise positive
+  const actualAngle = Math.atan2(ex - cx, -(ey - cy));
+
+  // Find the closest pre-rendered facing (quantize to nearest 60°)
+  // Pre-rendered facing i is at angle i * 60° = i * π/3
+  const normalised = ((actualAngle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  const index = Math.round(normalised / (Math.PI / 3)) % 6;
+  return index;
+}
+
 // ─── Unit drawing ─────────────────────────────────────────────────────────────
 
 /**
  * Draw unit markers in their segment triangles using composite icons.
  * Each unit faces its own `facing` direction (0–5 segment angle).
+ *
+ * The sprite for each facing is pre-rendered assuming a fixed screen mapping
+ * (facing 0 = up). To account for the actual tile geometry on the sphere,
+ * we compute the correction angle from the tile's neighbour positions and
+ * apply it as a canvas rotation when drawing.
  *
  * @param ctx            Canvas 2D context
  * @param world          Current world data
@@ -125,12 +187,14 @@ export function drawUnits(
     const size  = getSegmentIconSize(ft, unit.segment, wts);
     const color = factionColor(world, unit.ownerId);
 
-    const facingAngle = segmentAngle(unit.facing);
+    // Compute the correction angle between the renderer's assumed facing
+    // direction and the actual screen-space direction toward the faced neighbour.
+    const correctedFacing = getCorrectedFacing(tile, unit.facing, ft, wts);
 
     const currentMP = movementPoints.get(unit.id) ?? 0;
     const maxMP     = sharedGetMaxMovement(unit.attributes);
 
-    drawUnitIcon(ctx, unit, sx, sy, size, color, facingAngle, currentMP, maxMP);
+    drawUnitIcon(ctx, unit, sx, sy, size, color, correctedFacing, currentMP, maxMP);
 
     // Selection ring for selected units
     if (selectedUnits.has(unit.id)) {

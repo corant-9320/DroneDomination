@@ -194,25 +194,50 @@ export function getTerrainDefense(tile: Tile): number {
 // ---------------------------------------------------------------------------
 
 /**
+ * EW effectiveness multipliers by weapon mode.
+ *
+ * Electronic Warfare is less effective against physical projectiles (kinetic)
+ * and somewhat effective against area fire (splash), but fully effective
+ * against dedicated electronic targeting systems (antiAir / reaction).
+ *
+ * - direct (kinetic):  50% — bullets/shells bypass most ECM
+ * - splash:            75% — area weapons are partially jammed
+ * - antiAir / reaction: 100% — AA targeting is fully countered by EW
+ */
+export const EW_EFFECTIVENESS_DIRECT = 0.50;
+export const EW_EFFECTIVENESS_SPLASH = 0.75;
+export const EW_EFFECTIVENESS_ANTIAIR = 1.00;
+
+/**
  * Calculate the full DefencePower for a target unit.
- * DefencePower = armour + EW + defensiveFormation + terrain
+ * DefencePower = armour + (EW × ewMultiplier) + defensiveFormation + terrain
  *
  * Each component is clamped to its valid range before summing.
+ *
+ * @param weaponMode - The attacking weapon mode, which determines EW effectiveness.
+ *   'direct'  → EW at 50%
+ *   'splash'  → EW at 75%
+ *   'antiAir' → EW at 100% (default when omitted)
  */
 export function getDefencePower(
   target: Unit,
   allUnits: Unit[],
   tiles: Tile[],
-): { armour: number; ew: number; defensiveFormation: number; terrain: number; total: number } {
+  weaponMode: 'direct' | 'splash' | 'antiAir' = 'antiAir',
+): { armour: number; ew: number; ewRaw: number; ewMultiplier: number; defensiveFormation: number; terrain: number; total: number } {
   const armour = clamp(target.attributes.armour ?? 0, 0, 5);
-  const ew = clamp(getEWDefense(target, allUnits), 0, 5);
+  const ewRaw = clamp(getEWDefense(target, allUnits), 0, 5);
+  const ewMultiplier = weaponMode === 'direct' ? EW_EFFECTIVENESS_DIRECT
+    : weaponMode === 'splash' ? EW_EFFECTIVENESS_SPLASH
+    : EW_EFFECTIVENESS_ANTIAIR;
+  const ew = ewRaw * ewMultiplier;
   // Formation count capped at 2, but each supporter contributes 0.5 to DefencePower
   const formationCount = clamp(getAdjacentFriendlySupport(target, allUnits, tiles), 0, 2);
   const defensiveFormation = formationCount * 0.5;
   const terrain = clamp(getTerrainDefense(tiles[target.tileIndex]), 0, 4);
   const total = armour + ew + defensiveFormation + terrain;
 
-  return { armour, ew, defensiveFormation, terrain, total };
+  return { armour, ew, ewRaw, ewMultiplier, defensiveFormation, terrain, total };
 }
 
 // ---------------------------------------------------------------------------
@@ -243,7 +268,8 @@ export function calculateDirectDamage(
   const angleDiff = getAngularDifference(tiles, attacker.tileIndex, target.tileIndex, target.facing);
   const arc: AttackArc = isNaN(angleDiff) ? 'unknown' : classifyArcFromAngle(angleDiff);
 
-  const defencePower = getDefencePower(target, allUnits, tiles);
+  // EW is 50% effective against kinetic (direct) fire
+  const defencePower = getDefencePower(target, allUnits, tiles, 'direct');
   const baseAttack = clamp(attacker.attributes.kinetic ?? 0, 1, 5);
   const attackPower = calculateModifiedAttackPower(attacker, baseAttack, orientationBonus, distance);
   const effectiveDefence = defencePower.total * DEFENCE_SCALE;
@@ -288,7 +314,8 @@ export function calculateSplashDamage(
 
   const baseSplash = clamp(splashPower, 1, 5);
   const splashAttackPower = calculateModifiedAttackPower(attacker, baseSplash, orientationBonus, distance);
-  const defPower = getDefencePower(victim, allUnits, tiles);
+  // EW is 75% effective against splash fire
+  const defPower = getDefencePower(victim, allUnits, tiles, 'splash');
   const effectiveDefence = defPower.total * DEFENCE_SCALE;
 
   const fullFormulaDamage = calculateFormulaDamage(splashAttackPower, effectiveDefence);
@@ -367,6 +394,79 @@ export interface WeaponOption {
 }
 
 // ---------------------------------------------------------------------------
+// Weapon evaluation — shared single source of truth
+// ---------------------------------------------------------------------------
+
+/**
+ * Evaluate all valid weapon modes for an attacker targeting a specific unit.
+ *
+ * This is a pure read-only function — it does NOT mutate any state.
+ * Used by both `resolveAttack` (to pick the best mode) and the combat
+ * explainer (to show the player all options and their damage).
+ *
+ * Returns an empty array if no weapon modes are applicable (e.g. no weapons,
+ * target is ground and attacker only has antiAir).
+ */
+export function evaluateWeaponOptions(
+  attacker: Unit,
+  target: Unit,
+  allUnits: Unit[],
+  tiles: Tile[],
+  dist: number,
+  orientationBonus: number,
+): WeaponOption[] {
+  const options: WeaponOption[] = [];
+
+  // --- Direct Fire ---
+  if ((attacker.attributes.kinetic ?? 0) > 0) {
+    const { damage } = calculateDirectDamage(attacker, target, allUnits, tiles, dist);
+    options.push({
+      mode: 'direct',
+      score: damage,
+      damages: [{ unitId: target.id, damage }],
+    });
+  }
+
+  // --- Splash Fire ---
+  if ((attacker.attributes.splashAttack ?? 0) > 0) {
+    const affectedEnemies = allUnits.filter((u) => {
+      if (u.ownerId === attacker.ownerId) return false;
+      if (u.currentHealth <= 0) return false;
+      return u.tileIndex === target.tileIndex;
+    });
+
+    const splashDamages: Array<{ unitId: string; damage: number }> = [];
+    for (const victim of affectedEnemies) {
+      const dmg = calculateSplashDamage(attacker, target, victim, allUnits, tiles, dist);
+      splashDamages.push({ unitId: victim.id, damage: dmg });
+    }
+
+    const splashScore = splashDamages.reduce((sum, d) => sum + d.damage, 0);
+    options.push({
+      mode: 'splash',
+      score: splashScore,
+      damages: splashDamages,
+    });
+  }
+
+  // --- Anti-Air Fire ---
+  if ((attacker.attributes.antiAir ?? 0) > 0 && isDrone(target)) {
+    const aaLevel = clamp(attacker.attributes.antiAir!, 1, 5);
+    const aaAttackPower = calculateModifiedAttackPower(attacker, aaLevel, orientationBonus, dist);
+    const defencePower = getDefencePower(target, allUnits, tiles, 'antiAir');
+    const effectiveDefence = defencePower.total * DEFENCE_SCALE;
+    const antiAirDamage = calculateFormulaDamage(aaAttackPower, effectiveDefence);
+    options.push({
+      mode: 'antiAir',
+      score: antiAirDamage,
+      damages: [{ unitId: target.id, damage: antiAirDamage }],
+    });
+  }
+
+  return options;
+}
+
+// ---------------------------------------------------------------------------
 // Attack resolution
 // ---------------------------------------------------------------------------
 
@@ -414,56 +514,11 @@ export function resolveAttack(
   const orientationBonus = calculateOrientationBonus(tiles, attacker.tileIndex, target.tileIndex, target.facing);
   const angleDiff = getAngularDifference(tiles, attacker.tileIndex, target.tileIndex, target.facing);
   const arc: AttackArc = isNaN(angleDiff) ? 'unknown' : classifyArcFromAngle(angleDiff);
-  const defencePower = getDefencePower(target, allUnits, tiles);
+  // Anti-air uses full EW (100% effectiveness); direct/splash use mode-specific values via their own calls
+  const defencePower = getDefencePower(target, allUnits, tiles, 'antiAir');
 
-  // Build valid weapon options
-  const validOptions: WeaponOption[] = [];
-
-  // --- Direct Fire ---
-  if ((attacker.attributes.kinetic ?? 0) > 0) {
-    const { damage } = calculateDirectDamage(attacker, target, allUnits, tiles, dist);
-    validOptions.push({
-      mode: 'direct',
-      score: damage,
-      damages: [{ unitId: target.id, damage }],
-    });
-  }
-
-  // --- Splash Fire ---
-  if ((attacker.attributes.splashAttack ?? 0) > 0) {
-    const affectedEnemies = allUnits.filter((u) => {
-      if (u.ownerId === attacker.ownerId) return false;
-      if (u.currentHealth <= 0) return false;
-      return u.tileIndex === target.tileIndex;
-    });
-
-    const splashDamages: Array<{ unitId: string; damage: number }> = [];
-    for (const victim of affectedEnemies) {
-      const dmg = calculateSplashDamage(attacker, target, victim, allUnits, tiles, dist);
-      splashDamages.push({ unitId: victim.id, damage: dmg });
-    }
-
-    const splashScore = splashDamages.reduce((sum, d) => sum + d.damage, 0);
-    validOptions.push({
-      mode: 'splash',
-      score: splashScore,
-      damages: splashDamages,
-    });
-  }
-
-  // --- Anti-Air Fire ---
-  if ((attacker.attributes.antiAir ?? 0) > 0 && isDrone(target)) {
-    const aaLevel = clamp(attacker.attributes.antiAir!, 1, 5);
-    const aaAttackPower = calculateModifiedAttackPower(attacker, aaLevel, orientationBonus, dist);
-    const effectiveDefence = defencePower.total * DEFENCE_SCALE;
-    const antiAirDamage = calculateFormulaDamage(aaAttackPower, effectiveDefence);
-    // applyDroneIncomingDamageModifier('antiAir') returns damage unchanged (multiplier = 1.0)
-    validOptions.push({
-      mode: 'antiAir',
-      score: antiAirDamage,
-      damages: [{ unitId: target.id, damage: antiAirDamage }],
-    });
-  }
+  // Evaluate all valid weapon options (shared with explainer)
+  const validOptions = evaluateWeaponOptions(attacker, target, allUnits, tiles, dist, orientationBonus);
 
   if (validOptions.length === 0) {
     return invalidResult(attackerId, targetId, 'No valid weapon modes available');
@@ -524,7 +579,7 @@ export function resolveAttack(
  * 4. Direct preferred
  * 5. Highest damage to the originally selected target
  */
-function chooseWeaponOption(options: WeaponOption[], target: Unit): WeaponOption {
+export function chooseWeaponOption(options: WeaponOption[], target: Unit): WeaponOption {
   const targetIsDrone = isDrone(target);
 
   return options.reduce((best, current) => {
@@ -576,7 +631,8 @@ export function calculateAntiAirReactionDamage(
   const chassisModifier = getChassisAttackModifier(reactingUnit);
   // No orientation bonus for reaction fire (snap shot)
   const attackPower = Math.max(0.01, aaLevel * chassisModifier);
-  const defPower = getDefencePower(drone, allUnits, tiles);
+  // Anti-air / reaction fire uses full EW effectiveness (100%)
+  const defPower = getDefencePower(drone, allUnits, tiles, 'antiAir');
   // Terrain is 0 for airborne drones
   const airborneDefence = (defPower.armour + defPower.ew + defPower.defensiveFormation) * DEFENCE_SCALE;
   return calculateFormulaDamage(attackPower, airborneDefence);

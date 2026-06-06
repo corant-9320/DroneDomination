@@ -1,9 +1,13 @@
 /**
  * Combat Log Panel — positioned in the right curtain of the tactical (local) map.
  *
- * Shows one combat entry at a time with ◀/▶ navigation through history.
- * When the player hovers over an enemy while a unit is selected, shows
- * an attack preview instead.
+ * Renders a scrollable history list.  Each entry is a summary row with an
+ * expand toggle that reveals the full step-by-step breakdown.
+ *
+ * History entry kinds:
+ *   'combat'   — player-initiated attack
+ *   'reaction' — reaction fire triggered by a move
+ *   'repair'   — repair action
  */
 
 import { WorldData, UnitData, TileData } from './worldData.js';
@@ -21,15 +25,26 @@ import type {
 type CombatResponse = CombatResponseBase<UnitData>;
 
 // ---------------------------------------------------------------------------
+// History entry union
+// ---------------------------------------------------------------------------
+
+type HistoryEntry =
+  | { kind: 'combat';   turn: number; data: ExplainedCombat }
+  | { kind: 'reaction'; turn: number; data: ExplainedCombat }
+  | { kind: 'repair';   turn: number; data: ExplainedRepair };
+
+// ---------------------------------------------------------------------------
 // Panel
 // ---------------------------------------------------------------------------
 
 export class CombatPanel {
   private el: HTMLElement;
   private world: WorldData;
-  private history: ExplainedCombat[] = [];
-  private viewIndex: number = 0; // which entry is currently displayed (0 = most recent)
+  private history: HistoryEntry[] = [];
+  private viewIndex: number = 0; // kept for API compatibility, not used for rendering
   private readonly MAX_HISTORY = 50;
+  /** Set of history indices whose detail section is currently expanded. */
+  private expandedIndices: Set<number> = new Set();
   /** The faction currently allowed to act. */
   private activeFaction: string = '';
   /** Current attack preview (shown when hovering an enemy). */
@@ -40,6 +55,16 @@ export class CombatPanel {
   private hoveredEnemy: UnitData | null = null;
   /** Optional callback fired when a server preview arrives. */
   private onPreviewReady: ((preview: ExplainedCombat | null) => void) | null = null;
+  /** Incremented on each attack to invalidate in-flight preview fetches. */
+  private previewGeneration: number = 0;
+  /** Current turn number — stamped onto each history entry when it is pushed. */
+  private currentTurn: number = 1;
+  /**
+   * Returns true when the History tab is the currently visible tab.
+   * When true, render() always shows the history list — targeting state is
+   * shown elsewhere (Main tab) and must never clobber the history list.
+   */
+  private isHistoryTabActive: () => boolean = () => false;
 
   constructor(el: HTMLElement, world: WorldData) {
     this.el = el;
@@ -55,6 +80,28 @@ export class CombatPanel {
   /** Get the active faction. */
   getActiveFaction(): string {
     return this.activeFaction;
+  }
+
+  /** Update the current turn number so new entries are stamped correctly. */
+  setTurnNumber(n: number): void {
+    this.currentTurn = n;
+  }
+
+  /**
+   * Register a callback that the panel calls to check whether the History
+   * tab is currently visible.  When it returns true, render() always shows
+   * the history list and ignores targeting/preview state.
+   */
+  setIsHistoryTabActive(fn: () => boolean): void {
+    this.isHistoryTabActive = fn;
+  }
+
+  /**
+   * Called by main.ts when the active tab changes so the panel can
+   * immediately switch between targeting view and history list.
+   */
+  renderForTab(): void {
+    this.render();
   }
 
   /**
@@ -105,6 +152,7 @@ export class CombatPanel {
   }
 
   private async fetchPreview(attackerId: string, targetId: string): Promise<void> {
+    const generation = this.previewGeneration;
     const payload = {
       action: 'preview',
       attackerId,
@@ -122,6 +170,9 @@ export class CombatPanel {
       });
       const data: CombatResponse = await resp.json();
 
+      // Discard stale response if an attack was initiated while this was in-flight
+      if (generation !== this.previewGeneration) return;
+
       if (!data.success || data.combats.length === 0) {
         this.preview = null;
         this.render();
@@ -134,6 +185,7 @@ export class CombatPanel {
       this.onPreviewReady?.(this.preview);
     } catch {
       // Silently fail — preview is non-critical
+      if (generation !== this.previewGeneration) return;
       this.preview = null;
       this.render();
     }
@@ -141,10 +193,13 @@ export class CombatPanel {
 
   /**
    * Request combat resolution from the server and display the breakdown.
-   * Returns the updated units array so the caller can sync local state.
+   * Returns the updated units and the explained combat result (for animation).
    */
-  async resolveAttack(attackerId: string, targetId: string): Promise<UnitData[] | null> {
+  async resolveAttack(attackerId: string, targetId: string): Promise<{ units: UnitData[]; combat: ExplainedCombat } | null> {
     dbg.detail.log('CombatPanel.resolveAttack:', attackerId, '→', targetId);
+
+    // Invalidate any in-flight preview fetches
+    this.previewGeneration++;
 
     const payload = {
       action: 'attack',
@@ -170,20 +225,29 @@ export class CombatPanel {
 
       // Add to history (most recent first)
       for (const c of data.combats) {
-        this.history.unshift(c);
+        this.history.unshift({ kind: 'combat', turn: this.currentTurn, data: c });
       }
       for (const r of data.reactions) {
-        this.history.unshift(r);
+        this.history.unshift({ kind: 'reaction', turn: this.currentTurn, data: r });
       }
       while (this.history.length > this.MAX_HISTORY) {
         this.history.pop();
       }
 
-      // Reset view to show latest
-      this.viewIndex = 0;
+      // Shift existing expanded indices down by the number of new entries added.
+      const newCount = data.combats.length + data.reactions.length;
+      const shifted = new Set<number>();
+      for (const idx of this.expandedIndices) {
+        shifted.add(idx + newCount);
+      }
+      this.expandedIndices = shifted;
+
+      // Clear preview/targeting state
       this.preview = null;
+      this.selectedUnit = null;
+      this.hoveredEnemy = null;
       this.render();
-      return data.updatedUnits;
+      return { units: data.updatedUnits, combat: data.combats[0] };
     } catch (err) {
       dbg.detail.error('CombatPanel fetch error:', err);
       this.renderError(`Network error: ${err}`);
@@ -221,14 +285,19 @@ export class CombatPanel {
 
       // Only add reaction events to history
       for (const r of data.reactions) {
-        this.history.unshift(r);
+        this.history.unshift({ kind: 'reaction', turn: this.currentTurn, data: r });
       }
       while (this.history.length > this.MAX_HISTORY) {
         this.history.pop();
       }
 
       if (data.reactions.length > 0) {
-        this.viewIndex = 0;
+        const newCount = data.reactions.length;
+        const shifted = new Set<number>();
+        for (const idx of this.expandedIndices) {
+          shifted.add(idx + newCount);
+        }
+        this.expandedIndices = shifted;
         this.render();
       }
 
@@ -244,6 +313,7 @@ export class CombatPanel {
   clear(): void {
     this.history = [];
     this.viewIndex = 0;
+    this.expandedIndices.clear();
     this.preview = null;
     this.selectedUnit = null;
     this.hoveredEnemy = null;
@@ -279,9 +349,15 @@ export class CombatPanel {
         return null;
       }
 
-      // Show repair result in the panel
+      // Push repair event into the history list
       if (data.repair) {
-        this.renderRepairResult(data.repair);
+        this.history.unshift({ kind: 'repair', turn: this.currentTurn, data: data.repair });
+        while (this.history.length > this.MAX_HISTORY) this.history.pop();
+
+        const shifted = new Set<number>();
+        for (const idx of this.expandedIndices) shifted.add(idx + 1);
+        this.expandedIndices = shifted;
+        this.render();
       }
 
       return data.updatedUnits;
@@ -292,46 +368,29 @@ export class CombatPanel {
     }
   }
 
-  /** Render repair result inline. */
-  private renderRepairResult(repair: ExplainedRepair): void {
-    let html = `<div class="cl-toolbar"><span class="cl-header" style="color:#4f8;">🔧 Repair</span></div>`;
-    html += `<div class="cl-body">`;
-
-    if (!repair.wasValid) {
-      html += `<div class="cl-step"><span style="color:#f66;">✗ ${esc(repair.reasonInvalid ?? 'Invalid')}</span></div>`;
-    } else {
-      html += `<div class="cl-step" style="color:#8f8;padding:2px 0;">`;
-      html += `<span class="cl-step-title">${esc(repair.repairerLabel)}</span>`;
-      html += ` → <span style="color:#4cf;">${esc(repair.targetLabel)}</span>`;
-      html += `</div>`;
-      for (const step of repair.steps) {
-        const col = toneColor(step.tone);
-        html += `<div class="cl-step" style="padding:1px 0;border:none;">`;
-        html += `<span class="cl-step-title">${esc(step.title)}</span> `;
-        html += `<span style="color:${col};">${esc(step.result)}</span>`;
-        if (step.formula) {
-          html += `<br><span class="cl-step-formula">${esc(step.formula)}</span>`;
-        }
-        html += `</div>`;
-      }
-    }
-
-    html += `</div>`;
-    this.el.innerHTML = html;
-  }
-
   // -------------------------------------------------------------------------
   // Rendering
   // -------------------------------------------------------------------------
 
   private render(): void {
-    // If showing a preview, display that instead of history
+    // History tab is always the history list — targeting/preview state lives
+    // on the Main tab and must never overwrite the history list.
+    if (this.isHistoryTabActive()) {
+      if (this.history.length === 0) {
+        this.el.innerHTML = this.buildEmptyHtml();
+      } else {
+        this.el.innerHTML = this.buildHistoryListHtml();
+        this.bindExpandToggles();
+      }
+      return;
+    }
+
+    // Main tab: show preview or targeting state when active
     if (this.preview) {
       this.el.innerHTML = this.buildPreviewHtml();
       return;
     }
 
-    // If a unit is selected (with or without hovered enemy), show VS panel
     if (this.selectedUnit) {
       this.el.innerHTML = this.buildSelectionHtml();
       return;
@@ -342,14 +401,8 @@ export class CombatPanel {
       return;
     }
 
-    const entry = this.history[this.viewIndex];
-    if (!entry) {
-      this.el.innerHTML = this.buildEmptyHtml();
-      return;
-    }
-
-    this.el.innerHTML = this.buildEntryHtml(entry);
-    this.bindNav();
+    this.el.innerHTML = this.buildHistoryListHtml();
+    this.bindExpandToggles();
   }
 
   private renderError(msg: string): void {
@@ -377,7 +430,8 @@ export class CombatPanel {
       const enemy = this.hoveredEnemy;
       const enemyColor = factionColor(this.world, enemy.ownerId);
       html += `<div class="cl-vs-unit" style="color:${esc(enemyColor)};">`;
-      html += `<div class="cl-vs-name">${esc(enemy.label)}</div>`;
+      const enemyIdSuffix = enemy.id.replace(/^unit_/, '');
+      html += `<div class="cl-vs-name" style="color:${esc(enemyColor)};">#${esc(enemyIdSuffix)} ${esc(enemy.label)}</div>`;
       html += this.buildUnitStats(enemy);
       html += `</div>`;
     } else {
@@ -410,71 +464,196 @@ export class CombatPanel {
 
     let body = `<div class="cl-body" style="overflow:hidden;">`;
 
-    // Net Damage + Health Update as emphasised pair (all info now lives in the Attack table)
-    if (c.wasValid && c.directDamage > 0) {
-      const dmgCol = c.directDamage >= 15 ? '#f66' : c.directDamage >= 5 ? '#fa0' : '#8f8';
-      const hpAfter = c.targetHealthAfter;
-      body += `<div class="cl-preview-result">`;
-      body += `<div class="cl-preview-damage" style="color:${dmgCol};">⚔ ${c.directDamage} damage</div>`;
-      body += `<div class="cl-preview-health">❤ ${hpAfter} HP remaining</div>`;
-      body += `</div>`;
-    }
-
     if (c.wasValid) {
+      // Find target unit to get maxHP
+      const target = this.world.units.find((u) => u.id === c.targetId);
+      const maxHp = target ? (target.attributes.maxHealth ?? 1) * 10 : '?';
+      const hpAfter = c.targetHealthAfter;
+
       if (c.targetDestroyed) {
-        body += `<div class="cl-step" style="color:#f44;padding:2px 0;font-weight:bold;">☠ Target destroyed</div>`;
+        body += `<div class="cl-step" style="color:#f44;padding:2px 0;">☠ ${esc(c.targetLabel)} destroyed (${c.directDamage} dmg)</div>`;
+      } else {
+        body += `<div class="cl-step" style="color:#fa0;padding:2px 0;">`;
+        body += `⚔ ${esc(c.targetLabel)}: <span style="color:#8cf;">${hpAfter}/${maxHp} HP</span>`;
+        body += ` <span style="color:#aaa;">(−${c.directDamage})</span>`;
+        body += `</div>`;
       }
+
       if (c.splash.length > 0) {
         body += `<div class="cl-step" style="color:#fa0;padding:1px 0;">💥 Splash → ${c.splash.length} nearby unit${c.splash.length > 1 ? 's' : ''}</div>`;
+        for (const s of c.splash) {
+          if (s.victimId === c.targetId) continue; // already shown above
+          const v = this.world.units.find((u) => u.id === s.victimId);
+          const vMax = v ? (v.attributes.maxHealth ?? 1) * 10 : '?';
+          if (s.victimDestroyed) {
+            body += `<div class="cl-step" style="color:#f44;padding:1px 0;margin-left:8px;">☠ ${esc(s.victimLabel)}</div>`;
+          } else {
+            body += `<div class="cl-step" style="color:#aaa;padding:1px 0;margin-left:8px;">${esc(s.victimLabel)}: ${s.victimHealthAfter}/${vMax} HP (−${s.damage})</div>`;
+          }
+        }
       }
+    } else {
+      body += `<div class="cl-step" style="color:#f66;padding:2px 0;">✗ ${esc(c.reasonInvalid ?? 'Invalid')}</div>`;
     }
 
     body += `</div>`;
     return body;
   }
 
-  private buildEntryHtml(c: ExplainedCombat): string {
-    const canBack = this.viewIndex < this.history.length - 1;
-    const canFwd = this.viewIndex > 0;
-    const counter = `${this.viewIndex + 1}/${this.history.length}`;
+  /** Build the full scrollable history list, grouped by turn number. */
+  private buildHistoryListHtml(): string {
+    let html = '';
+    let lastTurn = -1;
 
-    let toolbar = `<div class="cl-toolbar">`;
-    toolbar += `<div class="cl-nav">`;
-    toolbar += `<button class="cl-back" title="Previous" ${canBack ? '' : 'disabled'}>◀</button>`;
-    toolbar += `<button class="cl-fwd" title="Next" ${canFwd ? '' : 'disabled'}>▶</button>`;
-    toolbar += `</div>`;
-    toolbar += `<span class="cl-header">`;
-    toolbar += `<span style="color:#f88;">${esc(c.attackerLabel)}</span>`;
-    toolbar += `<span style="color:#666;"> → </span>`;
-    toolbar += `<span style="color:#8cf;">${esc(c.targetLabel)}</span>`;
-    if (c.targetDestroyed) toolbar += ` <span style="color:#f44;">☠</span>`;
-    toolbar += `</span>`;
-    toolbar += `<span class="cl-counter">${counter}</span>`;
-    toolbar += `</div>`;
+    for (let i = 0; i < this.history.length; i++) {
+      const entry = this.history[i];
 
-    let body = `<div class="cl-body">`;
-
-    if (!c.wasValid) {
-      body += `<div class="cl-step"><span style="color:#f66;">Invalid: ${esc(c.reasonInvalid ?? '')}</span></div>`;
-    } else {
-      for (const step of c.steps) {
-        body += this.renderStep(step);
+      // Emit a turn divider whenever the turn number changes
+      if (entry.turn !== lastTurn) {
+        // Add bottom margin to previous group by closing it
+        if (lastTurn !== -1) html += `</div>`;
+        html += `<div class="cl-turn-group">`;
+        html += `<div class="cl-turn-divider"><span class="cl-turn-label">Turn ${entry.turn}</span></div>`;
+        lastTurn = entry.turn;
       }
-      if (c.splash.length > 0) {
-        body += `<div class="cl-splash-header">💥 Splash (${c.splash.length} victim${c.splash.length > 1 ? 's' : ''})</div>`;
-        for (const s of c.splash) {
-          body += `<div class="cl-step"><span class="cl-step-title">${esc(s.victimLabel)}</span> <span style="color:#999;">${s.victimHealthBefore}→${s.victimHealthAfter} HP</span>`;
-          if (s.victimDestroyed) body += ` <span style="color:#f44;">☠</span>`;
-          body += `</div>`;
-          for (const step of s.steps) {
-            body += this.renderStep(step);
-          }
-        }
+
+      if (entry.kind === 'repair') {
+        html += this.buildRepairRowHtml(entry.data, i);
+      } else {
+        html += this.buildCombatRowHtml(entry.data, i, entry.kind === 'reaction');
       }
     }
 
-    body += `</div>`;
-    return toolbar + body;
+    // Close the last open group
+    if (lastTurn !== -1) html += `</div>`;
+
+    return html;
+  }
+
+  /** Build one summary row for a combat or reaction entry. */
+  private buildCombatRowHtml(c: ExplainedCombat, index: number, isReaction: boolean): string {
+    const isExpanded = this.expandedIndices.has(index);
+    const expandIcon = isExpanded ? '▾' : '▸';
+
+    // ── Summary sentence ──────────────────────────────────────────────
+    let summaryHtml: string;
+    if (!c.wasValid) {
+      summaryHtml = `<span style="color:#f66;">✗ Invalid</span>`;
+    } else {
+      const weaponIcon = weaponModeIcon(c.breakdown?.weaponMode);
+      const atkSuffix = c.attackerId.replace(/^unit_/, '');
+      const tgtSuffix = c.targetId.replace(/^unit_/, '');
+      // Max HP: use live world if available, else fall back to healthBefore
+      const tgtUnit = this.world.units.find((u) => u.id === c.targetId);
+      const maxHp = tgtUnit
+        ? (tgtUnit.attributes.maxHealth ?? 1) * 10
+        : c.targetHealthBefore > c.targetHealthAfter ? c.targetHealthBefore : '?';
+
+      const atkColor = factionColorForUnit(this.world, c.attackerId);
+      const tgtColor = factionColorForUnit(this.world, c.targetId);
+
+      if (isReaction) {
+        summaryHtml = `<span class="cl-tag cl-tag--reaction">↩ reaction</span> `;
+      } else {
+        summaryHtml = '';
+      }
+
+      summaryHtml += `${weaponIcon} `;
+      summaryHtml += `<span style="color:${esc(atkColor)};">#${esc(atkSuffix)} ${esc(c.attackerLabel)}</span>`;
+      summaryHtml += `<span style="color:#999;"> → </span>`;
+      summaryHtml += `<span style="color:${esc(tgtColor)};">#${esc(tgtSuffix)} ${esc(c.targetLabel)}</span>`;
+      summaryHtml += ` <span class="cl-summary-dmg">−${c.directDamage}</span>`;
+
+      if (c.targetDestroyed) {
+        summaryHtml += ` <span style="color:#f44;">☠</span>`;
+      } else {
+        summaryHtml += ` <span class="cl-summary-hp">${c.targetHealthAfter}/${maxHp} HP</span>`;
+      }
+
+      if (c.splash.length > 0) {
+        summaryHtml += ` <span style="color:#fa0;font-size:0.85em;">💥×${c.splash.length}</span>`;
+      }
+    }
+
+    // ── Expanded detail section ────────────────────────────────────────
+    let detailHtml = '';
+    if (isExpanded) {
+      detailHtml = `<div class="cl-detail">`;
+      if (!c.wasValid) {
+        detailHtml += `<div class="cl-step"><span style="color:#f66;">Invalid: ${esc(c.reasonInvalid ?? '')}</span></div>`;
+      } else {
+        for (const step of c.steps) {
+          detailHtml += this.renderStep(step);
+        }
+        if (c.splash.length > 0) {
+          detailHtml += `<div class="cl-splash-header">💥 Splash (${c.splash.length} victim${c.splash.length > 1 ? 's' : ''})</div>`;
+          for (const s of c.splash) {
+            const vUnit = this.world.units.find((u) => u.id === s.victimId);
+            const vMax = vUnit ? (vUnit.attributes.maxHealth ?? 1) * 10 : '?';
+            detailHtml += `<div class="cl-step"><span class="cl-step-title">${esc(s.victimLabel)}</span> <span style="color:#999;">${s.victimHealthBefore}→${s.victimHealthAfter}/${vMax} HP</span>`;
+            if (s.victimDestroyed) detailHtml += ` <span style="color:#f44;">☠</span>`;
+            detailHtml += `</div>`;
+            for (const step of s.steps) {
+              detailHtml += this.renderStep(step);
+            }
+          }
+        }
+      }
+      detailHtml += `</div>`;
+    }
+
+    return `<div class="cl-history-row ${isExpanded ? 'cl-history-row--expanded' : ''}" data-index="${index}">
+      <div class="cl-summary">
+        <span class="cl-summary-text">${summaryHtml}</span>
+        <button class="cl-expand-btn" data-index="${index}" title="${isExpanded ? 'Collapse' : 'Expand'}">${expandIcon}</button>
+      </div>
+      ${detailHtml}
+    </div>`;
+  }
+
+  /** Build one summary row for a repair entry. */
+  private buildRepairRowHtml(r: ExplainedRepair, index: number): string {
+    const isExpanded = this.expandedIndices.has(index);
+    const expandIcon = isExpanded ? '▾' : '▸';
+
+    // ── Summary sentence ──────────────────────────────────────────────
+    let summaryHtml: string;
+    if (!r.wasValid) {
+      summaryHtml = `<span class="cl-tag cl-tag--repair">🔧 repair</span> <span style="color:#f66;">✗ ${esc(r.reasonInvalid ?? 'Invalid')}</span>`;
+    } else {
+      const repColor = factionColorForUnit(this.world, r.repairerId);
+      const tgtColor = factionColorForUnit(this.world, r.targetId);
+      const tgtUnit  = this.world.units.find((u) => u.id === r.targetId);
+      const maxHp    = tgtUnit ? (tgtUnit.attributes.maxHealth ?? 1) * 10 : r.targetHealthAfter;
+
+      const repSuffix = r.repairerId.replace(/^unit_/, '');
+      const tgtSuffix = r.targetId.replace(/^unit_/, '');
+
+      summaryHtml  = `<span class="cl-tag cl-tag--repair">🔧 repair</span> `;
+      summaryHtml += `<span style="color:${esc(repColor)};">#${esc(repSuffix)} ${esc(r.repairerLabel)}</span>`;
+      summaryHtml += `<span style="color:#999;"> → </span>`;
+      summaryHtml += `<span style="color:${esc(tgtColor)};">#${esc(tgtSuffix)} ${esc(r.targetLabel)}</span>`;
+      summaryHtml += ` <span class="cl-summary-repair">+${r.repairAmount}</span>`;
+      summaryHtml += ` <span class="cl-summary-hp">${r.targetHealthAfter}/${maxHp} HP</span>`;
+    }
+
+    // ── Expanded detail section ────────────────────────────────────────
+    let detailHtml = '';
+    if (isExpanded && r.wasValid) {
+      detailHtml = `<div class="cl-detail">`;
+      for (const step of r.steps) {
+        detailHtml += this.renderStep(step);
+      }
+      detailHtml += `</div>`;
+    }
+
+    return `<div class="cl-history-row ${isExpanded ? 'cl-history-row--expanded' : ''}" data-index="${index}">
+      <div class="cl-summary">
+        <span class="cl-summary-text">${summaryHtml}</span>
+        <button class="cl-expand-btn" data-index="${index}" title="${isExpanded ? 'Collapse' : 'Expand'}">${expandIcon}</button>
+      </div>
+      ${detailHtml}
+    </div>`;
   }
 
   private renderStep(step: ExplanationStep): string {
@@ -490,26 +669,22 @@ export class CombatPanel {
     return html;
   }
 
-  private bindNav(): void {
-    const backBtn = this.el.querySelector('.cl-back') as HTMLButtonElement | null;
-    const fwdBtn = this.el.querySelector('.cl-fwd') as HTMLButtonElement | null;
-
-    if (backBtn) {
-      backBtn.addEventListener('click', () => {
-        if (this.viewIndex < this.history.length - 1) {
-          this.viewIndex++;
-          this.render();
+  private bindExpandToggles(): void {
+    this.el.querySelectorAll<HTMLButtonElement>('.cl-expand-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset['index'] ?? '-1', 10);
+        if (idx < 0) return;
+        if (this.expandedIndices.has(idx)) {
+          this.expandedIndices.delete(idx);
+        } else {
+          this.expandedIndices.add(idx);
         }
+        this.render();
+        // Restore scroll position so the toggled row stays in view
+        const row = this.el.querySelector<HTMLElement>(`.cl-history-row[data-index="${idx}"]`);
+        row?.scrollIntoView({ block: 'nearest' });
       });
-    }
-    if (fwdBtn) {
-      fwdBtn.addEventListener('click', () => {
-        if (this.viewIndex > 0) {
-          this.viewIndex--;
-          this.render();
-        }
-      });
-    }
+    });
   }
 }
 
@@ -519,6 +694,22 @@ export class CombatPanel {
 
 function minimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; f?: boolean; pos: [number, number, number] } {
   return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, f: t.f || undefined, pos: t.pos };
+}
+
+/** Return the faction colour for a unit, looking it up from the live world. */
+function factionColorForUnit(world: WorldData, unitId: string): string {
+  const unit = world.units.find((u) => u.id === unitId);
+  return unit ? factionColor(world, unit.ownerId) : '#aaa';
+}
+
+/** Small emoji/symbol to visually indicate weapon mode at a glance. */
+function weaponModeIcon(mode?: string): string {
+  switch (mode) {
+    case 'kinetic':  return '⚡';
+    case 'splash':   return '💥';
+    case 'antiAir':  return '🎯';
+    default:         return '⚔';
+  }
 }
 
 

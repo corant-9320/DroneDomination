@@ -8,6 +8,36 @@ export function apiPlugin(): Plugin {
   return {
     name: 'drone-domination-api',
     configureServer(server: ViteDevServer) {
+      // Regenerate tiles from seed (used when loading compact saves)
+      server.middlewares.use('/api/world-tiles', async (req, res) => {
+        if (req.method !== 'POST') {
+          res.statusCode = 405;
+          res.end(JSON.stringify({ error: 'Method not allowed' }));
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) {
+          chunks.push(chunk as Buffer);
+        }
+        const body = JSON.parse(Buffer.concat(chunks).toString());
+        const { seed } = body;
+
+        if (typeof seed !== 'number') {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: 'seed (number) is required' }));
+          return;
+        }
+
+        console.log('[DD][api] POST /api/world-tiles — regenerating from seed:', seed);
+        const { regenerateTiles } = await server.ssrLoadModule('/server/regenerate.ts');
+        const result = (regenerateTiles as Function)(seed);
+
+        res.setHeader('Content-Type', 'application/json');
+        res.statusCode = 200;
+        res.end(JSON.stringify(result));
+      });
+
       server.middlewares.use('/api/generate', async (req, res) => {
         if (req.method !== 'POST') {
           console.warn('[DD][api] Rejected %s /api/generate (405)', req.method);

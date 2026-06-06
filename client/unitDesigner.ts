@@ -101,6 +101,11 @@ function rebuildUnit(): void {
   };
 
   unitGroup = buildUnitModel(attrs);
+
+  // Scale the 3D model by max health, matching the map icon formula: 0.9^(5 - maxHealth)
+  const healthScale = Math.pow(0.9, 5 - currentAttrs.health);
+  unitGroup.scale.setScalar(healthScale);
+
   scene.add(unitGroup);
   updateUI();
 }

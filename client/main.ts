@@ -83,6 +83,7 @@ async function main() {
 
     // Initialize combat panel with player faction
     combatPanel.setActiveFaction(turnManager.getActiveFaction());
+    combatPanel.setTurnNumber(turnManager.turnNumber);
     updateTurnIndicator();
 
     /**
@@ -111,8 +112,9 @@ async function main() {
           factionColorHex: string,
           damage: number,
           targetDestroyed: boolean,
+          splashVictims: Array<{ unitId: string; damage: number; destroyed: boolean }> = [],
         ) {
-          await localMap.playAttackAnimation(attackerId, targetId, factionColorHex, damage, targetDestroyed);
+          await localMap.playAttackAnimation(attackerId, targetId, factionColorHex, damage, targetDestroyed, splashVictims);
         },
       };
 
@@ -140,6 +142,7 @@ async function main() {
       turnManager.activeFactionIndex = factions.indexOf(playerFaction);
       turnManager.turnNumber++;
       combatPanel.setActiveFaction(turnManager.getActiveFaction());
+      combatPanel.setTurnNumber(turnManager.turnNumber);
       localMap.setActiveFaction(turnManager.getActiveFaction());
       updateTurnIndicator();
       localMap.endTurn(); // Reset movement points for the new player turn
@@ -165,6 +168,8 @@ async function main() {
       if (selected.size > 0) {
         const unit = world.units.find((u) => selected.has(u.id));
         combatPanel.showSelectedUnit(unit ?? null);
+        // Switch to Selection Info tab so the player sees unit stats immediately
+        switchRpTab('main');
       } else {
         combatPanel.showSelectedUnit(null);
       }
@@ -210,6 +215,28 @@ async function main() {
         combatToggle.textContent = combatLogPanel.classList.contains('collapsed') ? '›' : '‹';
       });
     }
+
+    // Right curtain tab switching (Panel / Combat History)
+    const rpTabMain = document.getElementById('rp-tab-main') as HTMLButtonElement;
+    const rpTabHistory = document.getElementById('rp-tab-history') as HTMLButtonElement;
+    const rpContentMain = document.getElementById('rp-tab-content-main') as HTMLElement;
+    const rpContentHistory = document.getElementById('rp-tab-content-history') as HTMLElement;
+    let activeRpTab: 'main' | 'history' = 'main';
+    function switchRpTab(tab: 'main' | 'history') {
+      activeRpTab = tab;
+      const showMain = tab === 'main';
+      rpContentMain.style.display = showMain ? '' : 'none';
+      rpContentHistory.style.display = showMain ? 'none' : 'flex';
+      rpTabMain.classList.toggle('active', showMain);
+      rpTabHistory.classList.toggle('active', !showMain);
+      // Re-render combat panel so it immediately reflects the correct view
+      combatPanel.renderForTab();
+    }
+    rpTabMain.addEventListener('click', () => switchRpTab('main'));
+    rpTabHistory.addEventListener('click', () => switchRpTab('history'));
+
+    // Tell the combat panel how to check which tab is active
+    combatPanel.setIsHistoryTabActive(() => activeRpTab === 'history');
 
     // System menu dropdown toggle
     const systemMenuBtn = document.getElementById('system-menu-btn') as HTMLElement;
@@ -269,20 +296,34 @@ async function main() {
       const attacker = world.units.find((u) => u.id === attackerId);
       const updatedUnits = await combatPanel.resolveAttack(attackerId, targetId);
       if (updatedUnits) {
+        // Switch to Combat History tab to show the result
+        switchRpTab('history');
+
+        const { units, combat } = updatedUnits;
+
         // Determine damage and destruction from the combat result
         const oldTarget = world.units.find((u) => u.id === targetId);
-        const newTarget = updatedUnits.find((u) => u.id === targetId);
+        const newTarget = units.find((u) => u.id === targetId);
         const damage = oldTarget && newTarget
           ? oldTarget.currentHealth - newTarget.currentHealth
           : oldTarget ? oldTarget.currentHealth : 10;
         const targetDestroyed = newTarget ? newTarget.currentHealth <= 0 : true;
         const attackerColor = attacker ? factionColor(world, attacker.ownerId) : '#ffffff';
 
-        // Play missile → explosion → smoke animation before syncing state
-        await localMap.playAttackAnimation(attackerId, targetId, attackerColor, damage, targetDestroyed);
+        // Build splash victim list from the ExplainedCombat splash array
+        const splashVictims = combat.splash
+          .filter((s) => s.victimId !== targetId)
+          .map((s) => ({
+            unitId: s.victimId,
+            damage: s.damage,
+            destroyed: s.victimDestroyed,
+          }));
+
+        // Play missile → explosion (all victims in parallel) → smoke animation before syncing state
+        await localMap.playAttackAnimation(attackerId, targetId, attackerColor, damage, targetDestroyed, splashVictims);
 
         // Sync updated unit state back into the world
-        world.units = updatedUnits;
+        world.units = units;
         localMap.render();
       }
     });
@@ -318,7 +359,7 @@ async function main() {
     if (world.battleCentreTile !== undefined) {
       // Battle scenario: centre on the gap between the two armies
       dbg.init.log('Battle scenario — centring on gap tile:', world.battleCentreTile);
-      localMap.setCentre(world.battleCentreTile);
+      localMap.setCentre(world.battleCentreTile, true);
       globe.panToTile(world.battleCentreTile);
     } else {
       localMap.goHome();

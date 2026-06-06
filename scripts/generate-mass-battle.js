@@ -172,14 +172,21 @@ for (const tileIndex of enemyTiles) {
   }
 }
 
-// --- Write output ---
+// --- Write output (compact format — no tiles, regenerated from seed) ---
 world.units = units;
 
 // Mark city_0 as player home
 const city0 = world.cities.find(c => c.id === 'city_0');
 if (city0) city0.isPlayerHome = true;
 
-writeFileSync(outPath, JSON.stringify(world));
+const compactSave = {
+  format: 'compact',
+  seed: world.seed,
+  cities: world.cities,
+  units: world.units,
+};
+
+writeFileSync(outPath, JSON.stringify(compactSave));
 
 console.log(`Mass battle save written to ${outPath}`);
 console.log(`  Player units: ${playerIdx} across tiles [${playerTiles.join(', ')}]`);

@@ -154,7 +154,7 @@ export class LocalMapView implements MapViewInterface {
     }
 
     if (world.cities.length > 0) {
-      this.setCentre(world.cities[0].tileIndex);
+      this.setCentre(world.cities[0].tileIndex, true);
     }
   }
 
@@ -163,8 +163,8 @@ export class LocalMapView implements MapViewInterface {
     return this.onTileSelect;
   }
 
-  setCentre(tileIndex: number): void {
-    dbg.localMap.log('setCentre:', tileIndex);
+  setCentre(tileIndex: number, resetZoom = false): void {
+    dbg.localMap.log('setCentre:', tileIndex, 'resetZoom:', resetZoom);
     this.centreTileIndex = tileIndex;
     this.lastEmittedCentreTile = tileIndex;
     dbg.localMap.time('buildFlatView');
@@ -173,7 +173,7 @@ export class LocalMapView implements MapViewInterface {
     dbg.localMap.log('flatTiles count:', this.flatTiles.length);
     this.offsetX = 0;
     this.offsetY = 0;
-    this.scale = 0.3;
+    if (resetZoom) this.scale = 0.3;
     this.isProgrammaticCentre = true;
     this.render();
   }
@@ -183,7 +183,7 @@ export class LocalMapView implements MapViewInterface {
     const homeCity = this.world.cities.find((c) => c.isPlayerHome);
     dbg.localMap.log('goHome → city:', homeCity?.label, 'tile:', homeCity?.tileIndex);
     if (homeCity) {
-      this.setCentre(homeCity.tileIndex);
+      this.setCentre(homeCity.tileIndex, true);
     }
   }
 
@@ -236,18 +236,44 @@ export class LocalMapView implements MapViewInterface {
     factionColorHex: string,
     damage: number,
     targetDestroyed: boolean,
+    splashVictims: Array<{ unitId: string; damage: number; destroyed: boolean }> = [],
   ): Promise<void> {
     const from = this.getUnitScreenPos(attackerId);
     const to   = this.getUnitScreenPos(targetId);
     if (!from || !to) return;
 
     await this.animator.playMissile(from, to, factionColorHex);
-    await this.animator.playExplosion(to, damage, factionColorHex);
+
+    // Primary target explosion + any splash victims in parallel
+    const splashExplosions: Promise<void>[] = splashVictims
+      .filter((v) => v.unitId !== targetId)
+      .map((v) => {
+        const pos = this.getUnitScreenPos(v.unitId);
+        return pos ? this.animator.playExplosion(pos, v.damage, factionColorHex) : Promise.resolve();
+      });
+    await Promise.all([
+      this.animator.playExplosion(to, damage, factionColorHex),
+      ...splashExplosions,
+    ]);
+
+    // Smoke for all destroyed units (primary + splash)
+    const destroyedPositions: Array<{ id: string; pos: { x: number; y: number } }> = [];
     if (targetDestroyed) {
-      this.hiddenUnits.add(targetId);
+      destroyedPositions.push({ id: targetId, pos: to });
+    }
+    for (const v of splashVictims) {
+      if (v.destroyed && v.unitId !== targetId) {
+        const pos = this.getUnitScreenPos(v.unitId);
+        if (pos) destroyedPositions.push({ id: v.unitId, pos });
+      }
+    }
+
+    if (destroyedPositions.length > 0) {
+      // Hide all destroyed units, render once, then play smoke in parallel
+      for (const { id } of destroyedPositions) this.hiddenUnits.add(id);
       this.render();
-      await this.animator.playSmoke(to);
-      this.hiddenUnits.delete(targetId);
+      await Promise.all(destroyedPositions.map(({ pos }) => this.animator.playSmoke(pos)));
+      for (const { id } of destroyedPositions) this.hiddenUnits.delete(id);
     }
   }
 

@@ -336,7 +336,7 @@ canvas {
   padding: 0;  /* override base .curtain padding */
 }
 
-/* Thin margin strip on the left of the right curtain — holds the toggle */
+/* Thin margin strip on the left of the right curtain — holds the toggle + tabs */
 #combat-log-panel .curtain-margin {
   width: 28px;
   flex-shrink: 0;
@@ -354,9 +354,71 @@ canvas {
   justify-content: center;
 }
 
+/* Vertical tab buttons in the curtain-margin */
+.rp-tab {
+  width: 24px;
+  background: rgba(30, 30, 30, 0.7);
+  border: 1px solid rgba(80, 80, 80, 0.5);
+  border-radius: 4px;
+  color: #888;
+  font-size: 10px;
+  cursor: pointer;
+  padding: 14px 0;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.rp-tab span {
+  display: block;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+.rp-tab:hover {
+  background: rgba(60, 60, 60, 0.8);
+  color: #ccc;
+  border-color: rgba(120, 120, 120, 0.6);
+}
+.rp-tab.active {
+  background: rgba(50, 50, 60, 0.9);
+  color: #ddd;
+  border-color: rgba(140, 140, 180, 0.5);
+  border-left: 2px solid rgba(140, 140, 220, 0.7);
+}
+
+/* History tab content wrapper — fills the flex column, content scrolls inside */
+#rp-tab-content-history {
+  flex: 1;
+  min-height: 0;       /* allows flex child to shrink below content size */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#rp-tab-content-history #combat-log-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Main tab content wrapper */
+#rp-tab-content-main {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 /* Inner content column — hidden when collapsed */
 #combat-log-inner {
   flex: 1;
+  min-height: 0;   /* required for flex children to scroll correctly */
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -391,6 +453,14 @@ canvas {
   background: rgba(0, 0, 0, 0.55);
   border-left: 2px solid rgba(180, 180, 180, 0.35);
   border-radius: 2px;
+}
+
+.hex-info-desc {
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #aaa;
+  font-size: 11px;
 }
 
 .rp-section-body {
@@ -586,6 +656,31 @@ canvas {
   border-top: 1px solid rgba(255,255,255,0.2);
   text-align: right;
 }
+/* Summary section dark background block */
+.dp-combat-summary-header {
+  border-bottom: none;
+}
+.dp-combat-summary {
+  background: rgba(0, 0, 0, 0.65);
+  padding: 6px 8px !important;
+  border-bottom: 1px solid rgba(255,160,0,0.3);
+}
+.dp-combat-summary-damage {
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 0.3px;
+}
+.dp-combat-summary-health {
+  font-size: 13px;
+  color: #4cf;
+  margin-top: 2px;
+}
+.dp-combat-summary-destroyed {
+  font-size: 13px;
+  font-weight: bold;
+  color: #f44;
+  margin-top: 4px;
+}
 .dp-combat-table .dp-combat-note {
   color: #9a9a9a;
   font-size: 10px;
@@ -757,6 +852,134 @@ canvas {
   color: #fa0;
   font-style: italic;
   padding-top: 4px;
+}
+
+/* Event-kind tag pills */
+.cl-tag {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  vertical-align: middle;
+  line-height: 1.6;
+  margin-right: 1px;
+}
+.cl-tag--reaction {
+  background: rgba(80, 60, 0, 0.6);
+  color: #fa0;
+  border: 1px solid rgba(255, 170, 0, 0.35);
+}
+.cl-tag--repair {
+  background: rgba(0, 60, 30, 0.6);
+  color: #4f8;
+  border: 1px solid rgba(80, 220, 130, 0.35);
+}
+
+/* Repair heal amount */
+.cl-summary-repair {
+  color: #4f8;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+/* ── Turn grouping ────────────────────────────────────────────────── */
+.cl-turn-group {
+  margin-bottom: 4px;
+}
+
+.cl-turn-divider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 2px 3px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(10, 10, 10, 0.85);
+}
+.cl-turn-divider::before,
+.cl-turn-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(100, 100, 100, 0.35);
+}
+.cl-turn-label {
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #666;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Combat history list ──────────────────────────────────────────── */
+#rp-tab-content-history #combat-log-content {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.cl-history-row {
+  border-bottom: 1px solid rgba(60, 60, 60, 0.5);
+  font-size: 11px;
+  background: rgba(10, 10, 15, 0.6);
+}
+.cl-history-row:last-child {
+  border-bottom: none;
+}
+
+.cl-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 4px 2px 3px;
+  line-height: 1.4;
+}
+.cl-summary-text {
+  flex: 1;
+  min-width: 0;
+  white-space: normal;
+  word-break: break-word;
+}
+.cl-summary-dmg {
+  color: #f88;
+  font-weight: bold;
+  white-space: nowrap;
+}
+.cl-summary-hp {
+  color: #4cf;
+  white-space: nowrap;
+}
+
+.cl-expand-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  transition: color 0.12s;
+}
+.cl-expand-btn:hover {
+  color: #ccc;
+}
+.cl-history-row--expanded .cl-expand-btn {
+  color: #aaa;
+}
+.cl-history-row--expanded .cl-summary {
+  border-bottom: 1px solid rgba(80, 80, 80, 0.3);
+}
+
+.cl-detail {
+  padding: 4px 4px 6px 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border-left: 2px solid rgba(100, 100, 100, 0.3);
+  margin-bottom: 2px;
 }
 
 /* AI Playback bar — pinned above turn controls in the flex column */

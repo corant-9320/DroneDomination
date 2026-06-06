@@ -634,7 +634,7 @@ export class TerrainRenderer {
     ctx.globalCompositeOperation = 'source-over';
 
     if (awayFromSun > 0.04) {
-      const shadowAlpha = Math.min(0.42, (0.24 + level * 0.045) * strength * awayFromSun);
+      const shadowAlpha = Math.min(0.63, (0.36 + level * 0.068) * strength * awayFromSun);
       this.fillContourGradientBand(
         ax, ay, bx, by, nx, ny, bandWidth,
         `rgba(5,8,14,${shadowAlpha.toFixed(3)})`,
@@ -648,7 +648,7 @@ export class TerrainRenderer {
     }
 
     if (towardSun > 0.04) {
-      const highlightAlpha = Math.min(0.48, (0.30 + level * 0.055) * strength * towardSun);
+      const highlightAlpha = Math.min(0.72, (0.45 + level * 0.083) * strength * towardSun);
       this.fillContourGradientBand(
         ax + highNx * innerLip, ay + highNy * innerLip,
         bx + highNx * innerLip, by + highNy * innerLip,
@@ -773,8 +773,8 @@ export class TerrainRenderer {
       const edgeWeight = drop > 0 ? Math.min(1.35, 0.82 + drop * 0.22) : 0.25;
 
       const facingSun = (dx / len) * SUN_X + (dy / len) * SUN_Y;
-      const baseAlpha = (0.105 + ownLevel * 0.035) * peakStrength * edgeWeight * Math.abs(facingSun);
-      const alpha = Math.min(0.34, baseAlpha);
+      const baseAlpha = (0.158 + ownLevel * 0.053) * peakStrength * edgeWeight * Math.abs(facingSun);
+      const alpha = Math.min(0.51, baseAlpha);
       if (alpha < 0.01) continue;
 
       const grad = ctx.createLinearGradient(csx, csy, midX, midY);
@@ -836,7 +836,7 @@ export class TerrainRenderer {
       if (len < 1e-6) continue;
 
       const facingSun = ((dx / len) * SUN_X + (dy / len) * SUN_Y) * (isPeak ? 1 : -1);
-      const alpha = (0.12 + level * 0.045) * Math.abs(facingSun);
+      const alpha = (0.18 + level * 0.068) * Math.abs(facingSun);
 
       ctx.beginPath();
       ctx.moveTo(csx, csy);
@@ -991,14 +991,14 @@ export class TerrainRenderer {
 
     switch (tile.elevType) {
       case 'rolling':
-        peakPull = 0.18; litAlpha = 0.18; shadowAlpha = 0.12;
+        peakPull = 0.18; litAlpha = 0.27; shadowAlpha = 0.18;
         break;
       case 'hills':
-        peakPull = 0.38; litAlpha = 0.38; shadowAlpha = 0.24;
+        peakPull = 0.38; litAlpha = 0.57; shadowAlpha = 0.36;
         break;
       case 'mountain':
       default:
-        peakPull = 0.62; litAlpha = 0.62; shadowAlpha = 0.42;
+        peakPull = 0.62; litAlpha = 0.93; shadowAlpha = 0.63;
         break;
     }
 
@@ -1060,8 +1060,8 @@ export class TerrainRenderer {
 
       const relief = Math.min(1, Math.abs(heightDelta) * 2.0 + centreHeight * 0.15);
       const ridgeAlpha = dot >= 0
-        ? dot * relief * (tile.elevType === 'mountain' ? 0.42 : tile.elevType === 'hills' ? 0.24 : 0.12)
-        : 0.025 * relief;
+        ? dot * relief * (tile.elevType === 'mountain' ? 0.63 : tile.elevType === 'hills' ? 0.36 : 0.18)
+        : 0.038 * relief;
       ctx.strokeStyle = `rgba(255,255,255,${ridgeAlpha.toFixed(3)})`;
       ctx.lineWidth = 0.5;
       ctx.beginPath();

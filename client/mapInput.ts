@@ -515,12 +515,16 @@ export class MapInputHandler {
         return;
       }
 
-      const facingAngle = v.computeFacingAngle(prevTileIndex, destTileIndex);
-      const moveFacing = v.angleToFacing(facingAngle);
+      // Determine facing from neighbour index (matches server logic exactly).
+      // Falls back to geometric angle if tiles are not adjacent (shouldn't happen
+      // for a valid BFS path, but be defensive).
+      const neighbourDir = v.world.tiles[prevTileIndex].n.indexOf(destTileIndex);
+      const moveFacing = neighbourDir >= 0
+        ? neighbourDir as 0 | 1 | 2 | 3 | 4 | 5
+        : v.angleToFacing(v.computeFacingAngle(prevTileIndex, destTileIndex));
       dbg.localMap.log(
         'Facing: from tile', prevTileIndex, '→ to tile', destTileIndex,
-        '| angle (rad):', facingAngle.toFixed(3),
-        '| angle (deg):', (facingAngle * 180 / Math.PI).toFixed(1),
+        '| neighbour idx:', neighbourDir,
         '| facing idx:', moveFacing
       );
 
@@ -577,7 +581,10 @@ export class MapInputHandler {
 
         unit.tileIndex = destTileIndex;
         unit.segment = freeSegment as 0 | 1 | 2 | 3 | 4 | 5;
-        unit.facing = v.angleToFacing(v.computeFacingAngle(prevTileIndex, destTileIndex));
+        const nDir = v.world.tiles[prevTileIndex].n.indexOf(destTileIndex);
+        unit.facing = nDir >= 0
+          ? nDir as 0 | 1 | 2 | 3 | 4 | 5
+          : v.angleToFacing(v.computeFacingAngle(prevTileIndex, destTileIndex));
         v.movementPoints.set(unit.id, Math.max(0, remaining - mpCost));
 
         dbg.localMap.log(
@@ -598,6 +605,10 @@ export class MapInputHandler {
     }
 
     v.computeMovementRange();
+    // Refresh detail panel (unit info, squad mates) to reflect the unit's new tile
+    if (v.selectedTile >= 0) {
+      v.onTileSelectCb(v.selectedTile, v.selectedSegment >= 0 ? v.selectedSegment : undefined);
+    }
     v.render();
   }
 

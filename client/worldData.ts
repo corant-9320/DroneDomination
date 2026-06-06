@@ -1,5 +1,8 @@
 /**
  * Load and parse the world data from the pre-generated JSON.
+ *
+ * All saves use the compact format: seed + cities + units + metadata.
+ * Tiles are always regenerated from the seed via POST /api/world-tiles.
  */
 
 import { dbg } from './debug.js';
@@ -57,11 +60,95 @@ export interface WorldData {
   battleCentreTile?: number;
 }
 
+/**
+ * Compact save format — omits tiles (regenerated from seed on load).
+ * This is the only save format used by localStorage saves and bundled scenarios.
+ */
+export interface CompactSave {
+  format: 'compact';
+  seed: number;
+  cities: CityData[];
+  units: UnitData[];
+  playerColor?: string;
+  battleCentreTile?: number;
+}
+
+/**
+ * Regenerate tiles from a seed by calling the server.
+ * Returns the full tile array in compact wire format.
+ */
+async function regenerateTilesFromSeed(seed: number): Promise<{
+  tiles: TileData[];
+  pentagonIndices: number[];
+  tileCount: number;
+  pentagonCount: number;
+  hexCount: number;
+}> {
+  dbg.world.log('Regenerating tiles from seed:', seed);
+  dbg.world.time('regenerate');
+  const response = await fetch('/api/world-tiles', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ seed }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to regenerate tiles: ${response.status}`);
+  }
+  const result = await response.json();
+  dbg.world.timeEnd('regenerate');
+  dbg.world.log('Regenerated', result.tileCount, 'tiles from seed', seed);
+  return result;
+}
+
+/**
+ * Expand a compact save into a full WorldData by regenerating tiles from the seed.
+ */
+async function expandCompactSave(data: CompactSave): Promise<WorldData> {
+  const regen = await regenerateTilesFromSeed(data.seed);
+
+  // Apply city markers to tiles (cities may have been filtered by scenario)
+  const cityIds = new Set(data.cities.map((c) => c.id));
+  for (const tile of regen.tiles) {
+    if (tile.city && !cityIds.has(tile.city)) {
+      tile.city = undefined;
+    }
+  }
+
+  return {
+    seed: data.seed,
+    tileCount: regen.tileCount,
+    pentagonCount: regen.pentagonCount,
+    hexCount: regen.hexCount,
+    pentagonIndices: regen.pentagonIndices,
+    cities: data.cities,
+    tiles: regen.tiles,
+    units: data.units,
+    playerColor: data.playerColor,
+    battleCentreTile: data.battleCentreTile,
+  };
+}
+
 let cachedWorld: WorldData | null = null;
 
 /** Returns the currently loaded world, or null if not yet loaded. */
 export function getWorld(): WorldData | null {
   return cachedWorld;
+}
+
+/**
+ * Returns a compact save representation of the current world state.
+ * Omits tiles (they can be regenerated from the seed).
+ */
+export function getCompactSave(): CompactSave | null {
+  if (!cachedWorld) return null;
+  return {
+    format: 'compact',
+    seed: cachedWorld.seed,
+    cities: cachedWorld.cities,
+    units: cachedWorld.units,
+    playerColor: cachedWorld.playerColor,
+    battleCentreTile: cachedWorld.battleCentreTile,
+  };
 }
 
 export async function loadWorld(): Promise<WorldData> {
@@ -73,15 +160,17 @@ export async function loadWorld(): Promise<WorldData> {
   // Check sessionStorage for a freshly generated world
   const stored = sessionStorage.getItem('drone-domination-world');
   if (stored) {
-    dbg.world.log('Loading world from sessionStorage (freshly generated)');
+    dbg.world.log('Loading world from sessionStorage');
     sessionStorage.removeItem('drone-domination-world');
-    const data: WorldData = JSON.parse(stored);
+    const raw: CompactSave = JSON.parse(stored);
+    const data = await expandCompactSave(raw);
+
     if (!data.units) data.units = [];
     if (data.cities.length > 0 && !data.cities.some((c) => c.isPlayerHome)) {
       dbg.world.warn('No player home city marked, assigning first city');
       data.cities[0].isPlayerHome = true;
     }
-    dbg.world.log('Parsed sessionStorage world:', {
+    dbg.world.log('Loaded from sessionStorage:', {
       seed: data.seed,
       tiles: data.tileCount,
       cities: data.cities.length,
@@ -91,27 +180,22 @@ export async function loadWorld(): Promise<WorldData> {
     return cachedWorld;
   }
 
-  dbg.world.log('Fetching /battle-30v30.json from server');
-  const response = await fetch('/battle-30v30.json?v=' + Date.now());
+  dbg.world.log('Fetching /battle-20v20.json from server');
+  const response = await fetch('/battle-20v20.json?v=' + Date.now());
   if (!response.ok) {
-    dbg.world.error('Failed to load /battle-30v30.json, status:', response.status);
-    throw new Error(`Failed to load world: ${response.status}`);
+    dbg.world.error('Failed to load /battle-20v20.json, status:', response.status);
+    throw new Error(`Failed to load battle-20v20.json: ${response.status}`);
   }
-  const data: WorldData = await response.json();
+  const raw: CompactSave = await response.json();
+  const data = await expandCompactSave(raw);
 
-  // Ensure units array exists (older world files may omit it)
-  if (!data.units) {
-    dbg.world.warn('world.json missing units array, initializing empty');
-    data.units = [];
-  }
-
-  // Designate the first city as the player's home city if none is marked
+  if (!data.units) data.units = [];
   if (data.cities.length > 0 && !data.cities.some((c) => c.isPlayerHome)) {
     dbg.world.warn('No player home city marked, assigning first city');
     data.cities[0].isPlayerHome = true;
   }
 
-  dbg.world.log('Loaded world.json:', {
+  dbg.world.log('Loaded world:', {
     seed: data.seed,
     tiles: data.tileCount,
     pentagons: data.pentagonCount,

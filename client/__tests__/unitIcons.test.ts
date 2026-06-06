@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { segmentAngle, drawUnitIcon } from '../unitIcons.js';
 import * as unitRenderer from '../unitRenderer.js';
 
-// Mock getUnitSprite to return a null sprite (placeholder path) so tests don't depend on document/Three.js
+// Mock getUnitSpriteAtFacing to return a null sprite (placeholder path) so tests don't depend on document/Three.js
 vi.mock('../unitRenderer.js', () => ({
   getUnitSprite: vi.fn(() => null),
+  getUnitSpriteAtFacing: vi.fn(() => null),
 }));
 
 /**

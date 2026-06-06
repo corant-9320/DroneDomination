@@ -72,8 +72,12 @@ export interface CombatBreakdown {
   attackTotal: number;
   /** Armour component of defence. */
   defArmour: number;
-  /** EW component of defence. */
+  /** EW component of defence (already scaled by weapon-mode multiplier). */
   defEW: number;
+  /** Raw EW value before weapon-mode scaling. */
+  defEWRaw: number;
+  /** EW multiplier applied (0.5 kinetic, 0.75 splash, 1.0 AA). */
+  defEWMultiplier: number;
   /** Formation component of defence. */
   defFormation: number;
   /** Terrain component of defence. */

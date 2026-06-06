@@ -65,7 +65,40 @@ Combat highlights: red attacker ring, cyan target ring, dashed arrow.
 - Subtle hover states, no loud colours except faction highlights
 - Every action reachable via mouse and keyboard
 
+## Unit Facing & Rendering
+
+### The Two Coordinate Systems
+
+There are **two independent angle systems** for unit facing that must stay in sync:
+
+1. **Combat math** (`src/world/combatFacing.ts`): Uses `tile.neighbours[facing]` — the facing index selects which neighbour the unit points toward. The orientation bonus is computed from the bearing between 3D tile positions on the unit sphere using tangent-plane projection.
+
+2. **Rendering** (`client/unitRenderer.ts`): Pre-renders 6 isometric sprites per unit type, one per facing direction. The 3D model is rotated around Y by `-(facing × π/3) + π/4` — this assumes facing 0 = screen-north, facing 1 = 60° clockwise, etc.
+
+### The Mismatch Problem
+
+On a sphere, `tile.neighbours[0]` is NOT guaranteed to point screen-north. Its actual screen direction depends on the tile's position on the globe and the local map's tangent-plane projection. Without correction, a unit's **visual direction** (from the pre-rendered sprite) can differ by up to 60° from the **combat math direction** (which determines orientation bonus).
+
+### The Solution: `getCorrectedFacing` (localMapUnits.ts)
+
+When drawing a unit, `drawUnits` computes the **actual screen angle** toward the unit's faced hex edge (using the tile's projected polygon), then quantizes it to the nearest pre-rendered sprite (0°, 60°, 120°, ...). This sprite is drawn without 2D rotation, preserving correct isometric perspective.
+
+**Critical rule:** Never apply 2D canvas rotation to isometric sprites — it breaks the 3D perspective ("tumbling" effect). Always select the nearest pre-rendered facing instead.
+
+### Quantization Error
+
+Since we only have 6 pre-rendered directions, there's up to ±30° of visual error. The **combat math** always uses the exact bearing (continuous 0–2 bonus), so the numbers are precise. The visual is approximate.
+
+### File Responsibilities
+
+| File | Role |
+|------|------|
+| `src/world/combatFacing.ts` | Authoritative bearing/bonus math (tangent-plane, continuous) |
+| `client/unitRenderer.ts` | Pre-renders 6 isometric sprites per unit type (Y rotation in 3D) |
+| `client/unitIcons.ts` | `drawUnitIcon` — draws the sprite at the given corrected facing |
+| `client/localMapUnits.ts` | `getCorrectedFacing` — maps data facing to correct screen sprite |
+
 ## Related Files
 
 - `conventions.md` — always loaded, covers build/test commands
-- `architecture.md` — loads when editing `src/` or `server/`
+- `architecture.md` — loads when editing `src/`, `server/`, or config files

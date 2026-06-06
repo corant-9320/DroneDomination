@@ -29,7 +29,7 @@ interface AttrRow {
 }
 
 const ATTR_ROWS: AttrRow[] = [
-  { label: 'Max HP',    key: 'maxHealth' },
+
   { label: 'Kinetic',   key: 'kinetic' },
   { label: 'Armour',    key: 'armour' },
   { label: 'EW',        key: 'defence' },
@@ -47,7 +47,7 @@ const ATTR_ROWS: AttrRow[] = [
 // ---------------------------------------------------------------------------
 
 export class DetailPanel {
-  private hexBody: HTMLElement;
+  private hexDesc: HTMLElement;
   private unitBody: HTMLElement;
   private squadBody: HTMLElement;
   private enemyBody: HTMLElement;
@@ -56,7 +56,7 @@ export class DetailPanel {
 
   constructor(world: WorldData) {
     this.world = world;
-    this.hexBody    = document.getElementById('hex-info-body')!;
+    this.hexDesc    = document.getElementById('hex-info-desc')!;
     this.unitBody   = document.getElementById('unit-info-body')!;
     this.squadBody  = document.getElementById('squad-info-body')!;
     this.enemyBody  = document.getElementById('enemy-info-body')!;
@@ -129,7 +129,7 @@ export class DetailPanel {
 
   /** Clear all five sections. */
   clear(): void {
-    this.hexBody.innerHTML    = '<span class="empty-msg">Select a hex</span>';
+    this.hexDesc.textContent  = '— select a hex';
     this.unitBody.innerHTML   = '<span class="empty-msg">No unit selected</span>';
     this.squadBody.innerHTML  = '<span class="empty-msg">No squad mates</span>';
     this.enemyBody.innerHTML  = '<span class="empty-msg">No enemy in range</span>';
@@ -142,19 +142,18 @@ export class DetailPanel {
     tile: TileData,
     city?: { id: string; label: string; isPlayerHome?: boolean; neighbourCityIds: string[] },
   ): void {
-    let html = '';
-    html += dpRow('Terrain',   capitalize(tile.terrain));
-    html += dpRow('Elevation', capitalize(tile.elevType));
-    if (tile.f) html += dpRow('Cover', 'Forested');
-
+    // Build a short descriptive sentence, e.g. "Forested, Rolling Grassland (Player City: Haven)"
+    const parts: string[] = [];
+    if (tile.f) parts.push('Forested');
+    const elev = capitalize(tile.elevType);
+    const terrain = capitalize(tile.terrain);
+    // Combine elevation + terrain into one phrase, avoiding redundancy
+    parts.push(elev === 'Flat' ? terrain : `${elev} ${terrain}`);
     if (city) {
-      const color = factionColor(this.world, city.id);
-      html += `<div class="dp-divider"></div>`;
-      html += dpRow('City',  `<span style="color:${color};font-weight:bold;">${esc(city.label)}</span>`);
-      html += dpRow('Owner', `<span style="color:${color};">${city.isPlayerHome ? 'Player' : 'Enemy'}</span>`);
+      const owner = city.isPlayerHome ? 'Player' : 'Enemy';
+      parts.push(`${owner} City: ${city.label}`);
     }
-
-    this.hexBody.innerHTML = html;
+    this.hexDesc.textContent = '— ' + parts.join(', ');
   }
 
   private renderUnit(unit: UnitData | undefined): void {
@@ -188,8 +187,9 @@ export class DetailPanel {
       const rng   = attrs.rangeAttack ?? 0;
       const arm   = attrs.armour ?? 0;
 
+      const idSuffix = unit.id.replace(/^unit_/, '');
       html += `<div class="dp-other-unit">`;
-      html += `<span class="dp-other-name" style="color:${color};">${esc(name)}</span>`;
+      html += `<span class="dp-other-name" style="color:${color};">${esc(name)} <span style="color:#666;font-size:0.8em;">#${esc(idSuffix)}</span></span>`;
       html += `<span class="dp-other-stats">HP ${unit.currentHealth}/${maxHp} · Mov ${mov} · Kin ${att} · Rng ${rng} · Arm ${arm}</span>`;
       html += `</div>`;
     }
@@ -207,8 +207,9 @@ export class DetailPanel {
 
     let html = '';
 
-    // Name in faction colour
-    html += `<div class="dp-unit-name" style="color:${color};">${esc(name)}</div>`;
+    // Name in faction colour, with unit ID suffix
+    const idSuffix = unit.id.replace(/^unit_/, '');
+    html += `<div class="dp-unit-name" style="color:${color};">${esc(name)} <span style="color:#666;font-size:0.8em;">#${esc(idSuffix)}</span></div>`;
 
     // HP bar
     html += `<div class="dp-hp-bar-wrap">`;
@@ -258,46 +259,42 @@ export class DetailPanel {
     html += cpRow('Range efficiency', b.rangeEfficiency.toFixed(2));
     html += cpRow('Orientation',      `${b.orientationLabel ?? ''} +${b.orientationBonus}`);
     html += `<tr><td class="dp-combat-total" colspan="2">Attack total&nbsp;&nbsp;<span class="dp-combat-total-val">${b.attackTotal.toFixed(2)}</span></td></tr>`;
-    html += cpRow('Weapon',           b.weaponSelectionLabel ?? weaponLabel[b.weaponMode]);
-    html += cpNote(
-      `<b>Attack total</b> is the attacker's <b>AttackPower</b>: ` +
-      `base weapon (${b.baseWeapon}) × ${b.chassisLabel.toLowerCase()} chassis (${b.chassisModifier.toFixed(2)}) × range eff. (${b.rangeEfficiency.toFixed(2)})` +
-      `${b.orientationBonus > 0 ? ` + orientation (${b.orientationBonus})` : ''} = ${b.attackTotal.toFixed(2)}. ` +
-      `It both scales the attack and sets the damage ceiling.`,
-    );
 
     // ── Defence section ──────────────────────────────────────────────────
     html += `<tr><td colspan="2" class="dp-combat-section">Defence</td></tr>`;
     html += cpRow('Armour',    b.defArmour);
-    html += cpRow('EW',        b.defEW);
+    const ewLabel = b.defEWMultiplier < 1
+      ? `EW ${b.defEWRaw} ×${b.defEWMultiplier}`
+      : 'EW';
+    html += cpRow(ewLabel, b.defEW.toFixed(2));
     html += cpRow('Formation', b.defFormation);
     html += cpRow('Terrain',   b.defTerrain);
     if (b.droneEvasion > 0) {
       html += cpRow('Drone target evasion −', b.droneEvasion);
     }
     const defRaw = b.defArmour + b.defEW + b.defFormation + b.defTerrain;
-    html += `<tr><td class="dp-combat-total" colspan="2">Defence power&nbsp;&nbsp;<span class="dp-combat-total-val">${defRaw}</span></td></tr>`;
-    html += cpRow('× 0.75 = Effective def', b.defTotal.toFixed(2));
-    html += cpNote(
-      `<b>Defence power</b> is the raw sum of components (${b.defArmour} + ${b.defEW} + ${b.defFormation} + ${b.defTerrain} = ${defRaw}). ` +
-      `Multiplied by 0.75 to give <b>Effective defence</b> (${b.defTotal.toFixed(2)}), which feeds the damage formula. ` +
-      `Higher effective defence shrinks the share of the ceiling that actually lands.` +
-      (b.droneEvasion > 0
-        ? ` <b>Drone target evasion</b> is additional damage absorbed because the target is a drone — small profile, hard to hit with direct/splash fire. Anti-Air weapons bypass this.`
-        : ''),
-    );
+    html += `<tr><td class="dp-combat-total" colspan="2">Defence power&nbsp;&nbsp;<span class="dp-combat-total-val">${defRaw.toFixed(2)}</span></td></tr>`;
 
-    // ── Net damage ───────────────────────────────────────────────────────
+    // ── Summary (Damage + HP Remaining + Target Destroyed) ─────────────
+    const targetUnit = this.world.units.find((u) => u.id === c.targetId);
+    const targetMaxHp = targetUnit ? (targetUnit.attributes.maxHealth ?? 1) * 10 : '?';
     const dmgCol = b.netDamage >= 15 ? '#f66' : b.netDamage >= 5 ? '#fa0' : '#fff';
-    html += `<tr><td class="dp-combat-net" colspan="2">Net damage&nbsp;&nbsp;<span style="color:${dmgCol};font-weight:bold;">${b.inRange ? b.netDamage : '—'}</span></td></tr>`;
+    html += `<tr><td colspan="2" class="dp-combat-section dp-combat-summary-header">Summary</td></tr>`;
+    html += `<tr><td colspan="2" class="dp-combat-summary">`;
+    if (b.inRange) {
+      html += `<div class="dp-combat-summary-damage" style="color:${dmgCol};">⚔ ${b.netDamage} damage</div>`;
+      html += `<div class="dp-combat-summary-health">❤ ${c.targetHealthAfter}/${targetMaxHp} HP remaining</div>`;
+    } else {
+      html += `<div class="dp-combat-summary-damage" style="color:#999;">— Out of range</div>`;
+    }
+    if (c.targetDestroyed) {
+      html += `<div class="dp-combat-summary-destroyed">☠ Target destroyed</div>`;
+    }
+    html += `</td></tr>`;
 
     // ── How the two totals become damage ─────────────────────────────────
     if (b.inRange) {
       html += this.buildDamageExplanation(b);
-    }
-
-    if (c.targetDestroyed) {
-      html += `<tr><td colspan="2" style="color:#f44;padding:2px 4px;">☠ Target destroyed</td></tr>`;
     }
 
     html += `</table>`;
@@ -307,17 +304,13 @@ export class DetailPanel {
   /**
    * Build the worked "how damage is calculated" footnote.
    *
-   * Damage is NOT attack minus defence. The two totals feed a ratio curve:
-   *   ceiling = min(30, 6 × AttackPower)
-   *   share   = AttackPower² / (AttackPower² + EffectiveDefence²)
-   *   damage  = round(1 + (ceiling − 1) × share)
-   *
-   * Plugs in this combat's actual numbers so the player can see, e.g., how an
-   * Attack total of 2.5 against light defence becomes ~14 damage.
+   * Shows how Attack total and Defence power feed the damage formula,
+   * including the ×0.75 effective-defence constant.
    */
   private buildDamageExplanation(b: NonNullable<ExplainedCombat['breakdown']>): string {
     const ap = b.attackTotal;
-    const ed = b.defTotal;
+    const defRaw = b.defArmour + b.defEW + b.defFormation + b.defTerrain;
+    const ed = defRaw * 0.75;
     const ceiling = Math.min(30, 6 * ap);
     const apSq = ap * ap;
     const edSq = ed * ed;
@@ -327,9 +320,11 @@ export class DetailPanel {
 
     let html = `<tr><td colspan="2" class="dp-combat-section">How damage is calculated</td></tr>`;
     html += cpNote(
-      `Damage is a ratio of Attack total to Effective defence, not a subtraction. ` +
+      `Damage is a ratio of Attack total to Defence power, not a subtraction. ` +
       `A bigger gap lands a bigger share of the damage ceiling.`,
-    );    html += cpCalc(`Ceiling = min(30, 6 × ${ap.toFixed(2)}) = ${ceiling.toFixed(1)}`);
+    );
+    html += cpCalc(`Effective defence = Defence power × 0.75 = ${defRaw.toFixed(2)} × 0.75 = ${ed.toFixed(2)}`);
+    html += cpCalc(`Ceiling = min(30, 6 × ${ap.toFixed(2)}) = ${ceiling.toFixed(1)}`);
     html += cpCalc(
       `Share landed = AP² / (AP² + ED²) = ${apSq.toFixed(2)} / (${apSq.toFixed(2)} + ${edSq.toFixed(2)}) = ${(share * 100).toFixed(0)}%`,
     );
@@ -337,7 +332,7 @@ export class DetailPanel {
       `Damage = 1 + (${ceiling.toFixed(1)} − 1) × ${(share * 100).toFixed(0)}% ≈ ${formulaDamage}`,
     );
     if (b.droneEvasion > 0) {
-      html += cpCalc(`Drone evasion: ${formulaDamage} − ${b.droneEvasion} = ${b.netDamage}`);
+      html += cpCalc(`Drone evasion: ${formulaDamage} × ${b.droneEvasion > 0 ? (b.netDamage / formulaDamage).toFixed(2) : '1.00'} = ${b.netDamage}`);
     }
     return html;
   }

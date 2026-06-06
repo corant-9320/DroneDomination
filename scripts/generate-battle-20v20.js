@@ -1,24 +1,18 @@
 /**
- * generate-battle-save.js
+ * generate-battle-20v20.js
  *
- * Generates a structured battle scenario with two armies facing each other.
+ * Generates a 20v20 battle scenario with randomized unit attributes.
  *
- * Army composition (per side, 36 units total):
- *   - 10 chassis types × 1 EW specialist (defence)
- *   - 10 chassis types × 1 Repair specialist (repair)
- *   - 16 remaining units with 480 points randomly distributed
+ * Army composition (per side, 20 units total):
+ *   - Each unit gets 27 points to randomly allocate across attributes
+ *   - Movement types distributed: 8 Tanks, 6 Spiders, 6 Drones
+ *   - Units spawn on terrain they are allowed on
  *
- * Chassis types (10 per side):
- *   - 4 Tanks  (wheeledMovement) — placed on flat/rolling terrain
- *   - 3 Spiders (limbMovement)   — placed on hills/mountains/forests
- *   - 3 Drones  (flightMovement) — placed at the outer edge of each army
- *
- * Formation: 4 hexes wide × 2 deep (8 tiles per army).
+ * Formation: 5 hexes wide × 1 deep per side (5 tiles per army)
  * Gap: 2 BFS layers between the armies.
- * Camera centres on the gap tile.
  *
- * Usage: node scripts/generate-battle-save.js
- * Output: data/battle-30v30.json
+ * Usage: node scripts/generate-battle-20v20.js
+ * Output: data/battle-20v20.json
  */
 
 import { readFileSync, writeFileSync } from 'fs';
@@ -27,7 +21,7 @@ import { dirname, join } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const worldPath = join(__dirname, '../data/world.json');
-const outPath   = join(__dirname, '../data/battle-30v30.json');
+const outPath   = join(__dirname, '../data/battle-20v20.json');
 
 // ---------------------------------------------------------------------------
 // Load world
@@ -78,6 +72,11 @@ function isSpiderFriendly(tileIdx) {
   return elev === 'hills' || elev === 'mountain' || isForested(tileIdx);
 }
 
+/** Drones can spawn anywhere (they fly). */
+function isDroneFriendly(tileIdx) {
+  return isLand(tileIdx);
+}
+
 // ---------------------------------------------------------------------------
 // BFS helpers
 // ---------------------------------------------------------------------------
@@ -116,21 +115,17 @@ function findGoodSeed(startIdx, endIdx) {
 }
 
 // ---------------------------------------------------------------------------
-// Find a land cluster with enough variety for terrain-based placement
+// Build battlefield with 5 hexes per row (1 row deep per army)
+// Prefer terrain that accommodates all unit types
 // ---------------------------------------------------------------------------
-// We need 8 tiles per army (4 wide × 2 deep) with a mix of terrain types.
-// Try multiple seeds until we find one with enough tiles.
-
 function tryBuildBattleField(seedIdx) {
-  const layers = bfsLayers(seedIdx, 16);
-  if (layers.length < 8) return null;
+  const layers = bfsLayers(seedIdx, 12);
+  if (layers.length < 4) return null;
 
   // Layout:
-  //   layers 0-1 → player front row (4 tiles)
-  //   layers 2-3 → player back row  (4 tiles)
-  //   layers 4-5 → gap (no units, camera centres here)
-  //   layers 6-7 → enemy front row  (4 tiles)
-  //   layers 8-9 → enemy back row   (4 tiles)
+  //   layers 0-1 → player front row (5 tiles from 2 layers)
+  //   layers 2-3 → gap (no units, camera centres here)
+  //   layers 4-5 → enemy front row  (5 tiles from 2 layers)
 
   function pickTiles(layerArr, count) {
     const seen = new Set();
@@ -147,18 +142,22 @@ function tryBuildBattleField(seedIdx) {
     return result;
   }
 
-  const playerFront = pickTiles([layers[0], layers[1]], 4);
-  const playerBack  = pickTiles([layers[2], layers[3]], 4);
-  const gapTiles    = pickTiles([layers[4], layers[5]], 4);
-  const enemyFront  = pickTiles([layers[6], layers[7]], 4);
-  const enemyBack   = pickTiles([layers[8], layers[9]], 4);
+  const playerFront = pickTiles([layers[0], layers[1], layers[2]], 8);
+  let gapTiles = [];
+  let enemyFront = [];
+  
+  if (layers.length > 3) gapTiles = pickTiles([layers[3]], 2);
+  if (layers.length > 4) {
+    const gapExtra = pickTiles([layers[4]], 2);
+    gapTiles = gapTiles.concat(gapExtra);
+  }
+  if (layers.length > 5) enemyFront = pickTiles([layers[5], layers[6], layers[7]], 8);
 
-  if (playerFront.length < 4 || playerBack.length < 4 ||
-      enemyFront.length < 4  || enemyBack.length < 4) {
+  if (playerFront.length < 5 || enemyFront.length < 5 || gapTiles.length < 1) {
     return null;
   }
 
-  return { playerFront, playerBack, gapTiles, enemyFront, enemyBack, layers };
+  return { playerFront, gapTiles, enemyFront, layers };
 }
 
 let seedIdx = findGoodSeed(1200, 2000);
@@ -177,16 +176,14 @@ if (!battlefield) {
   process.exit(1);
 }
 
-const { playerFront, playerBack, gapTiles, enemyFront, enemyBack, layers } = battlefield;
+const { playerFront, gapTiles, enemyFront } = battlefield;
 
 // Camera centre tile = middle of the gap
 const centreTile = gapTiles[Math.floor(gapTiles.length / 2)];
 
 console.log('Player front:', playerFront);
-console.log('Player back: ', playerBack);
 console.log('Gap tiles:   ', gapTiles, '→ centre:', centreTile);
 console.log('Enemy front: ', enemyFront);
-console.log('Enemy back:  ', enemyBack);
 
 // ---------------------------------------------------------------------------
 // BFS distance map (for facing direction)
@@ -244,7 +241,7 @@ function randInt(min, max) { return Math.floor(rand() * (max - min + 1)) + min; 
 function randChoice(arr)   { return arr[Math.floor(rand() * arr.length)]; }
 
 // ---------------------------------------------------------------------------
-// Unit naming (mirrors TypeScript logic in src/world/units.ts)
+// Unit naming
 // ---------------------------------------------------------------------------
 const SPEED_NAMES = { 1: 'Loitering', 2: 'Plodder', 3: 'Walker', 4: 'Runner', 5: 'Sprinter' };
 const TYPE_NAMES  = { wheeledMovement: 'Tank', flightMovement: 'Drone', limbMovement: 'Spider' };
@@ -289,109 +286,34 @@ function generateUnitName(attrs) {
 }
 
 // ---------------------------------------------------------------------------
-// Army composition builder
+// Build a random unit with 27-point budget
 // ---------------------------------------------------------------------------
-// 10 chassis: 4 Tanks, 3 Spiders, 3 Drones
-// Per chassis: 1 EW specialist + 1 Repair specialist = 20 fixed units
-// Remaining 16 units: 480 points randomly distributed
-//
-// Point budget per random unit: 480 / 16 = 30 points average
-// Each attribute point costs 1 point. maxHealth costs 1 point per point.
-// Movement costs 1 point per point.
-// We distribute 480 points across 16 units, each unit gets a random share.
-
-const CHASSIS_TYPES = [
-  ...Array(4).fill('wheeledMovement'),  // 4 Tanks
-  ...Array(3).fill('limbMovement'),     // 3 Spiders
-  ...Array(3).fill('flightMovement'),   // 3 Drones
-];
-
 const COMBAT_ATTRS = ['kinetic', 'armour', 'defence', 'splashAttack', 'rangeAttack', 'antiAir'];
-// Note: 'repair' and 'defence' are reserved for specialists; random units can still get them
-// but they won't be the primary focus.
 
-/**
- * Build a fixed EW specialist for a given chassis.
- * High defence (EW), moderate health, some movement.
- */
-function makeEWSpecialist(movAttr) {
-  const movVal = randInt(2, 4);
-  const ewVal  = randInt(3, 5);
-  const hpVal  = randInt(2, 4);
-  const attrs  = {
-    maxHealth: hpVal,
-    [movAttr]: movVal,
-    defence: ewVal,
-  };
-  // Drones can't have armour
-  if (movAttr !== 'flightMovement') {
-    attrs.armour = randInt(1, 2);
-  }
-  return attrs;
-}
-
-/**
- * Build a fixed Repair specialist for a given chassis.
- * High repair, moderate health, some movement.
- */
-function makeRepairSpecialist(movAttr) {
-  const movVal    = randInt(2, 4);
-  const repairVal = randInt(3, 5);
-  const hpVal     = randInt(2, 4);
-  const attrs     = {
-    maxHealth: hpVal,
-    [movAttr]: movVal,
-    repair: repairVal,
-  };
-  if (movAttr !== 'flightMovement') {
-    attrs.armour = randInt(1, 2);
-  }
-  return attrs;
-}
-
-/**
- * Distribute `totalPoints` across `count` units, each getting a random share.
- * Returns an array of point budgets.
- */
-function distributePoints(totalPoints, count) {
-  // Use a "broken stick" approach: generate count-1 random cut points
-  const cuts = [];
-  for (let i = 0; i < count - 1; i++) {
-    cuts.push(Math.floor(rand() * (totalPoints - count * 2)) + 1);
-  }
-  cuts.sort((a, b) => a - b);
-
-  const budgets = [];
-  let prev = 0;
-  for (const cut of cuts) {
-    budgets.push(Math.max(2, cut - prev));
-    prev = cut;
-  }
-  budgets.push(Math.max(2, totalPoints - prev));
-
-  // Clamp each budget to a reasonable range [5, 50]
-  return budgets.map((b) => Math.min(50, Math.max(5, b)));
-}
-
-/**
- * Build a random unit from a point budget.
- * Allocates points across attributes randomly.
- */
-function makeRandomUnit(movAttr, pointBudget) {
+function makeRandomUnit(movAttr, pointBudget = 27) {
   const attrs = { [movAttr]: 0 };
-
-  // Spend points: first ensure minimum movement (1 pt) and health (1 pt)
   let remaining = pointBudget;
 
-  // Movement: 1–4 points
-  const movPts = Math.min(4, Math.max(1, randInt(1, Math.min(4, Math.floor(remaining * 0.3)))));
+  // Ensure minimum movement (1-3) and health (1-2)
+  const minMov = 1;
+  const maxMov = 4;
+  const movPts = Math.min(maxMov, Math.max(minMov, randInt(1, Math.min(maxMov, Math.floor(remaining * 0.25)))));
   attrs[movAttr] = movPts;
   remaining -= movPts;
 
-  // Health: 1–4 points
-  const hpPts = Math.min(4, Math.max(1, randInt(1, Math.min(4, Math.floor(remaining * 0.25)))));
+  // Health: 1-4 points
+  const hpPts = Math.min(4, Math.max(1, randInt(1, Math.min(4, Math.floor(remaining * 0.2)))));
   attrs.maxHealth = hpPts;
   remaining -= hpPts;
+
+  // Armour for non-drones: 0-3 points (optional)
+  if (movAttr !== 'flightMovement') {
+    const armPts = Math.min(3, randInt(0, Math.floor(remaining * 0.15)));
+    if (armPts > 0) {
+      attrs.armour = armPts;
+      remaining -= armPts;
+    }
+  }
 
   // Distribute remaining points across combat attributes
   const availableAttrs = [...COMBAT_ATTRS];
@@ -401,20 +323,33 @@ function makeRandomUnit(movAttr, pointBudget) {
     if (armIdx >= 0) availableAttrs.splice(armIdx, 1);
   }
 
-  // Shuffle and pick 2–4 attributes to invest in
-  const shuffled = [...availableAttrs].sort(() => rand() - 0.5);
-  const numAttrs = Math.min(shuffled.length, randInt(2, 4));
-  const chosen   = shuffled.slice(0, numAttrs);
+  // Distribute remaining points randomly across 2-4 attributes
+  const numAttrs = Math.min(availableAttrs.length, randInt(2, 4));
+  const chosen = [...availableAttrs].sort(() => rand() - 0.5).slice(0, numAttrs);
 
-  while (remaining > 0 && chosen.length > 0) {
-    const key = randChoice(chosen);
-    const current = attrs[key] ?? 0;
-    if (current < 4) {
-      attrs[key] = current + 1;
-      remaining--;
-    } else {
-      // This attr is maxed, remove it from choices
-      chosen.splice(chosen.indexOf(key), 1);
+  while (remaining > 0) {
+    // Keep cycling through attributes, even if some are maxed
+    let found = false;
+    for (const key of chosen) {
+      if (remaining <= 0) break;
+      const current = attrs[key] ?? 0;
+      if (current < 5) {
+        attrs[key] = current + 1;
+        remaining--;
+        found = true;
+      }
+    }
+    
+    // If all chosen attributes are maxed, pick a random available one
+    if (!found && remaining > 0) {
+      const allAvailable = availableAttrs.filter(k => (attrs[k] ?? 0) < 5);
+      if (allAvailable.length > 0) {
+        const key = randChoice(allAvailable);
+        attrs[key] = (attrs[key] ?? 0) + 1;
+        remaining--;
+      } else {
+        break; // All attributes maxed
+      }
     }
   }
 
@@ -425,147 +360,147 @@ function makeRandomUnit(movAttr, pointBudget) {
 }
 
 // ---------------------------------------------------------------------------
-// Build the full army (36 units)
+// Unit class distribution: balance based on terrain distribution
+// Tanks prefer flat/rolling, Spiders can use hills, Drones go anywhere
+// For a balanced 20-unit army:
+//   - 6 Tanks (less common than before, terrain limited)
+//   - 7 Spiders (can use hills and forests better)
+//   - 7 Drones (no terrain restriction)
+// ---------------------------------------------------------------------------
+const UNIT_CLASSES = [
+  ...Array(6).fill('wheeledMovement'),  // 6 Tanks
+  ...Array(7).fill('limbMovement'),     // 7 Spiders
+  ...Array(7).fill('flightMovement'),   // 7 Drones
+];
+
+// ---------------------------------------------------------------------------
+// Build army (20 units with randomized 27-point attributes)
 // ---------------------------------------------------------------------------
 function buildArmy() {
   const units = [];
-
-  // 10 EW specialists (one per chassis)
-  for (const movAttr of CHASSIS_TYPES) {
-    units.push({ type: 'ew', movAttr, attrs: makeEWSpecialist(movAttr) });
+  for (const movAttr of UNIT_CLASSES) {
+    units.push({ movAttr, attrs: makeRandomUnit(movAttr, 27) });
   }
-
-  // 10 Repair specialists (one per chassis)
-  for (const movAttr of CHASSIS_TYPES) {
-    units.push({ type: 'repair', movAttr, attrs: makeRepairSpecialist(movAttr) });
-  }
-
-  // 16 random units with 480 points total
-  const budgets = distributePoints(480, 16);
-  // Assign chassis types to random units: cycle through CHASSIS_TYPES
-  for (let i = 0; i < 16; i++) {
-    const movAttr = CHASSIS_TYPES[i % CHASSIS_TYPES.length];
-    units.push({ type: 'random', movAttr, attrs: makeRandomUnit(movAttr, budgets[i]) });
-  }
-
   return units;
 }
 
 // ---------------------------------------------------------------------------
-// Tile assignment with terrain preference
+// Terrain-aware tile categorization
 // ---------------------------------------------------------------------------
-// Formation: 8 tiles (4 wide × 2 deep)
-// Front row = closer to enemy, back row = further from enemy
-// Drones go to the outer edge (first/last tiles in each row)
-// Tanks prefer flat/rolling, Spiders prefer hills/mountains/forests
-
-/**
- * Sort tiles into terrain categories.
- * Returns { tankTiles, spiderTiles, droneTiles, anyTiles }
- * where droneTiles = outer edge tiles (first and last in each row).
- */
-function categorizeTiles(frontTiles, backTiles) {
-  // Outer edge = first and last of each row
-  const outerEdge = new Set([
-    frontTiles[0], frontTiles[frontTiles.length - 1],
-    backTiles[0],  backTiles[backTiles.length - 1],
-  ]);
-
+function categorizeTiles(frontTiles) {
   const tankTiles   = [];
   const spiderTiles = [];
-  const droneTiles  = [...outerEdge];
-  const anyTiles    = [];
+  const droneTiles  = [];
 
-  for (const tileIdx of [...frontTiles, ...backTiles]) {
-    if (outerEdge.has(tileIdx)) continue; // reserved for drones
-    if (isTankFriendly(tileIdx)) {
-      tankTiles.push(tileIdx);
-    } else if (isSpiderFriendly(tileIdx)) {
-      spiderTiles.push(tileIdx);
-    } else {
-      anyTiles.push(tileIdx);
-    }
+  for (const tileIdx of frontTiles) {
+    if (isTankFriendly(tileIdx))   tankTiles.push(tileIdx);
+    if (isSpiderFriendly(tileIdx)) spiderTiles.push(tileIdx);
+    if (isDroneFriendly(tileIdx))  droneTiles.push(tileIdx);
   }
 
-  return { tankTiles, spiderTiles, droneTiles, anyTiles };
+  return { tankTiles, spiderTiles, droneTiles };
 }
 
 // ---------------------------------------------------------------------------
-// Place units onto tiles
+// BFS — find nearest tile satisfying a predicate
 // ---------------------------------------------------------------------------
-// Each tile can hold up to 5 units (segments 0–4).
-// We fill tiles sequentially, 5 units per tile.
+function bfsFind(startIdx, predicate) {
+  const visited = new Set([startIdx]);
+  const queue = [startIdx];
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    if (predicate(cur)) return cur;
+    const t = tileByIndex.get(cur);
+    if (!t) continue;
+    for (const nb of t.n) {
+      if (!visited.has(nb) && isLand(nb)) {
+        visited.add(nb);
+        queue.push(nb);
+      }
+    }
+  }
+  return null;
+}
 
+// ---------------------------------------------------------------------------
+// Place units onto tiles, then fix terrain violations
+// ---------------------------------------------------------------------------
 const HP_PER_PT = 10;
 const units = [];
 let unitId = 0;
 
-function placeArmy(armyUnits, frontTiles, backTiles, ownerId, facingDir) {
-  const { tankTiles, spiderTiles, droneTiles, anyTiles } = categorizeTiles(frontTiles, backTiles);
+// Global occupancy map shared across both armies — prevents cross-army collisions
+const globalOccupancy = new Map();
 
-  // Build a tile queue for each chassis type
-  // Tanks → tankTiles first, then anyTiles, then spiderTiles
-  // Spiders → spiderTiles first, then anyTiles, then tankTiles
-  // Drones → droneTiles first, then anyTiles, then anywhere
-  const allTiles = [...frontTiles, ...backTiles];
+function getOrInitOcc(tileIdx) {
+  if (!globalOccupancy.has(tileIdx)) globalOccupancy.set(tileIdx, 0);
+  return globalOccupancy.get(tileIdx);
+}
 
-  function buildQueue(preferred, fallback1, fallback2) {
-    const seen = new Set();
-    const q = [];
-    for (const t of [...preferred, ...fallback1, ...fallback2, ...allTiles]) {
-      if (!seen.has(t)) { seen.add(t); q.push(t); }
-    }
-    return q;
-  }
-
-  const tankQueue   = buildQueue(tankTiles,   anyTiles, spiderTiles);
-  const spiderQueue = buildQueue(spiderTiles, anyTiles, tankTiles);
-  const droneQueue  = buildQueue(droneTiles,  anyTiles, tankTiles);
-
-  // Track how many units are on each tile (max 5 per tile)
-  const tileOccupancy = new Map();
-  for (const t of allTiles) tileOccupancy.set(t, 0);
-
-  function getNextTile(queue) {
-    for (const t of queue) {
-      const occ = tileOccupancy.get(t) ?? 0;
-      if (occ < 5) return t;
-    }
-    // Fallback: any tile with space
-    for (const t of allTiles) {
-      const occ = tileOccupancy.get(t) ?? 0;
-      if (occ < 5) return t;
-    }
-    return null;
-  }
-
+function placeArmy(armyUnits, frontTiles, ownerId, facingDir) {
+  // Step 1: place each unit on the first front tile with space, ignoring terrain for now
+  const placed = [];
   for (const unitDef of armyUnits) {
-    let queue;
-    if (unitDef.movAttr === 'wheeledMovement') queue = tankQueue;
-    else if (unitDef.movAttr === 'limbMovement') queue = spiderQueue;
-    else queue = droneQueue;
-
-    const tileIdx = getNextTile(queue);
-    if (tileIdx === null) {
-      console.warn(`No tile available for unit ${unitId}`);
+    let targetTile = null;
+    for (const t of frontTiles) {
+      if (getOrInitOcc(t) < 4) { targetTile = t; break; }
+    }
+    if (targetTile === null) {
+      console.warn(`Overflow: no front tile space for unit ${unitId}`);
       continue;
     }
+    const seg = getOrInitOcc(targetTile);
+    globalOccupancy.set(targetTile, seg + 1);
+    placed.push({ unitDef, tileIdx: targetTile, seg });
+  }
 
-    const occ     = tileOccupancy.get(tileIdx);
-    const segment = occ; // segments 0–4
-    tileOccupancy.set(tileIdx, occ + 1);
+  // Step 2: fix terrain violations — move unit to nearest valid tile via BFS
+  for (const entry of placed) {
+    const { unitDef } = entry;
+    const movAttr = unitDef.movAttr;
 
-    const attrs     = unitDef.attrs;
+    const isValid = (tileIdx) => {
+      if (!isLand(tileIdx)) return false;
+      if (movAttr === 'wheeledMovement') return isTankFriendly(tileIdx);
+      if (movAttr === 'limbMovement')    return isSpiderFriendly(tileIdx);
+      return true; // drones go anywhere on land
+    };
+
+    if (!isValid(entry.tileIdx)) {
+      // Release the slot on the invalid tile
+      globalOccupancy.set(entry.tileIdx, globalOccupancy.get(entry.tileIdx) - 1);
+
+      // BFS out from the current tile until we find a valid one with space
+      const newTile = bfsFind(entry.tileIdx, (t) => isValid(t) && getOrInitOcc(t) < 4);
+
+      if (newTile === null) {
+        console.warn(`No valid tile found for unit ${unitId} (${movAttr}), skipping`);
+        entry.skip = true;
+        continue;
+      }
+
+      const newSeg = getOrInitOcc(newTile);
+      globalOccupancy.set(newTile, newSeg + 1);
+      entry.tileIdx = newTile;
+      entry.seg = newSeg;
+      console.log(`  Moved ${movAttr} unit from invalid tile to ${newTile} (${getTerrain(newTile)}/${getElevType(newTile)})`);
+    }
+  }
+
+  // Step 3: emit unit records
+  for (const entry of placed) {
+    if (entry.skip) continue;
+    const attrs     = entry.unitDef.attrs;
     const maxHealth = attrs.maxHealth ?? 1;
-
     units.push({
-      id: `unit_${unitId++}`,
-      label: generateUnitName(attrs),
+      id:            `unit_${unitId++}`,
+      label:         generateUnitName(attrs),
       ownerId,
-      tileIndex: tileIdx,
-      segment,
-      facing: facingDir,
-      attributes: attrs,
+      tileIndex:     entry.tileIdx,
+      segment:       entry.seg,
+      facing:        facingDir,
+      attributes:    attrs,
       currentHealth: maxHealth * HP_PER_PT,
     });
   }
@@ -575,19 +510,19 @@ function placeArmy(armyUnits, frontTiles, backTiles, ownerId, facingDir) {
 const playerArmy = buildArmy();
 const enemyArmy  = buildArmy();
 
-// Facing: player faces toward enemy (higher BFS dist), enemy faces toward player (lower BFS dist)
+// Facing: player faces toward enemy (higher BFS dist), enemy faces toward player
 const playerFacing = facingToward(playerFront[0], true);
 const enemyFacing  = facingToward(enemyFront[0],  false);
 
 console.log(`Player facing: ${playerFacing}, Enemy facing: ${enemyFacing}`);
 
-placeArmy(playerArmy, playerFront, playerBack, PLAYER_CITY_ID, playerFacing);
-placeArmy(enemyArmy,  enemyFront,  enemyBack,  ENEMY_CITY_ID,  enemyFacing);
+placeArmy(playerArmy, playerFront, PLAYER_CITY_ID, playerFacing);
+placeArmy(enemyArmy,  enemyFront,  ENEMY_CITY_ID,  enemyFacing);
 
 console.log(`Generated ${units.length} units total (${units.length / 2} per side)`);
 
 // ---------------------------------------------------------------------------
-// Build the save payload (compact format — no tiles, regenerated from seed)
+// Build the save payload (compact format)
 // ---------------------------------------------------------------------------
 const save = {
   format: 'compact',
@@ -598,7 +533,6 @@ const save = {
   })),
   units,
   playerColor: '#00e5ff',
-  /** Tile index to centre the camera on at startup (gap between armies). */
   battleCentreTile: centreTile,
 };
 
@@ -607,16 +541,13 @@ writeFileSync(outPath, JSON.stringify(save, null, 2));
 console.log(`\nSaved to ${outPath}`);
 console.log(`  Player (${PLAYER_CITY_ID}): ${playerArmy.length} units`);
 console.log(`    Front tiles: ${playerFront.join(', ')}`);
-console.log(`    Back tiles:  ${playerBack.join(', ')}`);
 console.log(`  Enemy  (${ENEMY_CITY_ID}):  ${enemyArmy.length} units`);
 console.log(`    Front tiles: ${enemyFront.join(', ')}`);
-console.log(`    Back tiles:  ${enemyBack.join(', ')}`);
 console.log(`  Camera centre tile: ${centreTile}`);
 
 // Print terrain summary
-const allArmyTiles = [...playerFront, ...playerBack, ...enemyFront, ...enemyBack];
 console.log('\nTerrain summary:');
-for (const t of allArmyTiles) {
+for (const t of [...playerFront, ...enemyFront]) {
   const tile = tileByIndex.get(t);
   const forested = tile?.f ? ' (forested)' : '';
   console.log(`  Tile ${t}: ${tile?.terrain} / ${tile?.elevType}${forested}`);

@@ -9,7 +9,7 @@
  */
 
 import { UnitData } from './worldData.js';
-import { getUnitSprite } from './unitRenderer.js';
+import { getUnitSpriteAtFacing } from './unitRenderer.js';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -32,7 +32,7 @@ export function segmentAngle(segment: number): number {
  * @param sy           Screen y centre
  * @param size         Base size (half-width reference for scaling)
  * @param color        Faction color
- * @param facingAngle  Override facing angle (radians) — used for rotating the sprite
+ * @param facingOverride  Corrected facing index (0–5) to select the right pre-rendered sprite
  * @param currentMP    Remaining movement points this turn
  * @param maxMP        Maximum movement points for this unit
  */
@@ -43,19 +43,28 @@ export function drawUnitIcon(
   sy: number,
   size: number,
   color: string,
-  _facingAngle?: number,
+  facingOverride?: number,
   currentMP?: number,
   maxMP?: number,
 ): void {
-  const spriteSize = size * 5.082;  // 20% larger than previous (4.235 * 1.2)
-  const sprite = getUnitSprite(unit, color);
+  // Scale sprite by max health relative to baseline of 5.
+  // Each step below 5 reduces size by 10%: scale = 0.9^(5 - maxHealth)
+  const maxHealth = unit.attributes.maxHealth ?? 5;
+  const healthScale = Math.pow(0.9, 5 - maxHealth);
+  // 7.058 = 5.082 * (2.5 / 1.8) — compensates for the wider camera frustum in
+  // unitRenderer.ts (2.5 vs the original 1.8) so on-screen model size is unchanged.
+  const spriteSize = size * 7.058 * healthScale;
+
+  // Use the corrected facing index if provided, otherwise fall back to unit.facing
+  const spriteFacing = facingOverride ?? unit.facing;
+  const sprite = getUnitSpriteAtFacing(unit, color, spriteFacing);
 
   ctx.save();
   ctx.translate(sx, sy);
 
   if (sprite) {
-    // The 3D model is pre-rendered at the correct facing direction,
-    // so we draw it without rotation. Enable high-quality smoothing.
+    // The 3D model is pre-rendered at the correct facing direction.
+    // No 2D rotation — we selected the sprite matching the actual screen direction.
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(
@@ -97,7 +106,7 @@ function drawHealthBar(
   const curHp = unit.currentHealth;
 
   const barW = size * 1.2;
-  const barH = Math.max(2, size * 0.12 * (unit.attributes.maxHealth ?? 1));
+  const barH = Math.max(2, size * 0.12);
   const barX = sx - barW / 2;
   const barY = sy - extent - barH - Math.max(3, barH * 0.4);
 
