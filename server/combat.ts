@@ -55,6 +55,8 @@ interface WireTile {
   f?: boolean;
   /** 3D position on unit sphere [x, y, z] (needed for bearing-based orientation). */
   pos?: [number, number, number];
+  /** Boundary polygon vertices [[x,y,z], ...] (needed for segment-distance range check). */
+  b?: [number, number, number][];
 }
 
 export interface CombatRequest {
@@ -296,13 +298,16 @@ function rebuildTiles(wireTiles: WireTile[]): Tile[] {
     const pos = wt.pos
       ? { x: wt.pos[0], y: wt.pos[1], z: wt.pos[2] }
       : { x: 0, y: 0, z: 0 };
+    const boundary = wt.b
+      ? wt.b.map((v) => ({ x: v[0], y: v[1], z: v[2] }))
+      : [];
     tiles[wt.idx] = {
       id: `t${wt.idx}`,
       index: wt.idx,
       sides: wt.s,
       neighbours: wt.n,
       position3d: pos,
-      boundary: [],
+      boundary,
       terrainType: (wt.t as any) ?? 'plains',
       forested: wt.f || undefined,
     };

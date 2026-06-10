@@ -20,7 +20,7 @@
 
 import { Tile } from './types.js';
 import { Unit, HexSegment } from './units.js';
-import { graphDistance } from './pathfinding.js';
+import { effectiveCombatDistance } from './segmentGeometry.js';
 
 // ---------------------------------------------------------------------------
 // Re-export everything from sub-modules so existing importers stay compatible
@@ -32,14 +32,17 @@ export {
   MAX_DAMAGE,
   MIN_DAMAGE,
   SPLASH_SCALE,
-  RANGE_FALLOFF_PER_HEX,
+  RANGE_FALLOFF_PER_SEGMENT_UNIT as RANGE_FALLOFF_PER_HEX,
   DAMAGE_PER_ATTACK_POWER,
+  SEGMENT_RANGE_PER_POINT,
+  SEGMENT_RANGE_BASE,
   TANK_ATTACK_MODIFIER,
   SPIDER_ATTACK_MODIFIER,
   DRONE_ATTACK_MODIFIER,
   DRONE_DIRECT_FIRE_DAMAGE_MULTIPLIER,
   DRONE_SPLASH_FIRE_DAMAGE_MULTIPLIER,
   DRONE_ANTI_AIR_DAMAGE_MULTIPLIER,
+  ELEVATION_MULTIPLIER_PER_LEVEL,
   // Functions
   isDrone,
   getChassisAttackModifier,
@@ -49,6 +52,9 @@ export {
   clamp,
   applyDamage,
   calculateFormulaDamage,
+  getSegmentRangeThreshold,
+  getElevationLevel,
+  calculateElevationMultiplier,
 } from './combatMath.js';
 
 export {
@@ -85,6 +91,8 @@ import {
   clamp,
   applyDamage,
   calculateFormulaDamage,
+  getSegmentRangeThreshold,
+  calculateElevationMultiplier,
 } from './combatMath.js';
 
 import {
@@ -166,27 +174,15 @@ export function getEWDefense(
 
 /**
  * Get the terrain defence value for a tile.
- * Based on elevation type and forest cover.
+ * Based on forest cover only — elevation is now handled by the
+ * elevation advantage multiplier (offensive modifier).
  *
- * Elevation mapping:
- *   flat     → 0
- *   rolling  → 0
- *   hills    → 1
- *   mountain → 3
  * Forest: +1
- * Max 4.
+ * Max 1.
  */
 export function getTerrainDefense(tile: Tile): number {
-  let value = 0;
-
-  switch (tile.elevationType) {
-    case 'hills':    value += 1; break;
-    case 'mountain': value += 3; break;
-  }
-
-  if (tile.forested) value += 1;
-
-  return Math.min(4, value);
+  if (tile.forested) return 1;
+  return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,7 +230,7 @@ export function getDefencePower(
   // Formation count capped at 2, but each supporter contributes 0.5 to DefencePower
   const formationCount = clamp(getAdjacentFriendlySupport(target, allUnits, tiles), 0, 2);
   const defensiveFormation = formationCount * 0.5;
-  const terrain = clamp(getTerrainDefense(tiles[target.tileIndex]), 0, 4);
+  const terrain = clamp(getTerrainDefense(tiles[target.tileIndex]), 0, 1);
   const total = armour + ew + defensiveFormation + terrain;
 
   return { armour, ew, ewRaw, ewMultiplier, defensiveFormation, terrain, total };
@@ -275,6 +271,10 @@ export function calculateDirectDamage(
   const effectiveDefence = defencePower.total * DEFENCE_SCALE;
 
   let damage = calculateFormulaDamage(attackPower, effectiveDefence);
+
+  // Apply elevation advantage multiplier (before drone modifier)
+  const elevMult = calculateElevationMultiplier(tiles[attacker.tileIndex], tiles[target.tileIndex], attacker, target);
+  damage = clamp(Math.round(damage * elevMult), MIN_DAMAGE, MAX_DAMAGE);
 
   // Apply drone incoming damage modifier
   const antiDronePenaltyApplied = isDrone(target);
@@ -320,8 +320,12 @@ export function calculateSplashDamage(
 
   const fullFormulaDamage = calculateFormulaDamage(splashAttackPower, effectiveDefence);
 
+  // Apply elevation advantage multiplier (before splash scaling and drone modifier)
+  const elevMult = calculateElevationMultiplier(tiles[attacker.tileIndex], tiles[victim.tileIndex], attacker, victim);
+  const elevAdjustedDamage = clamp(Math.round(fullFormulaDamage * elevMult), MIN_DAMAGE, MAX_DAMAGE);
+
   // Splash scaling applied before drone modifier
-  let result = Math.max(MIN_DAMAGE, Math.round(fullFormulaDamage * SPLASH_SCALE));
+  let result = Math.max(MIN_DAMAGE, Math.round(elevAdjustedDamage * SPLASH_SCALE));
 
   // Drone incoming damage modifier applied after splash scaling
   result = applyDroneIncomingDamageModifier('splash', victim, result);
@@ -455,7 +459,8 @@ export function evaluateWeaponOptions(
     const aaAttackPower = calculateModifiedAttackPower(attacker, aaLevel, orientationBonus, dist);
     const defencePower = getDefencePower(target, allUnits, tiles, 'antiAir');
     const effectiveDefence = defencePower.total * DEFENCE_SCALE;
-    const antiAirDamage = calculateFormulaDamage(aaAttackPower, effectiveDefence);
+    let antiAirDamage = calculateFormulaDamage(aaAttackPower, effectiveDefence);
+    // Elevation multiplier does not apply to drones (calculateElevationMultiplier returns 1.0)
     options.push({
       mode: 'antiAir',
       score: antiAirDamage,
@@ -502,11 +507,10 @@ export function resolveAttack(
     return invalidResult(attackerId, targetId, 'Anti-Air weapons can only target drones');
   }
 
-  // Range check
-  const range = attacker.attributes.rangeAttack ?? 0;
-  const attackRange = Math.max(range, (attacker.attributes.kinetic ?? 0) > 0 ? 1 : 0, hasAntiAir ? 1 : 0);
-  const dist = graphDistance(tiles, attacker.tileIndex, target.tileIndex);
-  if (dist < 0 || dist > attackRange) {
+  // Range check — segment-based gate (0.25 per segment, continuous)
+  const segDist = effectiveCombatDistance(tiles, attacker, target);
+  const rangeThreshold = getSegmentRangeThreshold(attacker);
+  if (segDist > rangeThreshold) {
     return invalidResult(attackerId, targetId, 'Target out of range');
   }
 
@@ -518,7 +522,7 @@ export function resolveAttack(
   const defencePower = getDefencePower(target, allUnits, tiles, 'antiAir');
 
   // Evaluate all valid weapon options (shared with explainer)
-  const validOptions = evaluateWeaponOptions(attacker, target, allUnits, tiles, dist, orientationBonus);
+  const validOptions = evaluateWeaponOptions(attacker, target, allUnits, tiles, segDist, orientationBonus);
 
   if (validOptions.length === 0) {
     return invalidResult(attackerId, targetId, 'No valid weapon modes available');
@@ -754,6 +758,15 @@ export function resolveReactionFire(
 // ---------------------------------------------------------------------------
 
 export { moveUnit, pivotUnit } from './movement.js';
+
+// Re-export segment geometry for external consumers
+export {
+  getSegmentCentroid3D,
+  getLocalHexSpacing,
+  segmentDistance,
+  effectiveCombatDistance,
+  segmentMovementDistance,
+} from './segmentGeometry.js';
 
 // ---------------------------------------------------------------------------
 // Simultaneous resolution helpers

@@ -21,7 +21,7 @@
 10. [Total Damage & Health](#10-total-damage--health)
 11. [Defensive Formation](#11-defensive-formation)
 12. [Electronic Warfare (EW)](#12-electronic-warfare-ew)
-13. [Terrain Defence](#13-terrain-defence)
+13. [Terrain Defence & Elevation Advantage](#13-terrain-defence--elevation-advantage)
 14. [Encirclement (Informational)](#14-encirclement-informational)
 15. [Crossfire Bonus (Optional)](#15-crossfire-bonus-optional)
 16. [Anti-Air Reaction Fire](#16-anti-air-reaction-fire)
@@ -80,8 +80,8 @@ The world is a Goldberg polyhedron — mostly hexagons with 12 pentagons.
 
 | Property | Values | Combat Relevance |
 |----------|--------|-----------------|
-| `terrainType` | `grassland`, `plains`, `tundra`, `desert`, `ocean` | Terrain defence value (indirectly via elevation/forest). |
-| `elevationType` | `flat`, `rolling`, `hills`, `mountain` | Directly contributes to terrain defence. Mountain is impassable to ground. |
+| `terrainType` | `grassland`, `plains`, `tundra`, `desert`, `ocean` | Determines forest eligibility. |
+| `elevationType` | `flat`, `rolling`, `hills`, `mountain` | Elevation advantage multiplier (offensive). Mountain is impassable to ground. |
 | `forested` | `true` / `false` | +1 terrain defence. Only possible on grassland at non-mountain elevation. |
 | `neighbours` | Array of 5 or 6 adjacent tile indices | Defines adjacency for movement, range, formation. |
 | `sides` | 5 or 6 | Pentagon (5) or hexagon (6). |
@@ -94,11 +94,34 @@ The world is a Goldberg polyhedron — mostly hexagons with 12 pentagons.
 
 Each hex is subdivided into 6 triangular segments (0–5). Segment 0 faces `neighbour[0]`, proceeding clockwise. A maximum of **5 units** may occupy a single tile simultaneously (one segment must remain free).
 
+Each segment has a **real 3D position** (centroid) on the unit sphere, computed as the average of the tile center and the two boundary vertices defining that segment's triangle, projected back onto the sphere. This position is used for sub-hex distance calculations in combat and movement.
+
 ---
 
 ## 3. Range & Distance
 
-Range is measured as **graph distance** (BFS shortest path in hexes) between the attacker's tile and target's tile.
+### Range Gate (Integer)
+
+The **range gate** uses **graph distance** (BFS shortest path in hexes) between the attacker's tile and target's tile to determine whether an attack is valid. This is unchanged — segments do not affect whether you can attack.
+
+### Segment Distance (Fractional)
+
+The **effective combat distance** measures the chord distance between the attacker's segment centroid and the target's segment centroid, normalised to hex-spacing units:
+
+```
+segmentDistance = chordDist(attackerSegmentCentroid, targetSegmentCentroid) / averageHexSpacing
+```
+
+Where `averageHexSpacing` is the mean chord distance between a tile center and its neighbours' centers.
+
+This produces fractional values:
+- Two units on adjacent tiles, both leaning toward each other: ~0.6
+- Two units on adjacent tiles at tile centers: ~1.0
+- Two units on adjacent tiles, both leaning away: ~1.4
+- Two units in same hex, adjacent segments: ~0.3–0.4
+- Two units in same hex, opposite segments: ~0.6–0.7
+
+The segment distance feeds into **range efficiency** (range falloff), meaning units that lean into a fight hit harder, and units that lean away take less damage from return fire.
 
 ### Effective Attack Range
 
@@ -119,21 +142,22 @@ attackRange = max(rangeAttack, (kinetic > 0 ? 1 : 0), (antiAir > 0 ? 1 : 0))
 
 Declared attacks become less effective at longer distances.
 
-Range efficiency is calculated from the graph distance between attacker and target:
+Range efficiency is calculated from the **segment distance** (fractional, sub-hex-aware) between attacker and target:
 
 ```
-rangeEfficiency = 1 - RANGE_FALLOFF_PER_HEX × max(0, distance - 1)
+rangeEfficiency = 1 - RANGE_FALLOFF_PER_HEX × max(0, segmentDistance - 1)
 ```
 
 With `RANGE_FALLOFF_PER_HEX = 0.10`:
 
-| Distance | Range Efficiency |
-|----------|------------------|
-| 1 | 1.00 |
-| 2 | 0.90 |
-| 3 | 0.80 |
-| 4 | 0.70 |
-| 5 | 0.60 |
+| Segment Distance | Range Efficiency | Example |
+|------------------|------------------|---------|
+| 0.6 | 1.00 | Adjacent tiles, both leaning in |
+| 1.0 | 1.00 | Adjacent tiles, center-to-center |
+| 1.4 | 0.96 | Adjacent tiles, both leaning away |
+| 2.0 | 0.90 | ~2 hexes apart |
+| 3.0 | 0.80 | ~3 hexes apart |
+| 5.0 | 0.60 | ~5 hexes apart |
 
 Range efficiency modifies the weapon's base power before orientation bonus:
 
@@ -214,7 +238,7 @@ DefencePower = armour + EW + defensiveFormation + terrain
 | Armour | Target unit's `armour` attribute | 0–5 |
 | EW | Sum of `defence` attributes of all friendly units in same hex (incl. self), capped at 5 | 0–5 |
 | Defensive Formation | Count of adjacent friendly units (same hex different segment, or neighbouring hex), capped at 2, then × 0.5 | 0–1 |
-| Terrain | Based on tile's elevation + forest (see §13) | 0–4 |
+| Terrain | Based on tile's forest cover (see §13) | 0–1 |
 
 ### Effective Defence (Scaled)
 
@@ -267,7 +291,7 @@ Before calculation:
 - `armour` clamped to [0, 5]
 - `ew` clamped to [0, 5]
 - `defensiveFormation` clamped to [0, 2]
-- `terrain` clamped to [0, 4]
+- `terrain` clamped to [0, 1]
 
 ---
 
@@ -501,16 +525,11 @@ EW represents electronic countermeasures that are better at disrupting electroni
 
 ---
 
-## 13. Terrain Defence
+## 13. Terrain Defence & Elevation Advantage
 
-The defending hex's terrain provides a defence bonus based on elevation and forest:
+### Terrain Defence (Forest Cover)
 
-| Elevation | Defence Value |
-|-----------|--------------|
-| `flat` | 0 |
-| `rolling` | 0 |
-| `hills` | 1 |
-| `mountain` | 3 |
+The defending hex's forest cover provides a defence bonus:
 
 | Forest | Defence Value |
 |--------|--------------|
@@ -518,10 +537,57 @@ The defending hex's terrain provides a defence bonus based on elevation and fore
 | Forested | +1 |
 
 ```
-terrainDefence = min(4, elevationValue + forestValue)
+terrainDefence = forested ? 1 : 0
 ```
 
-**Maximum terrain defence: 4** (e.g. mountain + forest is impossible in generation, but capped regardless).
+**Maximum terrain defence: 1.**
+
+Elevation no longer contributes to terrain defence — it is handled by the elevation advantage multiplier (see below).
+
+### Elevation Advantage (Damage Multiplier)
+
+Relative elevation between attacker and defender modifies final damage as a multiplier. Each elevation level of advantage gives +10% damage; each level of disadvantage gives −10% damage.
+
+#### Elevation Levels
+
+| ElevationType | Level |
+|---|---|
+| `flat` | 0 |
+| `rolling` | 1 |
+| `hills` | 2 |
+| `mountain` | 3 |
+
+#### Formula
+
+```
+elevationDelta = attackerElevationLevel − defenderElevationLevel
+elevationMultiplier = clamp(1 + elevationDelta × 0.10, 0.70, 1.30)
+```
+
+The multiplier is applied to formula damage **after** the core damage formula but **before** the drone incoming damage modifier and splash scaling.
+
+#### Example Values
+
+| Attacker → Defender | Delta | Multiplier | Effect |
+|---|---|---|---|
+| Mountain → Flat | +3 | ×1.30 | +30% damage |
+| Mountain → Rolling | +2 | ×1.20 | +20% damage |
+| Hills → Flat | +2 | ×1.20 | +20% damage |
+| Hills → Rolling | +1 | ×1.10 | +10% damage |
+| Same elevation | 0 | ×1.00 | No change |
+| Flat → Rolling | −1 | ×0.90 | −10% damage |
+| Flat → Hills | −2 | ×0.80 | −20% damage |
+| Flat → Mountain | −3 | ×0.70 | −30% damage |
+
+#### Drone Exception
+
+Elevation advantage does **not** apply when either the attacker or the defender is a drone (airborne units are unaffected by ground elevation). The multiplier is always 1.0 in these cases.
+
+#### Interaction with Forest Defence
+
+Forest defence (terrain component of DefencePower) and elevation advantage are **independent effects** that stack naturally:
+- A unit on forested hills gets +1 terrain defence AND attackers firing uphill at it take an elevation penalty.
+- A unit on a mountain firing downhill gets +30% damage, regardless of the defender's forest cover.
 
 ### Terrain Type Constraints (World Generation)
 
@@ -725,28 +791,77 @@ function calculateEffectiveDefenceForAntiAirReaction(drone, gameState):
 
 ## 17. Movement & Attack Eligibility
 
-### Movement Costs (Per Hex Entered)
+### Movement Cost Model (Segment-Distance Based)
 
-| Mode | First Hex | Subsequent Hexes |
-|------|-----------|------------------|
-| **Tank** (wheeledMovement) | 1 MP | Flat/clear: 2 MP, Hill OR Forest: 3 MP, Hill AND Forest: 4 MP |
-| **Spider** (limbMovement) | 1 MP | All terrain: 3 MP (ignores terrain) |
-| **Drone** (flightMovement) | 1 MP | All terrain: 1 MP (ignores terrain) |
+Movement cost is computed from the **segment-to-segment distance** between the unit's current position and its destination, multiplied by a **terrain multiplier** based on the destination tile:
 
-- Mountain and ocean are **impassable** for ground units (tanks/spiders).
-- Drones can fly over any terrain.
+```
+movementCost = segmentDistance(from, to) × terrainMultiplier(destinationTile, mode)
+```
+
+Where `segmentDistance` is the chord distance between segment centroids normalised to hex-spacing units (~1.0 for adjacent tile centers).
+
+### Terrain Multipliers
+
+| Mode | Flat/Clear | Hill OR Forest | Hill AND Forest | Mountain/Ocean |
+|------|-----------|----------------|-----------------|----------------|
+| **Tank** (wheeledMovement) | ×1.75 | ×2.5 | ×3.5 | Impassable |
+| **Spider** (limbMovement) | ×2.5 | ×2.5 | ×2.5 | Impassable |
+| **Drone** (flightMovement) | ×1.0 | ×1.0 | ×1.0 | ×1.0 (passable) |
+
+### Effective Movement Ranges (5 MP budget, flat terrain)
+
+| Mode | Hex-distances per turn | Approx tiles center-to-center |
+|------|----------------------|-------------------------------|
+| Tank | 5 ÷ 1.75 ≈ 2.85 | ~3 tiles |
+| Spider | 5 ÷ 2.5 = 2.0 | ~2 tiles |
+| Drone | 5 ÷ 1.0 = 5.0 | ~5 tiles |
+
+### Segment Positioning Affects Cost
+
+Because cost is distance-based, the unit's starting segment matters:
+- Moving from the **near segment** (facing the destination) costs less — shorter distance.
+- Moving from the **far segment** (facing away) costs more — longer distance.
+- A unit on the far side of its hex moving to the far side of the next hex pays ~40% more than one on the near side moving to the near side.
+
+### Impassability
+
+- Mountain and ocean are **impassable** for ground units (tanks/spiders). Cost = ∞.
+- Drones can fly over any terrain at multiplier ×1.0.
 
 ### Attack After Movement
 
 - A unit needs **at least 1 MP remaining** after movement to attack.
-- Pivot (changing facing within same hex) is free but requires MP remaining and no prior move that turn.
-- Once a unit has moved to a different hex, facing is locked for the rest of the turn.
+- Once a unit has moved to a different hex, facing and segment are locked for the rest of the turn.
+
+### Intra-Hex Repositioning (Pivot)
+
+Changing a unit's **segment** within its hex costs fractional MP based on segment distance. Changing **facing only** (no segment change) is free.
+
+```
+pivotCost = segmentSteps × PIVOT_COST_PER_SEGMENT_STEP
+```
+
+With `PIVOT_COST_PER_SEGMENT_STEP = 0.25`:
+
+| Segment Move | Steps | MP Cost |
+|-------------|-------|---------|
+| Same segment (facing only) | 0 | 0.00 |
+| Adjacent segment (±1) | 1 | 0.25 |
+| Two segments away (±2) | 2 | 0.50 |
+| Opposite segment (±3) | 3 | 0.75 |
+
+Pivot rules:
+- Requires movement points remaining (enough to cover the pivot cost).
+- The unit must NOT have moved to a different hex this turn.
+- Segment steps = shortest arc distance between current and target segment (mod 6).
 
 ### Turn State Rules
 
 - Each unit has a movement budget = its movement attribute value (1–5 MP).
-- Movement points are spent as hexes are entered.
+- Movement points are spent as hexes are entered (inter-hex) or segments are traversed (intra-hex).
 - A unit that has spent all MP cannot attack or pivot.
+- Fractional MP is tracked — a unit with 0.25 MP remaining can still pivot one segment but cannot enter a new hex.
 
 ---
 
@@ -864,11 +979,18 @@ Neither attacker gets priority — both fire at full health.
 | `MAX_UNITS_PER_TILE` | 5 | Maximum units per hex (one segment must stay free). |
 | `EW_CAP` | 5 | Maximum EW contribution from same-hex allies. |
 | `FORMATION_CAP` | 2 | Maximum defensive formation supporter count (each contributes 0.5, so max +1.0 to DefencePower). |
-| `TERRAIN_DEFENCE_CAP` | 4 | Maximum terrain defence value. |
+| `TERRAIN_DEFENCE_CAP` | 1 | Maximum terrain defence value (forest only). |
+| `ELEVATION_MULTIPLIER_PER_LEVEL` | 0.10 | ±10% damage per elevation level difference. Clamped to [0.70, 1.30]. |
 | `REACTION_FIRE_AIR_ONLY` | true | Reaction Fire only triggers against drone / air units. |
 | `REACTION_FIRE_USES_ANTI_AIR_ONLY` | true | Reaction Fire may only use Anti-Air Fire. |
 | `DRONE_PATHING_IGNORES_ENEMY_OCCUPANCY` | true | Drone pathing ignores enemy-occupied tiles. |
 | `DRONE_DEFAULT_PATHING_DIRECT` | true | Drone default pathing uses a direct shortest route rather than avoiding danger. |
+| `PIVOT_COST_PER_SEGMENT_STEP` | 0.25 | MP cost per segment step when repositioning within a hex (discrete fallback). |
+| `TERRAIN_MULTIPLIER_TANK_FLAT` | 1.75 | Movement cost multiplier for tanks on flat/clear terrain. |
+| `TERRAIN_MULTIPLIER_TANK_HILL` | 2.5 | Movement cost multiplier for tanks on hill or forested terrain. |
+| `TERRAIN_MULTIPLIER_TANK_HILL_FOREST` | 3.5 | Movement cost multiplier for tanks on hill+forest terrain. |
+| `TERRAIN_MULTIPLIER_SPIDER` | 2.5 | Movement cost multiplier for spiders (all terrain). |
+| `TERRAIN_MULTIPLIER_DRONE` | 1.0 | Movement cost multiplier for drones (all terrain). |
 
 **Implementation note**: Only one weapon mode is resolved per attack. Direct, Splash, and Anti-Air damage are not additive. Reaction Fire is an anti-air-only mechanic — ground units do not trigger it and do not perform it against other ground units.
 

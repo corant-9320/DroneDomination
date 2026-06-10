@@ -37,9 +37,9 @@ const ATTR_ROWS: AttrRow[] = [
   { label: 'Range Att', key: 'rangeAttack' },
   { label: 'Anti-Air',  key: 'antiAir' },
   { label: 'Repair',    key: 'repair' },
-  { label: 'Wheeled',   key: 'wheeledMovement' },
-  { label: 'Limb',      key: 'limbMovement' },
-  { label: 'Flight',    key: 'flightMovement' },
+  { label: 'Movement',  key: 'wheeledMovement' },
+  { label: 'Movement',  key: 'limbMovement' },
+  { label: 'Movement',  key: 'flightMovement' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -246,8 +246,8 @@ export class DetailPanel {
 
     const rangeCol = b.inRange ? '#8f8' : '#f66';
     const rangeNote = b.inRange
-      ? `✓ In range (${b.distance}/${b.attackRange})`
-      : `✗ Out of range (${b.distance}/${b.attackRange})`;
+      ? `✓ In range (${b.distance.toFixed(2)}/${b.attackRange.toFixed(2)})`
+      : `✗ Out of range (${b.distance.toFixed(2)}/${b.attackRange.toFixed(2)})`;
 
     let html = `<table class="dp-combat-table">`;
 

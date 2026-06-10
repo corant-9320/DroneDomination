@@ -7,6 +7,19 @@
  *
  * These functions operate only on attribute data and tile metadata that is
  * available on both sides of the wire — no src/ or server/ types are imported.
+ *
+ * ─── SEGMENT-BASED COST MODEL ────────────────────────────────────────────────
+ *
+ * Every move is one segment step — either to an adjacent segment within the
+ * same hex, or across the hex border to the facing segment in the adjacent hex.
+ * Cost is determined by the destination segment's tile terrain + movement mode.
+ *
+ *   Drone (flight):  0.25 per step always. Can fly over ocean but cannot
+ *                    finish a turn on ocean (enforced at turn-state level).
+ *   Spider (limb):   0.50 per step always. Forbidden: mountain, ocean.
+ *   Tank (wheeled):  0.25 on flat/clear.
+ *                    0.75 on hills.
+ *                    Forbidden: forest, mountain, ocean.
  */
 
 import type { UnitAttributes } from './unitTypes.js';
@@ -35,11 +48,11 @@ export function getMovementMode(attrs: UnitAttributes): MovementMode {
 }
 
 // ---------------------------------------------------------------------------
-// Tile shape needed for hex entry cost
+// Tile shape needed for segment cost
 // ---------------------------------------------------------------------------
 
 /**
- * Minimal tile shape required by hexEntryCost.
+ * Minimal tile shape required by segmentCost.
  * Both TileData (client) and Tile (src/world/types.ts) satisfy this.
  */
 export interface MovementTile {
@@ -67,16 +80,49 @@ function isHill(tile: MovementTile): boolean {
   return elev === 'hills';
 }
 
-/** Whether a tile is impassable for ground units. */
-function isImpassable(tile: MovementTile): boolean {
+/** Whether a tile is mountain. */
+function isMountain(tile: MovementTile): boolean {
   const elev = tile.elevationType ?? tile.elevType ?? '';
+  return elev === 'mountain';
+}
+
+/** Whether a tile is ocean. */
+function isOcean(tile: MovementTile): boolean {
   const terrain = tile.terrainType ?? tile.terrain ?? '';
-  return elev === 'mountain' || terrain === 'ocean';
+  return terrain === 'ocean';
 }
 
 /** Whether a tile has forest cover. */
 function isForested(tile: MovementTile): boolean {
   return (tile.forested ?? tile.f) === true;
+}
+
+// ---------------------------------------------------------------------------
+// Segment-based cost constants
+// ---------------------------------------------------------------------------
+
+/** Cost per segment step for drone (flight). */
+export const COST_DRONE = 0.25;
+
+/** Cost per segment step for spider (limb). */
+export const COST_SPIDER = 0.50;
+
+/** Cost per segment step for tank on flat/clear terrain. */
+export const COST_TANK_FLAT = 0.25;
+
+/** Cost per segment step for tank on hills. */
+export const COST_TANK_HILLS = 0.75;
+
+/**
+ * Base intra-hex pivot cost per segment step for a given movement mode.
+ * Tanks use their flat cost (they're already on the tile, terrain doesn't change).
+ */
+export function pivotStepCost(mode: MovementMode): number {
+  switch (mode) {
+    case 'flight': return COST_DRONE;
+    case 'limb': return COST_SPIDER;
+    case 'wheeled': return COST_TANK_FLAT;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -105,36 +151,77 @@ export function isImpassableTerrain(terrain: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Hex entry cost
+// Segment step cost (unified model)
 // ---------------------------------------------------------------------------
 
 /**
- * Cost in MP to enter a tile, given movement mode and whether this is the
- * first hex of the turn.
+ * Cost to move one segment step into a destination tile, given the unit's
+ * movement mode. The destination tile's terrain determines the cost.
  *
- * Returns Infinity for impassable tiles (ground units only).
+ * For intra-hex moves (same tile), pass the current tile as destination.
  *
- * Cost model:
- *   - First hex is always 1 MP regardless of terrain or unit type.
- *   - Drone: 1 MP per hex always (ignores terrain).
- *   - Spider (limb): 3 MP per hex always (terrain-agnostic).
- *   - Tank (wheeled): Clear/flat=2, Hill OR Forest=3, Hill AND Forest=4.
- *   - Mountain and ocean are impassable for ground units.
+ * Returns Infinity if the destination is forbidden for this movement mode.
+ *
+ * Drones can traverse ocean segments but cannot end a turn there — that
+ * restriction is enforced at the turn-state level, not here.
+ */
+export function segmentCost(tile: MovementTile, mode: MovementMode): number {
+  // Drones can go anywhere (ocean end-of-turn restriction is separate)
+  if (mode === 'flight') {
+    return COST_DRONE;
+  }
+
+  // Ground units cannot enter ocean or mountain
+  if (isOcean(tile)) return Infinity;
+  if (isMountain(tile)) return Infinity;
+
+  // Spider: constant cost, any non-mountain non-ocean terrain
+  if (mode === 'limb') {
+    return COST_SPIDER;
+  }
+
+  // Tank (wheeled): forbidden from forest
+  if (isForested(tile)) return Infinity;
+
+  // Tank: hills
+  if (isHill(tile)) {
+    return COST_TANK_HILLS;
+  }
+
+  // Tank: flat/clear
+  return COST_TANK_FLAT;
+}
+
+// ---------------------------------------------------------------------------
+// Legacy hex entry cost (deprecated — forwards to segmentCost)
+// ---------------------------------------------------------------------------
+
+/**
+ * @deprecated Use segmentCost() instead. Kept for call sites not yet migrated.
  */
 export function hexEntryCost(
   tile: MovementTile,
   mode: MovementMode,
-  isFirstHex: boolean,
+  _isFirstHex: boolean,
 ): number {
-  if (isImpassable(tile) && mode !== 'flight') return Infinity;
-  if (isFirstHex) return 1;
-  if (mode === 'flight') return 1;
-  if (mode === 'limb') return 3;
+  return segmentCost(tile, mode);
+}
 
-  // Tank (wheeled): terrain-dependent
-  const hill = isHill(tile);
-  const forested = isForested(tile);
-  if (hill && forested) return 4;
-  if (hill || forested) return 3;
-  return 2;
+// ---------------------------------------------------------------------------
+// Convenience constants and helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the MP cost to traverse from one segment to another within the same hex.
+ * Uses the shortest arc (min clockwise vs counter-clockwise distance).
+ * Returns 0 if segments are identical.
+ *
+ * NOTE: This uses COST_DRONE (0.25) per step as a lower bound. For the actual
+ * terrain-aware intra-hex cost, use pivotStepCost(mode) per step.
+ */
+export function segmentStepCost(fromSegment: number, toSegment: number): number {
+  if (fromSegment === toSegment) return 0;
+  const diff = Math.abs(toSegment - fromSegment);
+  const steps = Math.min(diff, 6 - diff);
+  return steps * COST_DRONE;
 }

@@ -1044,6 +1044,22 @@ export function computeContextualAttackRoute(
       cur = bestN;
       if (bestN === destTile) break;
     }
+
+    // Verify the red extension actually reaches an in-range position.
+    // If the endpoint isn't within segment-distance range of the enemy,
+    // remove the red hops — drawing a bright red line to a position that
+    // still can't fire is misleading.
+    if (cur !== destTile) {
+      const endSegment = 0; // segment used for the last red hop position
+      const endDist = sharedSegmentDistance(rangeTiles, cur, endSegment, destTile, destSegment);
+      if (endDist > threshold) {
+        // Red line doesn't reach a valid firing position — remove weapon range hops
+        while (movementRoute.hops.length > 0 &&
+               movementRoute.hops[movementRoute.hops.length - 1].zone === 'weaponRange') {
+          movementRoute.hops.pop();
+        }
+      }
+    }
   }
 
   return movementRoute;

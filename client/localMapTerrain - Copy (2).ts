@@ -1,6 +1,6 @@
 /**
  * localMapTerrain.ts — All terrain fill / shading / contour / water / forest drawing.
- * v6: explicitly erases same-elevation seams after polygon fills; intra-hex segment guides remain disabled.
+ * v4: organic sun-position relief; centreline contours removed; softened non-faceted peaks.
  *
  * Extracted from LocalMapView (P1 refactor).
  * TerrainRenderer is a stateless class: it holds only a canvas context reference
@@ -88,12 +88,17 @@ export class TerrainRenderer {
 
       if (this.isWaterTile(tile)) {
         this.drawWaterBoundaryEdges(ft, tile, ftByTile);
+      } else {
+        // Keep the ordinary hex grid quiet; elevation relief is drawn later.
+        this.ctx.strokeStyle = 'rgba(0,0,0,0.045)';
+        this.ctx.lineWidth = 0.35;
+        this.ctx.stroke();
       }
 
-      // v5: do not draw ordinary land hex outlines or intra-hex segment guides.
-      // Height information now comes only from organic elevation relief between
-      // different elevation levels. Same-height neighbours intentionally merge
-      // into larger continuous landforms instead of reading as individual cells.
+      // Draw faint dotted segment dividers on land hexes only
+      if (tile.s === 6 && !this.isWaterTile(tile)) {
+        this.drawSegmentLines(ft);
+      }
 
       // Draw tree icons in each corner of forested hexes
       if (tile.f && tile.s === 6) {
@@ -131,13 +136,7 @@ export class TerrainRenderer {
       }
     }
 
-    // Same-elevation seam pass — after all tiles are filled.
-    // Canvas anti-aliasing can leave hairline hex boundaries even when no
-    // outline is stroked. Cover those internal same-height edges before the
-    // relief passes so only real elevation transitions remain visible.
-    this.eraseSameElevationInternalEdges(ftByTile);
-
-    // Water sheen pass — after all tiles are filled and internal water seams are hidden.
+    // Water sheen pass — after all tiles are filled
     this.drawWaterSurfaceLighting(ftByTile);
 
     // Terrain relief passes
@@ -328,60 +327,6 @@ export class TerrainRenderer {
     ctx.clip();
   }
 
-
-  /**
-   * Hide residual hairline seams between neighbours at the same elevation.
-   *
-   * Even with land hex outlines disabled, Canvas 2D can show anti-aliased cracks
-   * where two independently-filled polygons meet. This pass strokes only shared
-   * same-elevation edges with the local fill colour, so same-height tiles merge
-   * visually while true elevation boundaries remain available for relief.
-   */
-  private eraseSameElevationInternalEdges(ftByTile: Map<number, FlatTile>): void {
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    for (const ft of ftByTile.values()) {
-      const tile = this.world.tiles[ft.tileIndex];
-      if (tile.s !== 6 || ft.poly.length < 6 || tile.city) continue;
-      const ownLevel = this.elevationLevel(tile);
-      const color = this.terrainFillColor(tile);
-
-      for (let seg = 0; seg < ft.poly.length; seg++) {
-        const neighbour = this.neighbourAcrossSegment(tile, ft, seg, ftByTile);
-        if (!neighbour || neighbour.city) continue;
-        const neighbourIdx = this.tileIndexOf(neighbour);
-        if (neighbourIdx < 0 || ft.tileIndex > neighbourIdx) continue;
-        if (this.elevationLevel(neighbour) !== ownLevel) continue;
-
-        const nColor = this.terrainFillColor(neighbour);
-        const sameVisualFill =
-          nColor === color &&
-          neighbour.terrain === tile.terrain &&
-          neighbour.elevType === tile.elevType &&
-          neighbour.f === tile.f;
-
-        const v0 = ft.poly[seg];
-        const v1 = ft.poly[(seg + 1) % ft.poly.length];
-        const [ax, ay] = this.worldToScreen(v0.x, v0.y);
-        const [bx, by] = this.worldToScreen(v1.x, v1.y);
-
-        ctx.beginPath();
-        ctx.moveTo(ax, ay);
-        ctx.lineTo(bx, by);
-        ctx.strokeStyle = sameVisualFill ? color : this.mixHexColors(color, nColor, 0.5);
-        ctx.globalAlpha = sameVisualFill ? 1.0 : 0.78;
-        ctx.lineWidth = sameVisualFill ? 2.2 : 4.2;
-        ctx.stroke();
-      }
-    }
-
-    ctx.restore();
-  }
-
   // ─── Water rendering ────────────────────────────────────────────────────────
 
   /** Draw only the boundary edges where water meets land or the map edge. */
@@ -560,15 +505,6 @@ export class TerrainRenderer {
         const neighbourIdx = this.world.tiles.indexOf(neighbour);
         if (neighbourIdx >= 0 && ft.tileIndex > neighbourIdx) continue;
 
-        const ownLevel = this.elevationLevel(tile);
-        const neighbourLevel = this.elevationLevel(neighbour);
-
-        // v6: do not feather same-elevation internal edges. Those are erased by
-        // eraseSameElevationInternalEdges(), so this pass cannot reintroduce a
-        // visible same-height hex boundary. Feathering is now reserved for true
-        // height transitions only, where it supports the organic relief.
-        if (ownLevel === neighbourLevel) continue;
-
         const nColor = this.terrainFillColor(neighbour);
         if (
           nColor === color &&
@@ -585,8 +521,8 @@ export class TerrainRenderer {
         ctx.moveTo(ax, ay);
         ctx.lineTo(bx, by);
         ctx.strokeStyle = this.mixHexColors(color, nColor, 0.5);
-        ctx.globalAlpha = 0.075;
-        ctx.lineWidth = 7.5;
+        ctx.globalAlpha = 0.13;
+        ctx.lineWidth = 10;
         ctx.stroke();
       }
     }
@@ -988,12 +924,23 @@ export class TerrainRenderer {
   // ─── Hex line rendering ─────────────────────────────────────────────────────
 
   /**
-   * Segment dividers are intentionally disabled in the organic terrain view.
-   * Keeping this method as a no-op preserves compatibility with any callers
-   * while ensuring intra-hex construction lines never compete with relief.
+   * Draw faint dotted segment dividers from hex centre to each boundary vertex.
    */
-  drawSegmentLines(_ft: FlatTile): void {
-    return;
+  drawSegmentLines(ft: FlatTile): void {
+    const [cx, cy] = this.worldToScreen(ft.cx, ft.cy);
+    this.ctx.save();
+    this.ctx.strokeStyle = 'rgba(0,0,0,0.14)';
+    this.ctx.lineWidth = 0.45;
+    this.ctx.setLineDash([3, 5]);
+
+    for (const v of ft.poly) {
+      const [vx, vy] = this.worldToScreen(v.x, v.y);
+      this.ctx.beginPath();
+      this.ctx.moveTo(cx, cy);
+      this.ctx.lineTo(vx, vy);
+      this.ctx.stroke();
+    }
+    this.ctx.restore();
   }
 
   /**

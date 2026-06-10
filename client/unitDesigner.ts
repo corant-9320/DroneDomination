@@ -144,35 +144,36 @@ function updateMovementComparison(): void {
   const active = colIndex[currentChassis];
 
   // Compute "max hexes + can attack?" for each chassis at current MP
-  // Tank: first hex=1, subsequent=2 (clear). hexes = 1 + floor((mp-1)/2), attack if remainder>=1
-  const tankClearHexes = 1 + Math.floor((mp - 1) / 2);
-  const tankCanAttack = (mp - 1 - Math.floor((mp - 1) / 2) * 2) >= 1;
-  // Spider: first hex=1, subsequent=3. hexes = 1 + floor((mp-1)/3), attack if remainder>=1
-  const spiderHexes = 1 + Math.floor((mp - 1) / 3);
-  const spiderCanAttack = (mp - 1 - Math.floor((mp - 1) / 3) * 3) >= 1;
-  // Drone: every hex=1. hexes = mp, or (mp-1) + attack
-  const droneHexes = mp;
-  const droneHexesWithAttack = mp - 1;
+  // Using segment cost per hex (no pivot): tank flat=0.25, spider=0.50, drone=0.25
+  // Attack requires 1 MP remaining after movement.
+  const tankHexes = Math.floor((mp - 1) / 0.25);   // leave 1 MP for attack
+  const tankCanAttack = mp > 0.25;
+  const tankMaxHexes = Math.floor(mp / 0.25);
+  const spiderHexes = Math.floor((mp - 1) / 0.50);
+  const spiderCanAttack = mp > 0.50;
+  const spiderMaxHexes = Math.floor(mp / 0.50);
+  const droneHexes = Math.floor(mp / 0.25);
+  const droneHexesWithAttack = Math.floor((mp - 1) / 0.25);
 
   type Cell = { text: string; cls?: string };
   type Row = { label: string; cells: [Cell, Cell, Cell] };
 
   const rows: Row[] = [
     {
-      label: 'First hex',
-      cells: [{ text: '1 MP' }, { text: '1 MP' }, { text: '1 MP' }],
+      label: 'Flat / clear',
+      cells: [{ text: '0.25 MP' }, { text: '0.50 MP', cls: 'warn' }, { text: '0.25 MP', cls: 'good' }],
     },
     {
-      label: 'Clear / flat',
-      cells: [{ text: '2 MP' }, { text: '3 MP', cls: 'warn' }, { text: '1 MP', cls: 'good' }],
+      label: 'Hill',
+      cells: [{ text: '0.75 MP', cls: 'warn' }, { text: '0.50 MP', cls: 'good' }, { text: '0.25 MP', cls: 'good' }],
     },
     {
-      label: 'Hill or forest',
-      cells: [{ text: '3 MP', cls: 'warn' }, { text: '3 MP', cls: 'warn' }, { text: '1 MP', cls: 'good' }],
+      label: 'Forest',
+      cells: [{ text: 'blocked', cls: 'bad' }, { text: '0.50 MP', cls: 'good' }, { text: '0.25 MP', cls: 'good' }],
     },
     {
       label: 'Hill + forest',
-      cells: [{ text: '4 MP', cls: 'bad' }, { text: '3 MP', cls: 'warn' }, { text: '1 MP', cls: 'good' }],
+      cells: [{ text: 'blocked', cls: 'bad' }, { text: '0.50 MP', cls: 'good' }, { text: '0.25 MP', cls: 'good' }],
     },
     {
       label: 'Mountain/ocean',
@@ -183,11 +184,19 @@ function updateMovementComparison(): void {
       ],
     },
     {
-      label: `With ${mp} MP (clear)`,
+      label: `With ${mp} MP (flat, +atk)`,
       cells: [
-        { text: `${tankClearHexes}hex${tankClearHexes !== 1 ? 'es' : ''}${tankCanAttack ? '+atk' : ''}`, cls: tankCanAttack ? 'good' : 'warn' },
+        { text: `${tankHexes}hex${tankHexes !== 1 ? 'es' : ''}${tankCanAttack ? '+atk' : ''}`, cls: tankCanAttack ? 'good' : 'warn' },
         { text: `${spiderHexes}hex${spiderHexes !== 1 ? 'es' : ''}${spiderCanAttack ? '+atk' : ''}`, cls: spiderCanAttack ? 'good' : 'warn' },
-        { text: `${droneHexes}hex${droneHexes !== 1 ? 'es' : ''} or ${droneHexesWithAttack}+atk`, cls: 'good' },
+        { text: `${droneHexesWithAttack}hex${droneHexesWithAttack !== 1 ? 'es' : ''}+atk or ${droneHexes} max`, cls: 'good' },
+      ],
+    },
+    {
+      label: `With ${mp} MP (flat, max)`,
+      cells: [
+        { text: `${tankMaxHexes}hex${tankMaxHexes !== 1 ? 'es' : ''}`, cls: 'warn' },
+        { text: `${spiderMaxHexes}hex${spiderMaxHexes !== 1 ? 'es' : ''}`, cls: 'warn' },
+        { text: `${droneHexes}hex${droneHexes !== 1 ? 'es' : ''}`, cls: 'good' },
       ],
     },
   ];
@@ -195,9 +204,9 @@ function updateMovementComparison(): void {
   const headerRow = `
     <tr>
       <th></th>
-      <th${active === 0 ? ' style="color:#fff"' : ''}>🛞 Tank</th>
-      <th${active === 1 ? ' style="color:#fff"' : ''}>🕷️ Spider</th>
-      <th${active === 2 ? ' style="color:#fff"' : ''}>🚁 Drone</th>
+      <th${active === 0 ? ' style="color:#fff"' : ''}>🛞 Wheeled</th>
+      <th${active === 1 ? ' style="color:#fff"' : ''}>🕷️ Limbed</th>
+      <th${active === 2 ? ' style="color:#fff"' : ''}>🚁 Flight</th>
     </tr>`;
 
   const bodyRows = rows.map(row => {
@@ -291,9 +300,9 @@ function updateChassisTraits(): void {
   const headerRow = `
     <tr>
       <th></th>
-      <th${active === 0 ? ' style="color:#fff"' : ''}>🛞 Tank</th>
-      <th${active === 1 ? ' style="color:#fff"' : ''}>🕷️ Spider</th>
-      <th${active === 2 ? ' style="color:#fff"' : ''}>🚁 Drone</th>
+      <th${active === 0 ? ' style="color:#fff"' : ''}>🛞 Wheeled</th>
+      <th${active === 1 ? ' style="color:#fff"' : ''}>🕷️ Limbed</th>
+      <th${active === 2 ? ' style="color:#fff"' : ''}>🚁 Flight</th>
     </tr>`;
 
   const bodyRows = rows.map(row => {

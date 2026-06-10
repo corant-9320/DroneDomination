@@ -11,7 +11,8 @@ import { UnitData } from './worldData.js';
 import { FlatTileRef } from './mapInput.js';
 import {
   getMovementMode,
-  hexEntryCost as sharedHexEntryCost,
+  segmentCost as sharedSegmentCost,
+  pivotStepCost,
 } from '../shared/movementConstants.js';
 
 // ─── BFS pathfinding ──────────────────────────────────────────────────────────
@@ -197,10 +198,14 @@ export function pointInTriangle(
 /**
  * Calculate how many BFS hops along a path a unit can afford.
  *
+ * Accounts for segment-based movement costs: the cost of each step
+ * depends on the destination tile's terrain and the unit's movement mode.
+ * Intra-hex traversal (departure segment pivot) also costs per step.
+ *
  * @param path            Array of tile indices (output of findPathBFS).
  * @param unit            The moving unit (used for movement mode).
  * @param remainingMP     Movement points remaining this turn.
- * @param hexesAlreadyMoved  Hexes the unit has already moved (for first-hex rule).
+ * @param hexesAlreadyMoved  Unused (legacy param, kept for API compat).
  * @param tiles           Full tile array.
  * @returns Number of hops (tiles entered) affordable within remainingMP.
  */
@@ -208,19 +213,34 @@ export function affordableHops(
   path: number[],
   unit: UnitData,
   remainingMP: number,
-  hexesAlreadyMoved: number,
+  _hexesAlreadyMoved: number,
   tiles: TileData[],
 ): number {
   const mode = getMovementMode(unit.attributes);
   let spent = 0;
   let hops = 0;
+  let currentSegment = unit.segment;
 
   for (let i = 1; i < path.length; i++) {
-    const isFirst = (hexesAlreadyMoved + i - 1) === 0;
-    const cost = sharedHexEntryCost(tiles[path[i]], mode, isFirst);
-    if (cost === Infinity) break;
-    spent += cost;
+    // Cost to traverse from current segment to departure segment in current hex
+    const departureSeg = tiles[path[i - 1]].n.indexOf(path[i]);
+    const departure = departureSeg >= 0 ? departureSeg : 0;
+
+    // Intra-hex pivot steps — cost per step is chassis-dependent.
+    const diff = Math.abs(currentSegment - departure);
+    const pivotSteps = Math.min(diff, 6 - diff);
+    spent += pivotSteps * pivotStepCost(mode);
     if (spent > remainingMP) break;
+
+    // Cross border: cost = segmentCost of destination tile
+    const crossCost = sharedSegmentCost(tiles[path[i]], mode);
+    if (crossCost === Infinity) break;
+    spent += crossCost;
+    if (spent > remainingMP) break;
+
+    // Arrival segment in the new hex
+    const arrivalSeg = tiles[path[i]].n.indexOf(path[i - 1]);
+    currentSegment = arrivalSeg >= 0 ? arrivalSeg : 0;
     hops++;
   }
   return hops;
@@ -229,10 +249,12 @@ export function affordableHops(
 /**
  * Calculate the actual MP spent for a given number of hops along a path.
  *
+ * Accounts for segment-based movement costs at each hop.
+ *
  * @param path            Array of tile indices (output of findPathBFS).
  * @param unit            The moving unit (used for movement mode).
  * @param hops            Number of steps to take along the path.
- * @param hexesAlreadyMoved  Hexes the unit has already moved (for first-hex rule).
+ * @param hexesAlreadyMoved  Unused (legacy param, kept for API compat).
  * @param tiles           Full tile array.
  * @returns Total MP cost for the given number of hops.
  */
@@ -240,14 +262,28 @@ export function mpSpentForHops(
   path: number[],
   unit: UnitData,
   hops: number,
-  hexesAlreadyMoved: number,
+  _hexesAlreadyMoved: number,
   tiles: TileData[],
 ): number {
   const mode = getMovementMode(unit.attributes);
   let spent = 0;
+  let currentSegment = unit.segment;
+
   for (let i = 1; i <= hops && i < path.length; i++) {
-    const isFirst = (hexesAlreadyMoved + i - 1) === 0;
-    spent += sharedHexEntryCost(tiles[path[i]], mode, isFirst);
+    // Cost to traverse from current segment to departure segment in current hex
+    const departureSeg = tiles[path[i - 1]].n.indexOf(path[i]);
+    const departure = departureSeg >= 0 ? departureSeg : 0;
+
+    const diff = Math.abs(currentSegment - departure);
+    const pivotSteps = Math.min(diff, 6 - diff);
+    spent += pivotSteps * pivotStepCost(mode);
+
+    // Cross border
+    spent += sharedSegmentCost(tiles[path[i]], mode);
+
+    // Arrival segment in the new hex
+    const arrivalSeg = tiles[path[i]].n.indexOf(path[i - 1]);
+    currentSegment = arrivalSeg >= 0 ? arrivalSeg : 0;
   }
   return spent;
 }

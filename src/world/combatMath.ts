@@ -6,6 +6,7 @@
  */
 
 import { Unit } from './units.js';
+import { Tile, ElevationType } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -17,12 +18,12 @@ export const MIN_DAMAGE = 1;
 export const SPLASH_SCALE = 0.3;
 
 /**
- * AttackPower is reduced by 10% for each hex of attack distance beyond 1.
- * rangeEfficiency = 1 - RANGE_FALLOFF_PER_HEX × max(0, distance - 1)
+ * AttackPower is reduced by 10% for each unit of segment-distance beyond 1.
+ * rangeEfficiency = 1 - RANGE_FALLOFF_PER_SEGMENT_UNIT × max(0, distance - 1)
  * Applies to declared attacks only (Direct Fire, Splash Fire, Anti-Air Fire).
  * Does NOT apply to Anti-Air Reaction Fire.
  */
-export const RANGE_FALLOFF_PER_HEX = 0.10;
+export const RANGE_FALLOFF_PER_SEGMENT_UNIT = 0.10;
 
 /**
  * Maximum possible damage contribution per point of AttackPower before the
@@ -30,6 +31,19 @@ export const RANGE_FALLOFF_PER_HEX = 0.10;
  * undefended targets.
  */
 export const DAMAGE_PER_ATTACK_POWER = 6;
+
+// ---------------------------------------------------------------------------
+// Segment-based range gate constants
+// ---------------------------------------------------------------------------
+
+import {
+  SEGMENT_RANGE_PER_POINT as _SEGMENT_RANGE_PER_POINT,
+  SEGMENT_RANGE_BASE as _SEGMENT_RANGE_BASE,
+} from '../../shared/rangeCheck.js';
+
+// Re-export for downstream consumers
+export const SEGMENT_RANGE_PER_POINT = _SEGMENT_RANGE_PER_POINT;
+export const SEGMENT_RANGE_BASE = _SEGMENT_RANGE_BASE;
 
 // ---------------------------------------------------------------------------
 // Chassis attack modifiers — outgoing weapon power multiplier by movement type
@@ -109,13 +123,13 @@ export function getChassisAttackModifier(unit: Unit): number {
 /**
  * Calculate range efficiency for a declared attack.
  *
- * rangeEfficiency = 1 - RANGE_FALLOFF_PER_HEX × max(0, distance - 1)
+ * rangeEfficiency = 1 - RANGE_FALLOFF_PER_SEGMENT_UNIT × max(0, distance - 1)
  * Distance 1 → 1.00, distance 2 → 0.90, distance 3 → 0.80, etc.
  * Minimum 0 (clamped). Does NOT apply to Anti-Air Reaction Fire.
  */
 export function calculateRangeEfficiency(distance: number): number {
   const d = Math.max(1, distance);
-  return Math.max(0, 1 - RANGE_FALLOFF_PER_HEX * Math.max(0, d - 1));
+  return Math.max(0, 1 - RANGE_FALLOFF_PER_SEGMENT_UNIT * Math.max(0, d - 1));
 }
 
 // ---------------------------------------------------------------------------
@@ -203,4 +217,74 @@ export function calculateFormulaDamage(attackPower: number, effectiveDefence: nu
     MIN_DAMAGE +
     (maxFormulaDamage - MIN_DAMAGE) * apSq / (apSq + edSq);
   return clamp(Math.round(rawDamage), MIN_DAMAGE, MAX_DAMAGE);
+}
+
+// ---------------------------------------------------------------------------
+// Elevation advantage
+// ---------------------------------------------------------------------------
+
+/** Map elevation type to numeric level for comparison. */
+export function getElevationLevel(elevationType: ElevationType): number {
+  switch (elevationType) {
+    case 'flat':     return 0;
+    case 'rolling':  return 1;
+    case 'hills':    return 2;
+    case 'mountain': return 3;
+    default:         return 0;
+  }
+}
+
+/**
+ * Elevation advantage multiplier per level difference.
+ * +10% per elevation level the attacker is above the defender.
+ * -10% per elevation level the attacker is below the defender.
+ */
+export const ELEVATION_MULTIPLIER_PER_LEVEL = 0.10;
+
+/**
+ * Calculate the elevation damage multiplier.
+ *
+ * elevationDelta = attackerLevel - defenderLevel
+ * multiplier = 1 + (delta × 0.10), clamped to [0.70, 1.30]
+ *
+ * Returns 1.0 (no effect) when either unit is a drone (airborne).
+ */
+export function calculateElevationMultiplier(
+  attackerTile: Tile,
+  defenderTile: Tile,
+  attackerUnit: Unit,
+  targetUnit: Unit,
+): number {
+  // Drones are airborne — elevation advantage does not apply
+  if (isDrone(attackerUnit) || isDrone(targetUnit)) return 1.0;
+
+  const attackerLevel = getElevationLevel(attackerTile.elevationType);
+  const defenderLevel = getElevationLevel(defenderTile.elevationType);
+  const delta = attackerLevel - defenderLevel;
+  const multiplier = 1 + delta * ELEVATION_MULTIPLIER_PER_LEVEL;
+  return clamp(multiplier, 0.70, 1.30);
+}
+
+// ---------------------------------------------------------------------------
+// Segment-based range gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Get the maximum segment-distance a unit can attack at.
+ *
+ * threshold = rangeAttack * SEGMENT_RANGE_PER_POINT + SEGMENT_RANGE_BASE
+ *
+ * A unit must have at least one weapon (kinetic, splashAttack, or antiAir)
+ * to attack at all — rangeAttack alone doesn't grant attack capability.
+ * However any weapon-bearing unit gets at least the base reach (0.5).
+ *
+ * Examples:
+ *   rangeAttack 0 → threshold 0.5  (adjacent segment)
+ *   rangeAttack 1 → threshold 1.5  (1 hex + segment)
+ *   rangeAttack 2 → threshold 2.5  (2 hexes + segment)
+ *   rangeAttack 5 → threshold 5.5  (5 hexes + segment)
+ */
+export function getSegmentRangeThreshold(unit: Unit): number {
+  const range = unit.attributes.rangeAttack ?? 0;
+  return range * SEGMENT_RANGE_PER_POINT + SEGMENT_RANGE_BASE;
 }

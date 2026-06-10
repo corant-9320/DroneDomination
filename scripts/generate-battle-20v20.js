@@ -66,10 +66,11 @@ function isTankFriendly(tileIdx) {
   return (elev === 'flat' || elev === 'rolling') && !isForested(tileIdx);
 }
 
-/** True if a tile is good for spiders (hills, mountains, or forested). */
+/** True if a tile is good for spiders (hills or forested; mountains are impassable). */
 function isSpiderFriendly(tileIdx) {
   const elev = getElevType(tileIdx);
-  return elev === 'hills' || elev === 'mountain' || isForested(tileIdx);
+  if (elev === 'mountain') return false; // mountains are impassable for ground units
+  return elev === 'hills' || isForested(tileIdx);
 }
 
 /** Drones can spawn anywhere (they fly). */
@@ -236,7 +237,7 @@ function rng(seed) {
   };
 }
 
-const rand = rng(42);
+const rand = rng(Date.now());
 function randInt(min, max) { return Math.floor(rand() * (max - min + 1)) + min; }
 function randChoice(arr)   { return arr[Math.floor(rand() * arr.length)]; }
 

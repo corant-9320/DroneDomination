@@ -24,6 +24,9 @@ export class TurnManager {
   /** Units that have already used their action this turn (attack or repair). */
   actedUnits: Set<string> = new Set();
 
+  /** Units the player has put to sleep this turn (suppresses "are you sure?" check). */
+  sleepingUnits: Set<string> = new Set();
+
   /** Units currently selected for movement (by unit id). */
   selectedUnits: Set<string> = new Set();
 
@@ -72,6 +75,7 @@ export class TurnManager {
   resetMovementPoints(): void {
     this.movementPoints.clear();
     this.actedUnits.clear();
+    this.sleepingUnits.clear();
     for (const unit of this.world.units) {
       this.movementPoints.set(unit.id, this.getMaxMovement(unit));
     }
@@ -108,6 +112,36 @@ export class TurnManager {
   recordAction(unitId: string): void {
     this.actedUnits.add(unitId);
     this.movementPoints.set(unitId, 0);
+  }
+
+  // ─── Sleep helpers ──────────────────────────────────────────────────────
+
+  /** Put a unit to sleep (it won't trigger the "are you sure?" check). */
+  sleepUnit(unitId: string): void {
+    this.sleepingUnits.add(unitId);
+  }
+
+  /** Wake a unit (undo sleep). */
+  wakeUnit(unitId: string): void {
+    this.sleepingUnits.delete(unitId);
+  }
+
+  /** Whether a unit is sleeping. */
+  isSleeping(unitId: string): boolean {
+    return this.sleepingUnits.has(unitId);
+  }
+
+  /**
+   * Returns player units that still have MP >= 1 remaining and are NOT sleeping.
+   * Used by the "are you sure?" confirmation check.
+   */
+  getUnmovedAwakeUnits(): UnitData[] {
+    const playerFaction = this.getPlayerFaction();
+    return this.world.units.filter((u) =>
+      u.ownerId === playerFaction &&
+      (this.movementPoints.get(u.id) ?? 0) >= 1 &&
+      !this.sleepingUnits.has(u.id)
+    );
   }
 
   // ─── Turn advancement ───────────────────────────────────────────────────

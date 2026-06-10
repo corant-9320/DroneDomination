@@ -1,19 +1,23 @@
 /**
  * Movement primitives — move and pivot a unit on the hex grid.
  *
- * Movement cost model (per hex entered):
- *   - First hex is always 1 MP regardless of terrain or unit type.
- *   - Subsequent hexes:
- *       Tank (wheeledMovement):
- *         Clear/flat: 2 MP
- *         Hill OR Forest: 3 MP
- *         Hill AND Forest: 4 MP
- *       Spider (limbMovement):
- *         All terrain: 3 MP (ignores terrain)
- *       Drone (flightMovement):
- *         All terrain: 1 MP (ignores terrain)
- *   - Mountain and ocean are impassable.
+ * Movement cost model (segment-distance based):
+ *   Cost = segmentDistance × terrainMultiplier
+ *
+ *   Where segmentDistance is the chord distance between segment centroids
+ *   normalised to hex-spacing units (~1.0 for center-to-center of adjacent
+ *   tiles), and terrainMultiplier depends on unit type and destination terrain:
+ *
+ *   Tank (wheeledMovement):
+ *     Clear/flat: ×1.75, Hill OR Forest: ×2.5, Hill AND Forest: ×3.5
+ *   Spider (limbMovement):
+ *     All terrain: ×2.5 (ignores terrain)
+ *   Drone (flightMovement):
+ *     All terrain: ×1.0 (ignores terrain)
+ *
+ *   - Mountain and ocean are impassable for ground units.
  *   - Attack requires at least 1 MP remaining after all movement.
+ *   - Intra-hex repositioning uses the same formula (short segment distances).
  *
  * These enforce TurnState rules when provided but do NOT resolve
  * reaction fire. Call resolveReactionFire from combat.ts separately
@@ -24,10 +28,12 @@ import { Tile } from './types.js';
 import { Unit, HexSegment, MOVEMENT_ATTRIBUTES } from './units.js';
 import { TurnState, canMove, canPivot, recordMove, recordPivot, movementRemaining } from './turnState.js';
 import { getApproachDirection } from './combat.js';
+import { segmentMovementDistance } from './segmentGeometry.js';
 import {
   MovementMode,
   getMovementMode as getMovementModeFromAttrs,
   hexEntryCost as hexEntryCostShared,
+  segmentCost as segmentCostShared,
 } from '../../shared/movementConstants.js';
 
 export type { MovementMode };
@@ -56,44 +62,157 @@ export function isImpassable(tile: Tile): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Movement cost calculation
+// Segment-distance-based movement cost
 // ---------------------------------------------------------------------------
 
 /**
- * Cost in MP to enter a tile, given movement mode and whether this is the
- * first hex of the turn.
+ * Terrain multipliers for movement cost calculation.
+ * Cost = segmentDistance × terrainMultiplier.
+ *
+ * These values are calibrated so that with 5 MP on flat terrain:
+ *   Tank: ~2.85 hex-distances (≈3 tiles center-to-center)
+ *   Spider: 2.0 hex-distances (≈2 tiles)
+ *   Drone: 5.0 hex-distances (≈5 tiles)
+ */
+export const TERRAIN_MULTIPLIER_TANK_FLAT = 1.75;
+export const TERRAIN_MULTIPLIER_TANK_HILL = 2.5;
+export const TERRAIN_MULTIPLIER_TANK_HILL_FOREST = 3.5;
+export const TERRAIN_MULTIPLIER_SPIDER = 2.5;
+export const TERRAIN_MULTIPLIER_DRONE = 1.0;
+
+/**
+ * Get the terrain multiplier for a destination tile given the movement mode.
+ * Returns Infinity for impassable tiles (ground units only).
+ */
+export function getTerrainMultiplier(tile: Tile, mode: MovementMode): number {
+  if (isImpassable(tile) && mode !== 'flight') return Infinity;
+  if (mode === 'flight') return TERRAIN_MULTIPLIER_DRONE;
+  if (mode === 'limb') return TERRAIN_MULTIPLIER_SPIDER;
+
+  // Tank (wheeled): terrain-dependent
+  const hill = isHillTerrain(tile);
+  const forested = tile.forested;
+  if (hill && forested) return TERRAIN_MULTIPLIER_TANK_HILL_FOREST;
+  if (hill || forested) return TERRAIN_MULTIPLIER_TANK_HILL;
+  return TERRAIN_MULTIPLIER_TANK_FLAT;
+}
+
+/**
+ * Compute the MP cost to move from one segment position to another.
+ *
+ * cost = segmentDistance(from, to) × terrainMultiplier(destinationTile)
+ *
+ * This is the authoritative server-side cost function. The client uses
+ * the legacy hexEntryCost for pathfinding approximation (no boundary data).
+ *
+ * Returns Infinity if the destination is impassable.
+ */
+export function segmentMoveCost(
+  tiles: Tile[],
+  fromTileIndex: number,
+  fromSegment: HexSegment,
+  toTileIndex: number,
+  toSegment: HexSegment,
+  mode: MovementMode,
+): number {
+  const destTile = tiles[toTileIndex];
+  const multiplier = getTerrainMultiplier(destTile, mode);
+  if (multiplier === Infinity) return Infinity;
+
+  const dist = segmentMovementDistance(tiles, fromTileIndex, fromSegment, toTileIndex, toSegment);
+  return dist * multiplier;
+}
+
+// ---------------------------------------------------------------------------
+// Legacy hex entry cost (kept for client compatibility and test fallback)
+// ---------------------------------------------------------------------------
+
+/**
+ * Cost in MP to enter a tile, given movement mode.
  *
  * Returns Infinity for impassable tiles.
+ *
+ * @deprecated Use segmentCostShared() or pathMovementCost() directly.
+ * Kept for test compatibility.
  */
 export function hexEntryCost(
   tile: Tile,
   mode: MovementMode,
-  isFirstHex: boolean,
+  _isFirstHex: boolean,
 ): number {
-  return hexEntryCostShared(tile, mode, isFirstHex);
+  return hexEntryCostShared(tile, mode, _isFirstHex);
 }
 
 /**
- * Calculate total MP cost for a multi-hex path.
+ * Calculate total MP cost for a multi-hex path (segment cost approximation).
  * path[0] is the starting tile (not counted), path[1..] are tiles entered.
- * hexesMovedBefore = number of hexes already moved this turn (affects first-hex rule).
+ * Uses segmentCost per tile (no pivot cost, no segment-distance calculation).
  *
  * Returns Infinity if any tile in the path is impassable.
+ *
+ * For full segment-aware cost, use pathSegmentMovementCost instead.
  */
 export function pathMovementCost(
   tiles: Tile[],
   path: number[],
   mode: MovementMode,
-  hexesMovedBefore: number = 0,
+  _hexesMovedBefore: number = 0,
 ): number {
   let total = 0;
   for (let i = 1; i < path.length; i++) {
-    const isFirst = (hexesMovedBefore + i - 1) === 0;
-    const cost = hexEntryCost(tiles[path[i]], mode, isFirst);
+    const cost = segmentCostShared(tiles[path[i]], mode);
     if (cost === Infinity) return Infinity;
     total += cost;
   }
   return total;
+}
+
+/**
+ * Calculate total MP cost for a multi-hex path using segment-aware distances.
+ *
+ * Computes segment-to-segment cost for each hop, assuming the unit occupies
+ * `startSegment` at the beginning and uses the facing-aligned segment at
+ * each intermediate tile.
+ *
+ * path[0] is the starting tile (not counted), path[1..] are tiles entered.
+ * Returns Infinity if any tile in the path is impassable.
+ */
+export function pathSegmentMovementCost(
+  tiles: Tile[],
+  path: number[],
+  mode: MovementMode,
+  startSegment: HexSegment,
+  arrivalSegments?: HexSegment[],
+): number {
+  if (path.length <= 1) return 0;
+
+  let total = 0;
+  let currentTile = path[0];
+  let currentSegment = startSegment;
+
+  for (let i = 1; i < path.length; i++) {
+    const nextTile = path[i];
+    // Default arrival segment: the segment facing back toward where we came from
+    const arrivalSeg = arrivalSegments?.[i - 1] ?? getArrivalSegment(tiles, currentTile, nextTile);
+    const cost = segmentMoveCost(tiles, currentTile, currentSegment, nextTile, arrivalSeg, mode);
+    if (cost === Infinity) return Infinity;
+    total += cost;
+    currentTile = nextTile;
+    currentSegment = arrivalSeg;
+  }
+  return total;
+}
+
+/**
+ * Determine the natural arrival segment when entering a tile from a given source.
+ * Returns the segment facing back toward the source tile (i.e. the segment
+ * whose edge is closest to where the unit came from).
+ */
+function getArrivalSegment(tiles: Tile[], fromTileIndex: number, toTileIndex: number): HexSegment {
+  const toTile = tiles[toTileIndex];
+  const dirFromTo = toTile.neighbours.indexOf(fromTileIndex);
+  if (dirFromTo >= 0) return dirFromTo as HexSegment;
+  return 0 as HexSegment; // fallback
 }
 
 /**
@@ -109,11 +228,10 @@ export function maxHexesWithAttack(
   let spent = 0;
   let hexes = 0;
   for (let i = 1; i < path.length; i++) {
-    const isFirst = (i - 1) === 0;
-    const cost = hexEntryCost(tiles[path[i]], mode, isFirst);
+    const cost = segmentCostShared(tiles[path[i]], mode);
     if (cost === Infinity) break;
     spent += cost;
-    if (spent >= totalMP) break; // no MP left, can't even finish this move + attack
+    if (spent + 1 > totalMP) break; // need at least 1 MP remaining for attack
     hexes++;
   }
   return hexes;
@@ -131,8 +249,7 @@ export function maxReachableHexes(
   let spent = 0;
   let hexes = 0;
   for (let i = 1; i < path.length; i++) {
-    const isFirst = (i - 1) === 0;
-    const cost = hexEntryCost(tiles[path[i]], mode, isFirst);
+    const cost = segmentCostShared(tiles[path[i]], mode);
     if (cost === Infinity) break;
     spent += cost;
     if (spent > totalMP) break;
@@ -156,7 +273,8 @@ export function canAttackAfterMovement(unit: Unit, state: TurnState): boolean {
  * Move a unit to a new hex, updating facing to the direction of movement.
  *
  * If a TurnState is provided, enforces movement rules:
- *  - Inter-hex move requires sufficient movement points for the terrain cost.
+ *  - Inter-hex move cost is computed from segment-to-segment distance × terrain
+ *    multiplier (when boundary data available), falling back to legacy hexEntryCost.
  *  - Records the move (locks pivot for the rest of the turn).
  * Returns false if the move was rejected by turn-state rules.
  */
@@ -174,15 +292,23 @@ export function moveUnit(
     if (isInterHex) {
       if (!canMove(unit, turnState)) return false;
 
-      // Calculate cost for this single hex move
       const mode = getMovementMode(unit);
-      const record = turnState.get(unit.id);
-      const hexesMoved = record ? (record.hasMoved ? 1 : 0) : 0;
-      // If this is the unit's first inter-hex move this turn, it's the "first hex"
-      const isFirstHex = !record?.hasMoved;
-      const cost = hexEntryCost(tiles[toTileIndex], mode, isFirstHex);
-      if (cost === Infinity) return false;
+      const destTile = tiles[toTileIndex];
+      const destSegment = segment ?? unit.segment;
 
+      // Use segment-aware cost if boundary data is available, else legacy
+      let cost: number;
+      const hasBoundary = destTile.boundary && destTile.boundary.length >= destTile.sides
+        && tiles[fromIndex].boundary && tiles[fromIndex].boundary.length >= tiles[fromIndex].sides;
+
+      if (hasBoundary) {
+        cost = segmentMoveCost(tiles, fromIndex, unit.segment, toTileIndex, destSegment, mode);
+      } else {
+        // Legacy fallback (test grids without boundary data)
+        cost = segmentCostShared(destTile, mode);
+      }
+
+      if (cost === Infinity) return false;
       const remaining = movementRemaining(unit, turnState);
       if (cost > remaining) return false;
 
@@ -195,7 +321,7 @@ export function moveUnit(
       recordMove(unit, turnState, cost);
     } else if (segment !== undefined || segment === undefined) {
       // Same-hex reposition is a pivot — check pivot rules
-      if (!canPivot(unit, turnState)) return false;
+      if (!canPivot(unit, turnState, segment)) return false;
     }
   } else {
     // No turn state — legacy/test path
@@ -221,7 +347,8 @@ export function moveUnit(
 
 /**
  * Pivot a unit within its current hex (change facing and/or segment).
- * Free action but requires movement points remaining and no prior move.
+ * Segment repositioning costs fractional MP based on distance. Facing-only
+ * changes are free. Requires movement points remaining and no prior move.
  *
  * If no TurnState is provided, always succeeds (legacy/test usage).
  * Returns false if turn-state rules reject the pivot.
@@ -233,7 +360,7 @@ export function pivotUnit(
   turnState?: TurnState,
 ): boolean {
   if (turnState) {
-    if (!canPivot(unit, turnState)) return false;
+    if (!canPivot(unit, turnState, newSegment)) return false;
     recordPivot(unit, turnState, newFacing, newSegment);
   } else {
     unit.facing = newFacing;

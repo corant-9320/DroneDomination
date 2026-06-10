@@ -13,7 +13,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SEED = 137;
+const SEED = Math.floor(Math.random() * 1_000_000);
 const OUTPUT_DIR = join(__dirname, '..', '..', 'data');
 
 // Generate

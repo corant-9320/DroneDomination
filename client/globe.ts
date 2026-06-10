@@ -52,7 +52,7 @@ export class GlobeView {
     // Camera
     const rect = canvas.parentElement!.getBoundingClientRect();
     this.camera = new THREE.PerspectiveCamera(50, rect.width / rect.height, 0.1, 100);
-    this.camera.position.set(0, 0, 2.8);
+    this.camera.position.set(0, 0, 3.125);
 
     // Renderer
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -390,13 +390,38 @@ export class GlobeView {
     }
   }
 
-  private onResize() {
+  onResize() {
     const rect = this.canvas.parentElement!.getBoundingClientRect();
     this.camera.aspect = rect.width / rect.height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(rect.width, rect.height);
     this.overlayCanvas.width = rect.width * window.devicePixelRatio;
     this.overlayCanvas.height = rect.height * window.devicePixelRatio;
+
+    // Auto-zoom: keep the globe fully visible whilst filling the panel.
+    // For a unit sphere, the minimum distance so the sphere just fits is
+    // d = 1 / sin(halfFov) where halfFov is the smaller of vertical/horizontal.
+    const vFov = (this.camera.fov * Math.PI) / 180;
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * this.camera.aspect);
+    const effectiveHalfFov = Math.min(vFov / 2, hFov / 2);
+    const fitDist = 1.0 / Math.sin(effectiveHalfFov);
+    // Add a small margin (5%) so the globe doesn't clip right at the edge
+    const targetDist = fitDist * 1.05;
+    // Clamp within orbit controls limits
+    const clampedDist = Math.max(this.controls.minDistance, Math.min(this.controls.maxDistance, targetDist));
+    // Preserve the camera's current direction, just change distance
+    const dir = this.camera.position.clone().normalize();
+    this.camera.position.copy(dir.multiplyScalar(clampedDist));
+    this.controls.update();
+  }
+
+  /**
+   * Globe zoom as a human-readable multiplier, mirroring the local map's Zoom: n.n×.
+   * At maxDistance (5) = 1×; at minDistance (1.2) = ~4.2×.
+   */
+  getZoom(): number {
+    const dist = this.camera.position.length();
+    return this.controls.maxDistance / dist;
   }
 
   /** Pan the camera so the given tile faces the viewer (smooth slerp). */
@@ -546,6 +571,16 @@ export class GlobeView {
 
       ctx.restore();
     }
+
+    // HUD: zoom factor — top-right corner, mirroring the local map's top-left label
+    const zoom = this.getZoom();
+    ctx.save();
+    ctx.font = '12px sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`Zoom: ${zoom.toFixed(1)}×`, w - 8, 8);
+    ctx.restore();
   }
 
   private animate() {

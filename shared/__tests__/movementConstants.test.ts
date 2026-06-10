@@ -3,7 +3,12 @@ import {
   getMovementMode,
   getMaxMovement,
   isImpassableTerrain,
+  segmentCost,
   hexEntryCost,
+  COST_DRONE,
+  COST_SPIDER,
+  COST_TANK_FLAT,
+  COST_TANK_HILLS,
   type MovementMode,
   type MovementTile,
 } from '../movementConstants.js';
@@ -98,99 +103,116 @@ describe('movementConstants (shared)', () => {
   });
 
   // =========================================================================
-  // hexEntryCost — tests using the compact/client wire format fields
+  // segmentCost — the unified per-step cost function
   // =========================================================================
 
-  describe('hexEntryCost', () => {
-    describe('first hex rule', () => {
-      it('always costs 1 for any terrain and any mode', () => {
-        const tile: MovementTile = { elevType: 'hills', f: true };
-        expect(hexEntryCost(tile, 'wheeled', true)).toBe(1);
-        expect(hexEntryCost(tile, 'limb', true)).toBe(1);
-        expect(hexEntryCost(tile, 'flight', true)).toBe(1);
+  describe('segmentCost', () => {
+    describe('drone (flight)', () => {
+      it('costs 0.25 on any terrain', () => {
+        expect(segmentCost({ terrain: 'plains', elevType: 'flat' }, 'flight')).toBe(COST_DRONE);
+        expect(segmentCost({ elevType: 'hills', f: true }, 'flight')).toBe(COST_DRONE);
+        expect(segmentCost({ elevType: 'mountain' }, 'flight')).toBe(COST_DRONE);
+        expect(segmentCost({ terrain: 'ocean' }, 'flight')).toBe(COST_DRONE);
       });
 
-      it('even impassable terrain costs 1 on first hex for flight', () => {
-        const tile: MovementTile = { terrain: 'ocean' };
-        expect(hexEntryCost(tile, 'flight', true)).toBe(1);
-      });
-    });
-
-    describe('flight mode', () => {
-      it('costs 1 per hex regardless of terrain', () => {
-        expect(hexEntryCost({ elevType: 'hills', f: true }, 'flight', false)).toBe(1);
-        expect(hexEntryCost({ terrain: 'ocean' }, 'flight', false)).toBe(1);
-        expect(hexEntryCost({ elevType: 'mountain' }, 'flight', false)).toBe(1);
+      it('equals 0.25', () => {
+        expect(COST_DRONE).toBe(0.25);
       });
     });
 
-    describe('limb mode', () => {
-      it('costs 3 per hex regardless of terrain', () => {
-        expect(hexEntryCost({ terrain: 'plains', elevType: 'flat' }, 'limb', false)).toBe(3);
-        expect(hexEntryCost({ elevType: 'hills', f: true }, 'limb', false)).toBe(3);
+    describe('spider (limb)', () => {
+      it('costs 0.50 on any passable terrain', () => {
+        expect(segmentCost({ terrain: 'plains', elevType: 'flat' }, 'limb')).toBe(COST_SPIDER);
+        expect(segmentCost({ elevType: 'hills', f: true }, 'limb')).toBe(COST_SPIDER);
+        expect(segmentCost({ elevType: 'hills' }, 'limb')).toBe(COST_SPIDER);
       });
 
-      it('mountain is impassable', () => {
-        expect(hexEntryCost({ elevType: 'mountain' }, 'limb', false)).toBe(Infinity);
+      it('equals 0.50', () => {
+        expect(COST_SPIDER).toBe(0.50);
       });
 
-      it('ocean is impassable', () => {
-        expect(hexEntryCost({ terrain: 'ocean' }, 'limb', false)).toBe(Infinity);
+      it('mountain is forbidden', () => {
+        expect(segmentCost({ elevType: 'mountain' }, 'limb')).toBe(Infinity);
+      });
+
+      it('ocean is forbidden', () => {
+        expect(segmentCost({ terrain: 'ocean' }, 'limb')).toBe(Infinity);
       });
     });
 
-    describe('wheeled mode', () => {
-      it('flat clear costs 2', () => {
-        expect(hexEntryCost({ terrain: 'plains', elevType: 'flat' }, 'wheeled', false)).toBe(2);
+    describe('tank (wheeled)', () => {
+      it('costs 0.50 on flat clear terrain', () => {
+        expect(segmentCost({ terrain: 'plains', elevType: 'flat' }, 'wheeled')).toBe(COST_TANK_FLAT);
       });
 
-      it('hills costs 3', () => {
-        expect(hexEntryCost({ elevType: 'hills' }, 'wheeled', false)).toBe(3);
+      it('flat clear cost equals 0.25', () => {
+        expect(COST_TANK_FLAT).toBe(0.25);
       });
 
-      it('forested flat costs 3', () => {
-        expect(hexEntryCost({ elevType: 'flat', f: true }, 'wheeled', false)).toBe(3);
+      it('costs 0.75 on hills', () => {
+        expect(segmentCost({ elevType: 'hills' }, 'wheeled')).toBe(COST_TANK_HILLS);
       });
 
-      it('forested hills costs 4', () => {
-        expect(hexEntryCost({ elevType: 'hills', f: true }, 'wheeled', false)).toBe(4);
+      it('hills cost equals 0.75', () => {
+        expect(COST_TANK_HILLS).toBe(0.75);
       });
 
-      it('mountain is impassable', () => {
-        expect(hexEntryCost({ elevType: 'mountain' }, 'wheeled', false)).toBe(Infinity);
+      it('forest is forbidden', () => {
+        expect(segmentCost({ elevType: 'flat', f: true }, 'wheeled')).toBe(Infinity);
       });
 
-      it('ocean is impassable', () => {
-        expect(hexEntryCost({ terrain: 'ocean' }, 'wheeled', false)).toBe(Infinity);
+      it('forested hills is also forbidden', () => {
+        expect(segmentCost({ elevType: 'hills', f: true }, 'wheeled')).toBe(Infinity);
+      });
+
+      it('mountain is forbidden', () => {
+        expect(segmentCost({ elevType: 'mountain' }, 'wheeled')).toBe(Infinity);
+      });
+
+      it('ocean is forbidden', () => {
+        expect(segmentCost({ terrain: 'ocean' }, 'wheeled')).toBe(Infinity);
       });
     });
 
     describe('client wire format (terrain/elevType/f fields)', () => {
       it('uses terrain field when terrainType is absent', () => {
-        expect(hexEntryCost({ terrain: 'ocean' }, 'wheeled', false)).toBe(Infinity);
+        expect(segmentCost({ terrain: 'ocean' }, 'wheeled')).toBe(Infinity);
       });
 
       it('uses elevType field when elevationType is absent', () => {
-        expect(hexEntryCost({ elevType: 'mountain' }, 'limb', false)).toBe(Infinity);
+        expect(segmentCost({ elevType: 'mountain' }, 'limb')).toBe(Infinity);
       });
 
       it('uses f field when forested is absent', () => {
-        expect(hexEntryCost({ elevType: 'flat', f: true }, 'wheeled', false)).toBe(3);
+        expect(segmentCost({ elevType: 'flat', f: true }, 'wheeled')).toBe(Infinity);
       });
     });
 
     describe('server format (terrainType/elevationType/forested fields)', () => {
       it('uses terrainType field', () => {
-        expect(hexEntryCost({ terrainType: 'ocean' }, 'wheeled', false)).toBe(Infinity);
+        expect(segmentCost({ terrainType: 'ocean' }, 'wheeled')).toBe(Infinity);
       });
 
       it('uses elevationType field', () => {
-        expect(hexEntryCost({ elevationType: 'hills' }, 'wheeled', false)).toBe(3);
+        expect(segmentCost({ elevationType: 'hills' }, 'wheeled')).toBe(COST_TANK_HILLS);
       });
 
       it('uses forested field', () => {
-        expect(hexEntryCost({ elevationType: 'flat', forested: true }, 'wheeled', false)).toBe(3);
+        expect(segmentCost({ elevationType: 'flat', forested: true }, 'wheeled')).toBe(Infinity);
       });
+    });
+  });
+
+  // =========================================================================
+  // hexEntryCost (deprecated — forwards to segmentCost)
+  // =========================================================================
+
+  describe('hexEntryCost (legacy)', () => {
+    it('forwards to segmentCost regardless of isFirstHex', () => {
+      const tile: MovementTile = { terrain: 'plains', elevType: 'flat' };
+      expect(hexEntryCost(tile, 'wheeled', true)).toBe(segmentCost(tile, 'wheeled'));
+      expect(hexEntryCost(tile, 'wheeled', false)).toBe(segmentCost(tile, 'wheeled'));
+      expect(hexEntryCost(tile, 'flight', true)).toBe(segmentCost(tile, 'flight'));
     });
   });
 });

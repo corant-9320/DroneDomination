@@ -48,6 +48,14 @@ inclusion: always
 | `client/colors.ts` | Single source for terrain + faction palettes |
 | `server/generate.ts` | Uses `spawnInitialUnits` + `toCompactWorld` from `src/world/` |
 
+## Testing Rules
+
+- **No pinned formula values.** Do not assert exact damage numbers from game-balance formulas (e.g., `expect(damage).toBe(14)`). Use property/range assertions instead: monotonicity, min/max bounds, relative comparisons.
+- **One golden smoke test per formula is fine** — but label it clearly and expect it to break on balance changes.
+- **Test behavior, not implementation.** Good: "splash hits all enemies in hex". Bad: "splash deals exactly 9 damage to a unit with armour 2".
+- **Don't add tests proactively.** Only add tests when the user asks, or when fixing a bug that needs a regression guard.
+- **Keep test files under 300 lines.** If a test file grows past that, it's testing too many implementation details.
+
 ## Related Files
 
 - `architecture.md` — auto-loads when editing `src/`, `server/`, or config files

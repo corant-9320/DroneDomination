@@ -240,12 +240,24 @@ export function computeDual(mesh: SubdividedMesh): DualTile[] {
     // Sort boundary vertices angularly around the tile centre
     const sortedBoundary = sortPointsAngular(centre, boundaryCentroids);
 
+    // Phase-align the boundary to the neighbour array so that segment N
+    // (the triangle centre→boundary[N]→boundary[N+1]) has its outer edge
+    // facing neighbour N. The two angular sorts above are independent and
+    // can land out of phase by one slot; the segment-based movement model
+    // (and all its consumers) require segment index == neighbour index.
+    const alignedBoundary = alignBoundaryToNeighbours(
+      centre,
+      sortedBoundary,
+      sortedNeighbours,
+      vertices
+    );
+
     tiles.push({
       index: i,
       sides,
       neighbours: sortedNeighbours,
       position3d: centre,
-      boundary: sortedBoundary,
+      boundary: alignedBoundary,
     });
   }
 
@@ -276,7 +288,65 @@ function sortPointsAngular(centre: Vec3, points: Vec3[]): Vec3[] {
   return withAngle.map((w) => w.pos);
 }
 
-/** Sort neighbour indices by their angular position around the centre vertex */
+/**
+ * Rotate the (already angularly sorted) boundary array so that segment N —
+ * the triangle (centre, boundary[N], boundary[N+1]) — has its outer edge
+ * midpoint pointing toward neighbour N.
+ *
+ * Both `boundary` and `neighbours` are sorted by the same angular convention
+ * around the tile centre, so they share an orientation but may differ by a
+ * constant rotational offset (0 or 1 slot in practice). This finds that offset
+ * by matching segment 0's edge-midpoint direction to the nearest neighbour
+ * direction, then rotates the boundary so the offset becomes zero.
+ *
+ * Returns a new array; does not mutate the input.
+ */
+function alignBoundaryToNeighbours(
+  centre: Vec3,
+  boundary: Vec3[],
+  neighbours: number[],
+  allVertices: Vec3[]
+): Vec3[] {
+  const sides = boundary.length;
+  if (sides === 0 || neighbours.length === 0) return boundary;
+
+  const normal = v.normalize(centre);
+
+  // Tangent-plane direction from the centre toward a point on the sphere.
+  function tangentDir(p: Vec3): Vec3 {
+    const diff = v.sub(p, centre);
+    const radial = v.dot(diff, normal);
+    return v.normalize({
+      x: diff.x - radial * normal.x,
+      y: diff.y - radial * normal.y,
+      z: diff.z - radial * normal.z,
+    });
+  }
+
+  // Direction toward neighbour 0.
+  const neighbour0Dir = tangentDir(allVertices[neighbours[0]]);
+
+  // Find which segment's outer-edge midpoint best matches neighbour 0's direction.
+  let bestSeg = 0;
+  let bestDot = -Infinity;
+  for (let seg = 0; seg < sides; seg++) {
+    const mid = v.scale(v.add(boundary[seg], boundary[(seg + 1) % sides]), 0.5);
+    const dp = v.dot(tangentDir(mid), neighbour0Dir);
+    if (dp > bestDot) {
+      bestDot = dp;
+      bestSeg = seg;
+    }
+  }
+
+  if (bestSeg === 0) return boundary;
+
+  // Rotate boundary left by bestSeg so segment 0 aligns with neighbour 0.
+  const rotated: Vec3[] = [];
+  for (let k = 0; k < sides; k++) {
+    rotated.push(boundary[(k + bestSeg) % sides]);
+  }
+  return rotated;
+}
 function sortNeighboursAngular(
   centre: Vec3,
   neighbours: number[],

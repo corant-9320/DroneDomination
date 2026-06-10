@@ -87,11 +87,116 @@ async function main() {
     updateTurnIndicator();
 
     /**
+     * Show a confirmation modal if the player has units with MP remaining (not sleeping).
+     * Returns true if the player confirms or no units need confirmation.
+     */
+    function confirmEndTurn(): Promise<boolean> {
+      const unmovedUnits = turnManager.getUnmovedAwakeUnits();
+      if (unmovedUnits.length === 0) return Promise.resolve(true);
+
+      return new Promise((resolve) => {
+        const backdrop = document.createElement('div');
+        Object.assign(backdrop.style, {
+          position: 'fixed',
+          inset: '0',
+          background: 'rgba(0,0,0,0.3)',
+          display: 'flex',
+          alignItems: 'flex-end',
+          justifyContent: 'center',
+          zIndex: '2000',
+        });
+
+        const dialog = document.createElement('div');
+        Object.assign(dialog.style, {
+          background: '#1e1e1e',
+          border: '1px solid #444',
+          borderRadius: '8px 8px 0 0',
+          padding: '16px 24px 20px',
+          minWidth: '320px',
+          maxWidth: '500px',
+          maxHeight: '50vh',
+          color: '#eee',
+          fontFamily: "'Segoe UI', sans-serif",
+          marginBottom: '0',
+        });
+
+        const unitListHtml = unmovedUnits.map((u, i) => {
+          const name = u.label || u.id;
+          const mp = turnManager.getMovementPoints(u.id);
+          return `<div class="confirm-unit-row" data-idx="${i}" style="padding:4px 8px;cursor:pointer;border-radius:3px;font-size:12px;color:#ccc;display:flex;justify-content:space-between;align-items:center;">
+            <span style="color:#eee;">${name}</span>
+            <span style="color:#7ec8e3;font-size:11px;">${mp} MP</span>
+          </div>`;
+        }).join('');
+
+        dialog.innerHTML = `
+          <h3 style="margin:0 0 10px;font-size:15px;color:#f0c040;">Are you sure?</h3>
+          <p style="margin:0 0 8px;font-size:13px;color:#aaa;">
+            ${unmovedUnits.length} unit${unmovedUnits.length > 1 ? 's' : ''} still ha${unmovedUnits.length > 1 ? 've' : 's'} movement remaining:
+          </p>
+          <div id="confirm-unit-list" style="max-height:30vh;overflow-y:auto;margin-bottom:14px;border:1px solid #333;border-radius:4px;padding:4px 0;">
+            ${unitListHtml}
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button id="confirm-cancel" style="padding:6px 14px;background:#333;border:1px solid #555;color:#ccc;border-radius:4px;cursor:pointer;">Cancel</button>
+            <button id="confirm-end" style="padding:6px 14px;background:#c0392b;border:none;color:#fff;border-radius:4px;cursor:pointer;font-weight:bold;">End Turn</button>
+          </div>
+        `;
+
+        backdrop.appendChild(dialog);
+        document.body.appendChild(backdrop);
+
+        // Wire up unit row clicks — navigate to that unit's location
+        const rows = dialog.querySelectorAll('.confirm-unit-row');
+        rows.forEach((row) => {
+          row.addEventListener('mouseenter', () => { (row as HTMLElement).style.background = '#333'; });
+          row.addEventListener('mouseleave', () => { (row as HTMLElement).style.background = ''; });
+          row.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt((row as HTMLElement).dataset.idx!);
+            const unit = unmovedUnits[idx];
+            if (unit) {
+              localMap.setCentre(unit.tileIndex);
+              localMap.setSelected(unit.tileIndex);
+              onLocalTileSelected(unit.tileIndex, unit.segment);
+            }
+          });
+        });
+
+        function cleanup() {
+          document.body.removeChild(backdrop);
+        }
+
+        dialog.querySelector('#confirm-cancel')!.addEventListener('click', () => {
+          cleanup();
+          resolve(false);
+        });
+        dialog.querySelector('#confirm-end')!.addEventListener('click', () => {
+          cleanup();
+          resolve(true);
+        });
+        backdrop.addEventListener('click', (e) => {
+          if (e.target === backdrop) { cleanup(); resolve(false); }
+        });
+        // Escape to cancel
+        const onKey = (e: KeyboardEvent) => {
+          if (e.key === 'Escape') { cleanup(); window.removeEventListener('keydown', onKey); resolve(false); }
+          if (e.key === 'Enter') { cleanup(); window.removeEventListener('keydown', onKey); resolve(true); }
+        };
+        window.addEventListener('keydown', onKey);
+      });
+    }
+
+    /**
      * End the player's turn, let all AI factions take their moves,
      * then return control to the player with fresh movement points.
      */
     async function advanceTurn(): Promise<void> {
       if (!isPlayerTurn()) return; // Only the player triggers this
+
+      // Confirm if player has unmoved, awake units
+      const confirmed = await confirmEndTurn();
+      if (!confirmed) return;
 
       dbg.input.log('Player ending turn — processing AI factions');
       const renderMap = () => localMap.render();
@@ -104,6 +209,22 @@ async function main() {
         },
         clearHighlight() {
           localMap.setHighlightCombat(null, null);
+        },
+        selectActingUnit(unitId: string) {
+          const unit = world.units.find((u) => u.id === unitId);
+          if (!unit) return;
+          // Mirror a player selection: show the unit's hex + unit info and
+          // surface its stats in the combat panel's selection view.
+          detailPanel.showTile(unit.tileIndex, unit.segment);
+          combatPanel.showSelectedUnit(unit);
+        },
+        showCombatPreview(attackerId: string, targetId: string) {
+          const attacker = world.units.find((u) => u.id === attackerId) ?? null;
+          const target = world.units.find((u) => u.id === targetId) ?? null;
+          // Drives the combat panel preview fetch and the detail panel's
+          // Enemy Info + Combat Preview sections (via onPreviewReady).
+          detailPanel.showEnemy(target);
+          combatPanel.showPreview(attacker, target);
         },
         renderMap,
         async playAttackAnimation(
@@ -274,6 +395,81 @@ async function main() {
     // All heavy initialisation complete — hide loading overlay
     loadingEl.style.display = 'none';
 
+    // ─── Split-handle drag to resize globe / local panels ───────────────
+    const splitHandle = document.getElementById('split-handle') as HTMLElement;
+    const splitLabel  = document.getElementById('split-label') as HTMLElement;
+    const globePanel = document.getElementById('globe-panel') as HTMLElement;
+    const localPanel = document.getElementById('local-panel') as HTMLElement;
+    const appEl = document.getElementById('app') as HTMLElement;
+
+    const SPLIT_KEY = 'dd-split-pct';
+    const HANDLE_W = 6; // px — must match #split-handle width in CSS
+    const MIN_PCT = 15;
+    const MAX_PCT = 75;
+
+    function applyGlobePct(pct: number): void {
+      // Measure the local panel's width BEFORE the resize so we can scale map zoom
+      const prevLocalW = localPanel.getBoundingClientRect().width;
+
+      // Set globe panel to an explicit pixel width so Three.js renderer
+      // knows the real size; let local panel fill the remainder via flex:1.
+      const appW = appEl.getBoundingClientRect().width;
+      const globePx = Math.round((pct / 100) * (appW - HANDLE_W));
+      globePanel.style.width = `${globePx}px`;
+
+      // Keep the handle label in sync
+      splitLabel.textContent = `${Math.round(pct)}%`;
+
+      // Notify the globe renderer so it resizes its WebGL canvas + overlay
+      globe.onResize();
+
+      // Scale the local map zoom proportionally so tiles don't slide off screen.
+      // We defer one frame so the DOM has applied the new width.
+      requestAnimationFrame(() => {
+        const newLocalW = localPanel.getBoundingClientRect().width;
+        if (prevLocalW > 0 && newLocalW > 0 && prevLocalW !== newLocalW) {
+          localMap.scale = Math.max(0.05, localMap.scale * (newLocalW / prevLocalW));
+          localMap.render();
+        }
+      });
+    }
+
+    // Restore saved split on load (defer until after layout is painted)
+    requestAnimationFrame(() => {
+      const savedPct = parseFloat(localStorage.getItem(SPLIT_KEY) ?? '');
+      const pct = !isNaN(savedPct) ? Math.max(MIN_PCT, Math.min(MAX_PCT, savedPct)) : 40;
+      applyGlobePct(pct);
+    });
+
+    let dragging = false;
+    splitHandle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      dragging = true;
+      splitHandle.classList.add('dragging');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const rect = appEl.getBoundingClientRect();
+      const pct = Math.max(MIN_PCT, Math.min(MAX_PCT,
+        ((e.clientX - rect.left) / rect.width) * 100));
+      applyGlobePct(pct);
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      splitHandle.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      // Persist as a percentage of total app width
+      const appW = appEl.getBoundingClientRect().width;
+      const pct = ((globePanel.getBoundingClientRect().width) / appW) * 100;
+      localStorage.setItem(SPLIT_KEY, String(Math.round(pct * 10) / 10));
+    });
+
     // When the user orbits the globe, auto-pan the peeled view to match
     globe.setOnViewCentreChange((tileIndex) => {
       dbg.globe.log('View centre changed → localMap.setCentre:', tileIndex);
@@ -350,6 +546,12 @@ async function main() {
         world.units = updatedUnits;
         localMap.render();
       }
+    });
+
+    // Sleep handler: right-click own unit offers Sleep via context menu
+    localMap.setOnSleepUnit((unitId) => {
+      dbg.input.log('Unit put to sleep:', unitId);
+      turnManager.sleepUnit(unitId);
     });
 
     // Start centred on the battle gap tile (if present) or the player's home city

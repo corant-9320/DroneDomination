@@ -13,10 +13,11 @@
 
 import { WorldData, UnitData, TileData } from './worldData.js';
 import { CombatPanel } from './combatPanel.js';
+import { weaponRangeInTileHops } from '../shared/rangeCheck.js';
 import { AiPlaybackController } from './aiPlayback.js';
 import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
-import { getMovementMode, hexEntryCost } from '../shared/movementConstants.js';
+import { getMovementMode, segmentCost } from '../shared/movementConstants.js';
 
 // ---------------------------------------------------------------------------
 // Callback types for visual feedback during AI turns
@@ -27,6 +28,16 @@ export interface AiTurnCallbacks {
   highlightCombat(attackerId: string, targetId: string): void;
   /** Clear any combat highlight. */
   clearHighlight(): void;
+  /**
+   * Select the currently-acting AI unit so the detail/combat panels show its
+   * hex and unit info (mirrors a player click before they move or attack).
+   */
+  selectActingUnit(unitId: string): void;
+  /**
+   * Show a combat preview (attacker vs target) in the panels before an attack
+   * resolves, matching the player's hover-to-preview behaviour.
+   */
+  showCombatPreview(attackerId: string, targetId: string): void;
   /** Re-render the local map (after movement/attacks). */
   renderMap(): void;
   /** Play the attack animation (missile → explosion → smoke). */
@@ -177,7 +188,9 @@ export async function executeAiTurn(
     if (nearestDist <= attackRange && nearestDist > 0) {
       dbg.input.log(`AI ${unit.label} attacks ${nearestEnemy.label} (dist=${nearestDist})`);
 
-      // Highlight and wait for player to acknowledge
+      // Show the acting unit + combat preview in the panels, highlight, then wait
+      callbacks.selectActingUnit(unit.id);
+      callbacks.showCombatPreview(unit.id, nearestEnemy.id);
       callbacks.highlightCombat(unit.id, nearestEnemy.id);
       callbacks.renderMap();
       await playback.waitForNext();
@@ -230,7 +243,10 @@ export async function executeAiTurn(
             `AI ${unit.label} moves ${movePath.length - 1} steps toward ${nearestEnemy.label}`,
           );
 
-          // Wait before move so player sees the unit about to act
+          // Select the acting unit so the panels show its hex/unit info,
+          // then wait before the move so the player sees it about to act
+          callbacks.selectActingUnit(unit.id);
+          callbacks.renderMap();
           await playback.waitForNext();
 
           const updated = await combatPanel.resolveMove(unit.id, movePath);
@@ -257,6 +273,8 @@ export async function executeAiTurn(
             );
             if (target) {
               dbg.input.log(`AI ${unit.label} attacks after moving`);
+              callbacks.selectActingUnit(unit.id);
+              callbacks.showCombatPreview(unit.id, target.id);
               callbacks.highlightCombat(unit.id, target.id);
               callbacks.renderMap();
               await playback.waitForNext();
@@ -314,6 +332,7 @@ function getMovement(unit: UnitData): number {
 /**
  * Compute how many steps along a path the unit can afford, reserving
  * 1 MP for attack if wantAttack is true.
+ * Uses segment-based cost model.
  */
 function affordableSteps(
   tiles: TileData[],
@@ -326,21 +345,42 @@ function affordableSteps(
   const reserve = wantAttack ? 1 : 0;
   let spent = 0;
   let steps = 0;
+  let currentSegment = unit.segment;
 
   for (let i = 1; i < path.length; i++) {
-    const isFirst = (i - 1) === 0;
-    const cost = hexEntryCost(tiles[path[i]], mode, isFirst);
-    if (cost === Infinity) break;
-    spent += cost;
+    // Intra-hex traversal to departure segment
+    const departureSeg = tiles[path[i - 1]].n.indexOf(path[i]);
+    const departure = departureSeg >= 0 ? departureSeg : 0;
+    const diff = Math.abs(currentSegment - departure);
+    const pivotSteps = Math.min(diff, 6 - diff);
+    const pivotStepCost = segmentCost(tiles[path[i - 1]], mode);
+    if (pivotStepCost === Infinity) break;
+    spent += pivotSteps * pivotStepCost;
     if (spent + reserve > totalMP) break;
+
+    // Cross border
+    const crossCost = segmentCost(tiles[path[i]], mode);
+    if (crossCost === Infinity) break;
+    spent += crossCost;
+    if (spent + reserve > totalMP) break;
+
+    // Arrival segment in the new hex
+    const arrivalSeg = tiles[path[i]].n.indexOf(path[i - 1]);
+    currentSegment = arrivalSeg >= 0 ? arrivalSeg : 0;
     steps++;
   }
   return steps;
 }
 
-/** Effective attack range (ranged or melee). */
+/** 
+ * Effective attack range in BFS hops (conservative heuristic for AI targeting).
+ * Uses the shared range formula so client and server agree.
+ */
 function getAttackRange(unit: UnitData): number {
-  const range = unit.attributes.rangeAttack ?? 0;
-  const melee = unit.attributes.kinetic ?? 0;
-  return Math.max(range, melee > 0 ? 1 : 0);
+  const r = unit.attributes.rangeAttack ?? 0;
+  const hasWeapon = (unit.attributes.kinetic ?? 0) > 0 ||
+    (unit.attributes.splashAttack ?? 0) > 0 ||
+    (unit.attributes.antiAir ?? 0) > 0 ||
+    r > 0;
+  return weaponRangeInTileHops(r, hasWeapon);
 }

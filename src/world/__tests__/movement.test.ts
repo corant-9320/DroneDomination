@@ -163,43 +163,39 @@ describe('movement', () => {
   // =========================================================================
 
   describe('hexEntryCost', () => {
-    it('first hex always costs 1 for any mode', () => {
+    it('flight always costs 0.25', () => {
       const tile = makeTile({ index: 0, neighbours: [1], elevationType: 'hills', forested: true });
-      expect(hexEntryCost(tile, 'wheeled', true)).toBe(1);
-      expect(hexEntryCost(tile, 'limb', true)).toBe(1);
-      expect(hexEntryCost(tile, 'flight', true)).toBe(1);
+      expect(hexEntryCost(tile, 'flight', true)).toBe(0.25);
+      expect(hexEntryCost(tile, 'flight', false)).toBe(0.25);
     });
 
-    it('flight mode always costs 1', () => {
-      const tile = makeTile({ index: 0, neighbours: [1], elevationType: 'hills', forested: true });
-      expect(hexEntryCost(tile, 'flight', false)).toBe(1);
+    it('flight mode costs 0.25 even on mountain and ocean', () => {
+      const mountain = makeTile({ index: 0, neighbours: [1], elevationType: 'mountain' });
+      const ocean = makeTile({ index: 0, neighbours: [1], terrainType: 'ocean' });
+      expect(hexEntryCost(mountain, 'flight', false)).toBe(0.25);
+      expect(hexEntryCost(ocean, 'flight', false)).toBe(0.25);
     });
 
-    it('limb mode always costs 3', () => {
+    it('limb mode always costs 0.50 on passable terrain', () => {
       const flat = makeTile({ index: 0, neighbours: [1], elevationType: 'flat' });
       const hills = makeTile({ index: 1, neighbours: [0], elevationType: 'hills', forested: true });
-      expect(hexEntryCost(flat, 'limb', false)).toBe(3);
-      expect(hexEntryCost(hills, 'limb', false)).toBe(3);
+      expect(hexEntryCost(flat, 'limb', false)).toBe(0.50);
+      expect(hexEntryCost(hills, 'limb', false)).toBe(0.50);
     });
 
-    it('wheeled on flat clear costs 2', () => {
+    it('wheeled on flat clear costs 0.25', () => {
       const tile = makeTile({ index: 0, neighbours: [1], elevationType: 'flat', forested: false });
-      expect(hexEntryCost(tile, 'wheeled', false)).toBe(2);
+      expect(hexEntryCost(tile, 'wheeled', false)).toBe(0.25);
     });
 
-    it('wheeled on hills (not forested) costs 3', () => {
+    it('wheeled on hills costs 0.75', () => {
       const tile = makeTile({ index: 0, neighbours: [1], elevationType: 'hills', forested: false });
-      expect(hexEntryCost(tile, 'wheeled', false)).toBe(3);
+      expect(hexEntryCost(tile, 'wheeled', false)).toBe(0.75);
     });
 
-    it('wheeled on flat forested costs 3', () => {
+    it('wheeled on forested terrain is forbidden', () => {
       const tile = makeTile({ index: 0, neighbours: [1], elevationType: 'flat', forested: true });
-      expect(hexEntryCost(tile, 'wheeled', false)).toBe(3);
-    });
-
-    it('wheeled on hills forested costs 4', () => {
-      const tile = makeTile({ index: 0, neighbours: [1], elevationType: 'hills', forested: true });
-      expect(hexEntryCost(tile, 'wheeled', false)).toBe(4);
+      expect(hexEntryCost(tile, 'wheeled', false)).toBe(Infinity);
     });
 
     it('mountain is impassable for wheeled', () => {
@@ -216,16 +212,6 @@ describe('movement', () => {
       const tile = makeTile({ index: 0, neighbours: [1], elevationType: 'mountain' });
       expect(hexEntryCost(tile, 'limb', false)).toBe(Infinity);
     });
-
-    it('mountain is passable for flight', () => {
-      const tile = makeTile({ index: 0, neighbours: [1], elevationType: 'mountain' });
-      expect(hexEntryCost(tile, 'flight', false)).toBe(1);
-    });
-
-    it('ocean is passable for flight', () => {
-      const tile = makeTile({ index: 0, neighbours: [1], terrainType: 'ocean' });
-      expect(hexEntryCost(tile, 'flight', false)).toBe(1);
-    });
   });
 
   // =========================================================================
@@ -233,19 +219,19 @@ describe('movement', () => {
   // =========================================================================
 
   describe('pathMovementCost', () => {
-    it('single-hop path from tile 0 to tile 1 (wheeled, flat) = 1 (first hex)', () => {
+    it('single-hop path from tile 0 to tile 1 (wheeled, flat) costs 0.25', () => {
       const tiles = linearGrid();
-      expect(pathMovementCost(tiles, [0, 1], 'wheeled', 0)).toBe(1);
+      expect(pathMovementCost(tiles, [0, 1], 'wheeled', 0)).toBe(0.25);
     });
 
-    it('two-hop path costs first hex (1) + second hex (2) for wheeled flat', () => {
+    it('two-hop path costs 0.25 + 0.25 = 0.50 for wheeled flat', () => {
       const tiles = linearGrid();
-      expect(pathMovementCost(tiles, [0, 1, 2], 'wheeled', 0)).toBe(3);
+      expect(pathMovementCost(tiles, [0, 1, 2], 'wheeled', 0)).toBe(0.50);
     });
 
-    it('flight across 4 tiles costs 4 (1 per hex including first)', () => {
+    it('flight across 4 tiles costs 4 × 0.25 = 1.0', () => {
       const tiles = linearGrid();
-      expect(pathMovementCost(tiles, [0, 1, 2, 3, 4], 'flight', 0)).toBe(4);
+      expect(pathMovementCost(tiles, [0, 1, 2, 3, 4], 'flight', 0)).toBe(1.0);
     });
 
     it('returns Infinity if path crosses impassable tile for ground unit', () => {
@@ -254,10 +240,11 @@ describe('movement', () => {
       expect(pathMovementCost(tiles, [0, 1, 2, 3], 'wheeled', 0)).toBe(Infinity);
     });
 
-    it('hexesMovedBefore > 0 means first tile in path is not "first hex"', () => {
+    it('hexesMovedBefore does not affect cost (no first-hex rule)', () => {
       const tiles = linearGrid();
-      // Already moved 1 hex, so next hex is not "first" → costs 2 for wheeled flat
-      expect(pathMovementCost(tiles, [1, 2], 'wheeled', 1)).toBe(2);
+      // Cost is the same regardless of hexesMovedBefore
+      expect(pathMovementCost(tiles, [1, 2], 'wheeled', 0)).toBe(0.25);
+      expect(pathMovementCost(tiles, [1, 2], 'wheeled', 1)).toBe(0.25);
     });
 
     it('empty path (just start tile) costs 0', () => {
@@ -271,21 +258,22 @@ describe('movement', () => {
   // =========================================================================
 
   describe('maxHexesWithAttack', () => {
-    it('drone with 4 MP can move 3 hexes and still have 1 MP for attack', () => {
+    it('drone with 4 MP can move many hexes (0.25 each) and still have 1 MP for attack', () => {
       const tiles = linearGrid();
-      // Path: 0→1→2→3→4, flight costs 1/hex
-      expect(maxHexesWithAttack(4, 'flight', tiles, [0, 1, 2, 3, 4])).toBe(3);
+      // 4 MP, need 1 for attack → 3 MP for movement → 3/0.25 = 12 steps, but path only has 4 hops
+      expect(maxHexesWithAttack(4, 'flight', tiles, [0, 1, 2, 3, 4])).toBe(4);
     });
 
-    it('wheeled with 3 MP: first hex=1, second=2 → spent=3, no MP left for attack → max 1', () => {
+    it('wheeled with 3 MP on flat: cost 0.25/hex, need 1 for attack → many hexes', () => {
       const tiles = linearGrid();
-      expect(maxHexesWithAttack(3, 'wheeled', tiles, [0, 1, 2, 3])).toBe(1);
+      // 3 MP, reserve 1 for attack → 2 MP budget, 0.25/hex → 8 hexes but path only 3 long
+      expect(maxHexesWithAttack(3, 'wheeled', tiles, [0, 1, 2, 3])).toBe(3);
     });
 
-    it('returns 0 if even first hex costs all MP', () => {
+    it('returns 0 if even first hex costs all MP leaving none for attack', () => {
       const tiles = linearGrid();
-      // wheeled with 1 MP: first hex costs 1, spent=1, need 1 to attack → can't move at all
-      expect(maxHexesWithAttack(1, 'wheeled', tiles, [0, 1, 2])).toBe(0);
+      // wheeled with 0.5 MP: 0.25 for hex + need 1 for attack → 0.25 + 1 > 0.5 → can't move
+      expect(maxHexesWithAttack(0.5, 'wheeled', tiles, [0, 1, 2])).toBe(0);
     });
 
     it('stops at impassable tile', () => {
@@ -300,14 +288,14 @@ describe('movement', () => {
   // =========================================================================
 
   describe('maxReachableHexes', () => {
-    it('drone with 4 MP can reach 4 hexes', () => {
+    it('drone with 4 MP can reach all 4 hexes in path (0.25 each = 1.0 total)', () => {
       const tiles = linearGrid();
       expect(maxReachableHexes(4, 'flight', tiles, [0, 1, 2, 3, 4])).toBe(4);
     });
 
-    it('wheeled with 3 MP: first hex=1, second=2 → total 3 → exactly 2 hexes', () => {
+    it('wheeled with 3 MP on flat: 0.25/hex → can reach all in path', () => {
       const tiles = linearGrid();
-      expect(maxReachableHexes(3, 'wheeled', tiles, [0, 1, 2, 3])).toBe(2);
+      expect(maxReachableHexes(3, 'wheeled', tiles, [0, 1, 2, 3])).toBe(3);
     });
 
     it('returns 0 when 0 MP', () => {
@@ -388,10 +376,11 @@ describe('movement', () => {
     });
 
     it('with turn state: rejects move when insufficient MP', () => {
-      const unit = makeUnit({ id: 'u', tileIndex: 0, attributes: { wheeledMovement: 1 } });
+      const unit = makeUnit({ id: 'u', tileIndex: 0, attributes: { wheeledMovement: 0.25 } });
       const state = createTurnState();
-      // First move uses 1 MP (first hex rule)
-      moveUnit(unit, 1, tiles, undefined, state);
+      // Flat terrain costs 0.25 per hex. Unit has 0.25 MP → can do 1 hop.
+      const first = moveUnit(unit, 1, tiles, undefined, state); // spent 0.25
+      expect(first).toBe(true);
       // Second move: MP exhausted
       const result = moveUnit(unit, 2, tiles, undefined, state);
       expect(result).toBe(false);
@@ -406,12 +395,12 @@ describe('movement', () => {
       expect(unit.tileIndex).toBe(0);
     });
 
-    it('first hex costs 1 MP regardless of terrain', () => {
-      tiles[1] = makeTile({ index: 1, neighbours: [0, 2, 6, 0, 2, 6], elevationType: 'hills', forested: true });
+    it('wheeled costs 0.50 per flat hex regardless of position in sequence', () => {
+      tiles[1] = makeTile({ index: 1, neighbours: [0, 2, 6, 0, 2, 6], elevationType: 'flat', forested: false });
       const unit = makeUnit({ id: 'u', tileIndex: 0, attributes: { wheeledMovement: 1 } });
       const state = createTurnState();
       const result = moveUnit(unit, 1, tiles, undefined, state);
-      // First hex rule: cost = 1, unit has 1 MP → should succeed
+      // Cost = 0.50 per flat hex, unit has 1 MP → should succeed
       expect(result).toBe(true);
     });
   });

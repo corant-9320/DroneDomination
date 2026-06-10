@@ -6,6 +6,7 @@
 
 import { UnitData, TileData, WorldData } from './worldData.js';
 import { dbg } from './debug.js';
+import { segmentCost as sharedSegmentCost } from '../shared/movementConstants.js';
 
 /** Minimal polygon tile reference needed by the input handler. */
 export interface FlatTileRef {
@@ -63,6 +64,7 @@ export interface MapViewInterface {
   readonly onRepair: ((repairerId: string, targetId: string) => void) | null;
   readonly onHoverEnemy: ((attacker: UnitData | null, target: UnitData | null) => void) | null;
   readonly onCentreChange: ((tileIndex: number) => void) | null;
+  readonly onSleepUnit: ((unitId: string) => void) | null;
 
   // Coordinate conversion
   worldToScreen(wx: number, wy: number): [number, number];
@@ -75,13 +77,16 @@ export interface MapViewInterface {
   // Rendering
   render(): void;
   computeMovementRange(): void;
+  computeMovementCostRouteForHover(destTile: number, destSegment: number): void;
+  clearMovementCostRoute(): void;
   buildFlatView(centreIdx: number, radius: number): FlatTileRef[];
   screenHexRadius(ft: FlatTileRef): number;
+  /** Check if an enemy tile+segment is within immediate attack range (no movement needed). */
+  isInAttackRange(enemyTile: number, enemySegment?: number): boolean;
 
   // Movement helpers
   getMaxMovement(unit: UnitData): number;
   getMovementMode(unit: UnitData): 'wheeled' | 'limb' | 'flight';
-  hexEntryCost(tile: TileData, mode: 'wheeled' | 'limb' | 'flight', isFirstHex: boolean): number;
   affordableHops(path: number[], unit: UnitData, remainingMP: number, hexesAlreadyMoved: number): number;
   mpSpentForHops(path: number[], unit: UnitData, hops: number, hexesAlreadyMoved: number): number;
   findPreferredSegment(sourceSegment: number, occupied: Set<number>): number;
@@ -243,9 +248,26 @@ export class MapInputHandler {
               v.lastHoveredEnemyId = enemy.id;
               v.onHoverEnemy(playerUnits[0], enemy);
             }
+            // Show extended route overlay to the enemy (attack range visualization)
+            v.computeMovementCostRouteForHover(tileIdx, segment);
+            v.render();
             return;
           }
+
+          // No enemy — check if hovering a reachable tile for movement cost overlay
+          if (segment >= 0 && (tileIdx !== playerUnits[0].tileIndex || segment !== playerUnits[0].segment)) {
+            v.computeMovementCostRouteForHover(tileIdx, segment);
+            v.render();
+          } else if (tileIdx !== playerUnits[0].tileIndex) {
+            // Even without a specific segment, still trigger overlay for radial tracking
+            v.computeMovementCostRouteForHover(tileIdx, 0);
+            v.render();
+          } else {
+            v.clearMovementCostRoute();
+          }
         }
+      } else {
+        v.clearMovementCostRoute();
       }
       // No enemy under cursor — clear preview and reset cursor
       this.canvas.style.cursor = '';
@@ -255,6 +277,7 @@ export class MapInputHandler {
       }
     } else {
       this.canvas.style.cursor = '';
+      v.clearMovementCostRoute();
     }
   }
 
@@ -385,6 +408,9 @@ export class MapInputHandler {
     event.preventDefault();
     const v = this.view;
 
+    // Close any existing context menu
+    this.closeContextMenu();
+
     if (v.selectedUnits.size === 0) return;
 
     const rect = this.canvas.getBoundingClientRect();
@@ -403,9 +429,21 @@ export class MapInputHandler {
       }
     }
 
+    // --- Context menu: right-click on own selected unit's segment ---
+    const playerUnits = v.world.units.filter((u) => v.selectedUnits.has(u.id));
+    if (playerUnits.length > 0 && targetSegment >= 0) {
+      const clickedUnit = v.world.units.find(
+        (u) => u.tileIndex === targetTile && u.segment === targetSegment && v.selectedUnits.has(u.id)
+      );
+      if (clickedUnit) {
+        // Right-clicked on the player's own selected unit — show context menu
+        this.showContextMenu(event.clientX, event.clientY, clickedUnit);
+        return;
+      }
+    }
+
     // --- Attack check ---
     const unitsOnTarget = v.world.units.filter((u) => u.tileIndex === targetTile);
-    const playerUnits = v.world.units.filter((u) => v.selectedUnits.has(u.id));
     if (playerUnits.length > 0) {
       const playerOwner = playerUnits[0].ownerId;
 
@@ -418,6 +456,11 @@ export class MapInputHandler {
       }
 
       if (enemyTarget && v.onAttack) {
+        // Range check: only allow attack if enemy is within weapon range from current position
+        if (!v.isInAttackRange(enemyTarget.tileIndex, enemyTarget.segment)) {
+          dbg.localMap.log('Attack blocked — target out of range');
+          return;
+        }
         const attacker = playerUnits.find(
           (u) => (v.movementPoints.get(u.id) ?? 0) >= 1 && !v.actedUnits.has(u.id)
         );
@@ -487,6 +530,50 @@ export class MapInputHandler {
 
     const originTile = movingUnits[0].tileIndex;
     const allSameOrigin = movingUnits.every((u) => u.tileIndex === originTile);
+
+    // --- Intra-hex segment reposition (same tile, different segment) ---
+    if (allSameOrigin && originTile === targetTile && targetSegment >= 0) {
+      const mode = v.getMovementMode(movingUnits[0]);
+      const tile = v.world.tiles[targetTile];
+      const stepCost = sharedSegmentCost(tile, mode);
+      if (stepCost === Infinity) return;
+
+      const occupiedByOthers = new Set<number>(
+        v.world.units
+          .filter((u) => u.tileIndex === targetTile && !v.selectedUnits.has(u.id))
+          .map((u) => u.segment)
+      );
+
+      for (const unit of movingUnits) {
+        if (unit.segment === targetSegment) continue;
+        const remaining = v.movementPoints.get(unit.id) ?? 0;
+        // Compute shortest arc cost
+        const diff = Math.abs(targetSegment - unit.segment);
+        const steps = Math.min(diff, 6 - diff);
+        const cost = steps * stepCost;
+        if (cost > remaining) continue;
+        if (occupiedByOthers.has(targetSegment)) {
+          // Target occupied — find nearest free segment
+          const free = v.findPreferredSegment(targetSegment, occupiedByOthers);
+          if (free < 0) continue;
+          unit.segment = free as 0 | 1 | 2 | 3 | 4 | 5;
+        } else {
+          unit.segment = targetSegment as 0 | 1 | 2 | 3 | 4 | 5;
+        }
+        v.movementPoints.set(unit.id, Math.max(0, remaining - cost));
+        occupiedByOthers.add(unit.segment);
+        dbg.localMap.log(
+          'Intra-hex reposition', unit.label, '→ segment', unit.segment,
+          '| steps:', steps, '| MP spent:', cost, '| points left:', v.movementPoints.get(unit.id)
+        );
+      }
+
+      v.selectedSegment = movingUnits.length === 1 ? movingUnits[0].segment : -1;
+      v.computeMovementRange();
+      v.onTileSelectCb(v.selectedTile, v.selectedSegment >= 0 ? v.selectedSegment : undefined);
+      v.render();
+      return;
+    }
 
     if (allSameOrigin) {
       const path = v.findPathBFS(originTile, targetTile);
@@ -690,5 +777,79 @@ export class MapInputHandler {
         }
       }
     }
+  }
+
+  // ─── Context menu ──────────────────────────────────────────────────────────
+
+  private contextMenuEl: HTMLElement | null = null;
+  private contextMenuCleanup: (() => void) | null = null;
+
+  /** Close and remove any open context menu. */
+  private closeContextMenu(): void {
+    if (this.contextMenuEl) {
+      this.contextMenuEl.remove();
+      this.contextMenuEl = null;
+    }
+    if (this.contextMenuCleanup) {
+      this.contextMenuCleanup();
+      this.contextMenuCleanup = null;
+    }
+  }
+
+  /** Show a right-click context menu for the player's own unit. */
+  private showContextMenu(clientX: number, clientY: number, unit: UnitData): void {
+    const menu = document.createElement('div');
+    Object.assign(menu.style, {
+      position: 'fixed',
+      left: clientX + 'px',
+      top: clientY + 'px',
+      background: '#1e1e1e',
+      border: '1px solid #555',
+      borderRadius: '4px',
+      padding: '4px 0',
+      minWidth: '120px',
+      zIndex: '3000',
+      fontFamily: "'Segoe UI', sans-serif",
+      fontSize: '13px',
+      color: '#eee',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+    });
+
+    // Menu item: Sleep
+    const sleepItem = document.createElement('div');
+    Object.assign(sleepItem.style, {
+      padding: '6px 14px',
+      cursor: 'pointer',
+    });
+    sleepItem.textContent = '💤 Sleep';
+    sleepItem.title = 'Put this unit to sleep (suppresses end-turn warning)';
+    sleepItem.addEventListener('mouseenter', () => { sleepItem.style.background = '#333'; });
+    sleepItem.addEventListener('mouseleave', () => { sleepItem.style.background = ''; });
+    sleepItem.addEventListener('click', () => {
+      if (this.view.onSleepUnit) {
+        this.view.onSleepUnit(unit.id);
+      }
+      this.closeContextMenu();
+    });
+    menu.appendChild(sleepItem);
+
+    document.body.appendChild(menu);
+    this.contextMenuEl = menu;
+
+    // Close on next click anywhere or Escape
+    const closeHandler = () => this.closeContextMenu();
+    const keyHandler = (e: KeyboardEvent) => { if (e.key === 'Escape') this.closeContextMenu(); };
+    // Delay registering the click handler to avoid catching the current right-click release
+    setTimeout(() => {
+      document.addEventListener('click', closeHandler, { once: true });
+      document.addEventListener('contextmenu', closeHandler, { once: true });
+    }, 0);
+    window.addEventListener('keydown', keyHandler);
+
+    this.contextMenuCleanup = () => {
+      document.removeEventListener('click', closeHandler);
+      document.removeEventListener('contextmenu', closeHandler);
+      window.removeEventListener('keydown', keyHandler);
+    };
   }
 }

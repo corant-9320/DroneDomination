@@ -17,7 +17,6 @@ import { TurnManager } from './turnManager.js';
 import { MapInputHandler, MapViewInterface, FlatTileRef } from './mapInput.js';
 import {
   getMovementMode,
-  hexEntryCost as sharedHexEntryCost,
   getMaxMovement as sharedGetMaxMovement,
   isImpassableTerrain as sharedIsImpassableTerrain,
 } from '../shared/movementConstants.js';
@@ -49,8 +48,15 @@ import {
 } from './localMapUnits.js';
 import {
   computeMovementRange as _computeMovementRange,
-  drawMovementRange as _drawMovementRange,
+  computeMovementCostRoute as _computeMovementCostRoute,
+  computeExtendedCostRoute as _computeExtendedCostRoute,
+  computeContextualAttackRoute as _computeContextualAttackRoute,
+  computeMovementTowardTile as _computeMovementTowardTile,
+  drawMovementCostRoute as _drawMovementCostRoute,
+  weaponRangeInTileHops as _weaponRangeInTileHops,
+  isInWeaponRange as _isInWeaponRange,
   MovementRangeResult,
+  MovementCostRoute,
 } from './localMapMovement.js';
 
 export class LocalMapView implements MapViewInterface {
@@ -78,6 +84,7 @@ export class LocalMapView implements MapViewInterface {
   onTurnEnd: (() => void) | null = null;
   onAttack: ((attackerId: string, targetId: string) => void) | null = null;
   onRepair: ((repairerId: string, targetId: string) => void) | null = null;
+  onSleepUnit: ((unitId: string) => void) | null = null;
   /** The faction (ownerId) allowed to select and move units. */
   activeFaction: string = '';
   /** Optional TurnManager — when set, endTurn() syncs state back to it. */
@@ -107,10 +114,13 @@ export class LocalMapView implements MapViewInterface {
     weaponRangeTiles: new Set(),
   };
 
+  // Movement cost route overlay (computed on hover when unit is selected)
+  private _movementCostRoute: MovementCostRoute | null = null;
+
   // View transform
   offsetX: number = 0;
   offsetY: number = 0;
-  scale: number = 0.3;
+  scale: number = 0.5;
   dragging: boolean = false;
   mouseDownPos: { x: number; y: number } | null = null;
   lastMouse: { x: number; y: number } = { x: 0, y: 0 };
@@ -173,7 +183,7 @@ export class LocalMapView implements MapViewInterface {
     dbg.localMap.log('flatTiles count:', this.flatTiles.length);
     this.offsetX = 0;
     this.offsetY = 0;
-    if (resetZoom) this.scale = 0.3;
+    if (resetZoom) this.scale = 0.5;
     this.isProgrammaticCentre = true;
     this.render();
   }
@@ -305,14 +315,12 @@ export class LocalMapView implements MapViewInterface {
     // Draw terrain (fills, contours, water, forest, selection highlight, city labels)
     this.terrain.drawAllTiles(this.flatTiles, this.selectedTile, this.selectedSegment);
 
-    // Draw movement range overlay (before units, after tiles)
-    _drawMovementRange(
+    // Draw movement cost route overlay (hover feedback)
+    _drawMovementCostRoute(
       this.ctx,
       this.world,
       this.flatTiles,
-      this._rangeResult.moveRangeTiles,
-      this._rangeResult.attackReadyTiles,
-      this._rangeResult.weaponRangeTiles,
+      this._movementCostRoute,
       (wx, wy) => this.worldToScreen(wx, wy),
     );
 
@@ -423,10 +431,6 @@ export class LocalMapView implements MapViewInterface {
     return sharedIsImpassableTerrain(terrain);
   }
 
-  hexEntryCost(tile: TileData, mode: 'wheeled' | 'limb' | 'flight', isFirstHex: boolean): number {
-    return sharedHexEntryCost(tile, mode, isFirstHex);
-  }
-
   affordableHops(path: number[], unit: UnitData, remainingMP: number, hexesAlreadyMoved: number): number {
     return _affordableHops(path, unit, remainingMP, hexesAlreadyMoved, this.world.tiles);
   }
@@ -454,6 +458,108 @@ export class LocalMapView implements MapViewInterface {
     if (remainingMP <= 0) return;
 
     this._rangeResult = _computeMovementRange(this.world, unit, remainingMP);
+  }
+
+  /**
+   * Compute and cache the movement cost route for the hovered destination.
+   * Called from MapInputHandler on mousemove.
+   *
+   * Context-dependent behavior:
+   * - Enemy in weapon range from current position → red line only
+   * - Enemy reachable this turn (min green move + fire) → green path + red line
+   * - Enemy out of range this turn → green + blue (full move) + red toward enemy (capped)
+   * - Empty tile in movement range → green/blue path, no red
+   * - Empty tile out of movement range → green/blue path to edge toward that tile
+   */
+  computeMovementCostRouteForHover(destTile: number, destSegment: number): void {
+    this._movementCostRoute = null;
+
+    if (this.selectedUnits.size === 0) return;
+    const unitId = [...this.selectedUnits][0];
+    const unit = this.world.units.find((u) => u.id === unitId);
+    if (!unit) return;
+
+    const remainingMP = this.movementPoints.get(unitId) ?? 0;
+    if (remainingMP <= 0) return;
+
+    if (destTile === unit.tileIndex && destSegment === unit.segment) return;
+
+    // Compute effective weapon range (tile hops)
+    const weaponRange = _weaponRangeInTileHops(unit.attributes);
+
+    // Is there an enemy at the destination?
+    const playerOwner = unit.ownerId;
+    const enemy = this.world.units.find(
+      (u) => u.tileIndex === destTile && u.segment === destSegment && u.ownerId !== playerOwner,
+    );
+
+    if (enemy) {
+      // ─── Enemy hover cases ───────────────────────────────────────────────
+      this._movementCostRoute = _computeContextualAttackRoute(
+        this.world, unit, destTile, destSegment, remainingMP, weaponRange,
+        this._rangeResult,
+      );
+    } else {
+      // ─── Empty tile hover cases ──────────────────────────────────────────
+      // Within movement range: show green/blue movement path (no red)
+      if (this._rangeResult.moveRangeTiles.has(destTile) ||
+          this._rangeResult.attackReadyTiles.has(destTile)) {
+        this._movementCostRoute = _computeMovementCostRoute(
+          this.world, unit, null, destSegment, remainingMP, destTile,
+        );
+      } else {
+        // Out of movement range: show path to the edge of movement toward that tile
+        this._movementCostRoute = _computeMovementTowardTile(
+          this.world, unit, destTile, remainingMP, this._rangeResult,
+        );
+      }
+    }
+  }
+
+  /** Clear the movement cost route overlay. */
+  clearMovementCostRoute(): void {
+    if (this._movementCostRoute !== null) {
+      this._movementCostRoute = null;
+      this.render();
+    }
+  }
+
+  /** Check if an enemy tile+segment is within immediate attack range (no movement needed).
+   *
+   * Pass enemySegment to target the specific unit segment the player hovered/clicked,
+   * avoiding a wrong-unit match when multiple enemies share a tile.
+   *
+   * Checks the first eligible attacker (has MP ≥ 1, hasn't acted) among selected units —
+   * the same unit the right-click handler would actually use to attack.
+   */
+  isInAttackRange(enemyTile: number, enemySegment?: number): boolean {
+    if (this.selectedUnits.size === 0) return false;
+
+    // Find the first eligible attacker — mirrors the selection logic in onRightClick
+    let attacker: UnitData | undefined;
+    for (const unitId of this.selectedUnits) {
+      const unit = this.world.units.find((u) => u.id === unitId);
+      if (!unit) continue;
+      const remainingMP = this.movementPoints.get(unitId) ?? 0;
+      if (remainingMP < 1) continue;
+      if (this.actedUnits.has(unitId)) continue;
+      attacker = unit;
+      break;
+    }
+    if (!attacker) return false;
+
+    // Find the specific enemy to check range against
+    const enemy = enemySegment !== undefined
+      ? this.world.units.find(
+          (u) => u.tileIndex === enemyTile && u.segment === enemySegment && u.ownerId !== attacker!.ownerId,
+        )
+      : this.world.units.find(
+          (u) => u.tileIndex === enemyTile && u.ownerId !== attacker!.ownerId,
+        );
+    if (!enemy) return false;
+
+    // Use shared segment-distance check — same formula as server combat resolution
+    return _isInWeaponRange(this.world.tiles, attacker, enemy);
   }
 
   // ─── Turn state ─────────────────────────────────────────────────────────────
@@ -502,6 +608,10 @@ export class LocalMapView implements MapViewInterface {
 
   setOnRepair(cb: (repairerId: string, targetId: string) => void): void {
     this.onRepair = cb;
+  }
+
+  setOnSleepUnit(cb: (unitId: string) => void): void {
+    this.onSleepUnit = cb;
   }
 
   setActiveFaction(factionId: string): void {

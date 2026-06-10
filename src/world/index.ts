@@ -15,3 +15,4 @@ export * from './combat.js';
 export * from './repair.js';
 export * from './movement.js';
 export * from './turnState.js';
+export * from './segmentGeometry.js';

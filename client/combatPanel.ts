@@ -479,6 +479,14 @@ export class CombatPanel {
         body += `</div>`;
       }
 
+      // Show elevation modifier when it's not 1.0
+      if (c.breakdown && c.breakdown.elevationMultiplier !== 1.0) {
+        const elevPct = Math.round((c.breakdown.elevationMultiplier - 1) * 100);
+        const sign = elevPct > 0 ? '+' : '';
+        const col = elevPct > 0 ? '#4f8' : '#f88';
+        body += `<div class="cl-step" style="color:${col};padding:1px 0;">⛰ Elevation ${sign}${elevPct}%</div>`;
+      }
+
       if (c.splash.length > 0) {
         body += `<div class="cl-step" style="color:#fa0;padding:1px 0;">💥 Splash → ${c.splash.length} nearby unit${c.splash.length > 1 ? 's' : ''}</div>`;
         for (const s of c.splash) {
@@ -692,8 +700,8 @@ export class CombatPanel {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function minimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; f?: boolean; pos: [number, number, number] } {
-  return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, f: t.f || undefined, pos: t.pos };
+function minimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; f?: boolean; pos: [number, number, number]; b: [number, number, number][] } {
+  return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, f: t.f || undefined, pos: t.pos, b: t.b };
 }
 
 /** Return the faction colour for a unit, looking it up from the live world. */
