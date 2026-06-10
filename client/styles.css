@@ -609,7 +609,7 @@ canvas {
   border-bottom: none;
 }
 .dp-attr-table td {
-  padding: 2px 0;
+  padding: 1px 0;
 }
 .dp-attr-table td.dp-key {
   color: #888;
