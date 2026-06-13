@@ -21,8 +21,10 @@ client/           → Browser entry (loaded by index.html via Vite)
 > import from `src/` or `server/`. The client tsconfig only includes
 > `client/**` and `shared/**`, so any `import from '../src/...'` will fail
 > to type-check. Logic needed by both client and server must live in `shared/`.
-> This is why movement math, pathfinding, and unit naming are currently
-> duplicated between `src/world/` and `client/` — they predate `shared/`.
+> Movement constants, range checks, unit naming/attribute types, and combat
+> wire types now live in `shared/` (see the module map below). Some heavier
+> logic (pathfinding, 3D movement geometry) is still duplicated between
+> `src/world/` and `client/`; migrate it into `shared/` when you touch it.
 
 ```
 client/           → Browser entry (loaded by index.html via Vite)
@@ -42,23 +44,41 @@ client/           → Browser entry (loaded by index.html via Vite)
   unitModel.ts      3D unit model rendering
   unitRenderer.ts   Pre-renders 3D unit sprites for all configurations
   debug.ts          Centralized debug logging (toggle via localStorage)
+  debugState.ts     Runtime state snapshot + error capture (window.__DD_STATE__)
 
 server/           → API layer (Vite SSR in dev, Lambda in prod)
-  generate.ts       handleGenerate(config) → GenerateResult (framework-agnostic)
+  generateApi.ts    handleGenerate(config) → GenerateResult (framework-agnostic)
+  combatApi.ts      Combat resolution handler — resolves an action via src/world/
+  combatExplainer.ts Pure step-by-step explanation builders for combat/repair
+  regenerate.ts     Rebuild tiles + cities from a seed (for compact saves)
   devPlugin.ts      Vite plugin exposing POST /api/generate
 
-src/              → Shared core logic (server + CLI)
-  generate.ts       CLI: generate world → data/world.json
+shared/           → Logic + types shared by client AND server (client-importable)
+  unitTypes.ts      Authoritative UnitAttributes definition
+  combatTypes.ts    Combat API wire types (ExplanationStep, etc.)
+  movementConstants.ts Movement constants + pure cost helpers
+  rangeCheck.ts     Segment-distance range check + weaponRangeFromAttributes()
+  unitNaming.ts     Shared naming tables + core name-building logic
+
+src/              → Server/CLI-only core logic (NOT client-importable)
+  generateCli.ts    CLI: generate world → data/world.json
   validate.ts       CLI: validate data/world.json
   world/            World module (barrel: index.ts)
     types.ts          Tile, City, World, Vec3, TerrainType
-    units.ts          Unit, UnitAttributes, HexSegment, validation helpers
+    units.ts          Unit, HexSegment, validation helpers
     generate.ts       generateWorld(seed) → World
     goldberg.ts       generateGeodesicSphere(freq), computeDual(mesh)
     terrain.ts        generateTerrain(positions, seed) → TerrainData[]
     cities.ts         placeCities(tiles, seed) → City[]
     spawn.ts          spawnInitialUnits(tiles, cities) → Unit[]
     compact.ts        toCompactWorld/toCompactTile/toCompactUnit (wire format)
+    combat.ts         resolveCombat() — deterministic combat on the hex grid
+    combatMath.ts     Pure, stateless damage formulas
+    combatFacing.ts   Bearing-based orientation bonus geometry
+    movement.ts       moveUnit/pivot primitives (unified segment-step cost)
+    turnState.ts      Per-unit movement tracking within a turn
+    repair.ts         Attribute-based healing
+    segmentGeometry.ts Segment centroids + segment-aware distance
     pathfinding.ts    graphDistance(), tilesWithinRadius(), findPath() (A*)
     validate.ts       validateWorld(world) → ValidationResult
     vec3.ts           Vec3 math utilities
@@ -130,3 +150,30 @@ Each tile is divided into 6 triangular segments (0–5, clockwise from neighbour
 ## Constants
 
 `CITY_COUNT = 12` (src/world/cities.ts), `MIN_SPACING = 20`, `MAX_SPACING = 45`, `FREQUENCY = 24`
+
+## Debugging Without Screenshots
+
+The client exposes a machine-readable runtime snapshot so agents can inspect the
+running game without a human relaying screenshots:
+
+- `window.__DD_STATE__.snapshot()` — turn, selection, camera, and every unit's
+  position/health/MP. Defined in `client/debugState.ts`.
+- `window.__DD_STATE__.errors` — uncaught errors + unhandled rejections.
+- `npm run debug:snapshot` — loads the game headless (needs `npm run dev` running)
+  and writes `artifacts/sessions/<timestamp>/{summary.md,state.json,errors.json,console.log,screenshot.png}`.
+  Flags: `--turns N`, `--url`, `--wait`.
+
+## Known Drift / Issues
+
+See [`DECISIONS.md`](DECISIONS.md) "Known Issues" for the live list. As of
+2026-06-10 the open architectural issues are:
+
+- **Movement cost was modelled twice** — FIXED 2026-06-10. Now a single
+  segment-step model: `moveUnit` charges the shared `segmentCost`, and the
+  distance×terrain code (`segmentMoveCost`, `TERRAIN_MULTIPLIER_*`) is deleted.
+  Rotation is a flat once-per-turn `ROTATION_FEE`. (DECISIONS KI-1)
+- **Server combat ignores elevation** — FIXED 2026-06-10. `server/combatApi.ts`
+  (then named `server/combat.ts`) now carries `elev` through the wire format so
+  the elevation multiplier (COMBAT_RULES §13) works on the server path. (DECISIONS KI-2)
+- The compact wire format (`TileData`/`UnitData` in `client/worldData.ts`) is a
+  hand-maintained mirror of `src/world/types.ts`; keep the shapes in sync.

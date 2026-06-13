@@ -45,8 +45,10 @@ inclusion: always
 | `src/world/units.ts` | `client/unitIcons.ts` renders from unit attributes |
 | `src/world/combatFacing.ts` | `client/localMapUnits.ts` (getCorrectedFacing) must agree on facing semantics |
 | `client/unitRenderer.ts` | `client/localMapUnits.ts` sprite selection assumes 6 fixed directions |
+| `client/facing.ts` | All facing conversions — no other file may do raw `.n.indexOf()` or `(facing ± n) % 6` |
 | `client/colors.ts` | Single source for terrain + faction palettes |
-| `server/generate.ts` | Uses `spawnInitialUnits` + `toCompactWorld` from `src/world/` |
+| `shared/unitTypes.ts` | Authoritative `UnitAttributes`; `src/world/units.ts`, `client/worldData.ts`, `server/combatApi.ts` all import it |
+| `server/generateApi.ts` | Uses `spawnInitialUnits` + `toCompactWorld` from `src/world/` |
 
 ## Testing Rules
 
