@@ -11,10 +11,11 @@
  *    (buildFlatView), so the layout of hexes matches what the player sees on the
  *    flat map. The projected (x, y) coords are mapped to 3D as (x, 0, -y) and
  *    scaled up so a hex is a comfortable size for a perspective camera.
- *  - Terrain follows elevation: each hex is a flat-topped plateau raised to its
- *    elevation (shared 0→1 scale, see terrainContext.elevationHeight) with a
- *    darker vertical cliff skirt around every edge dropping to a common floor,
- *    so height differences read as steps/cliffs and never leave see-through gaps.
+ *  - Terrain follows elevation: hex boundary vertices are lifted to a shared
+ *    (neighbour-averaged) height, so adjacent hex tops tilt to meet each other
+ *    and form one continuous sloping landform. Steeper neighbours tilt more.
+ *    Vertical skirts drop the outer rim and coastline to a common floor so the
+ *    field never shows see-through gaps.
  *  - Unit models reuse buildUnitModel() — the exact 3D meshes the sprite renderer
  *    bakes — placed at each unit's segment centroid and rotated to its facing.
  *  - WebGL context is created on enter and disposed on exit so we don't sit on a
@@ -25,8 +26,9 @@
  */
 
 import * as THREE from 'three';
-import type { WorldData, UnitData } from './worldData.js';
+import type { WorldData, UnitData, TileData } from './worldData.js';
 import { buildFlatView, FlatTile } from './localMapProjection.js';
+import { tileHeight, HEIGHT_LEVELS } from '../shared/movementConstants.js';
 import { buildUnitModel } from './unitModel.js';
 import { unitDataToModelAttrs } from './unitRenderer.js';
 import { tileColorRGB, factionColor } from './colors.js';
@@ -97,7 +99,19 @@ const BOOM_LIFT = 0.6;
 const BOOM_STEP = BOOM_MAX / 30;
 
 /** Hover altitude (world units) for drone models — they float above the terrain. */
-const DRONE_AIR_HEIGHT = HEX_WORLD_RADIUS * 1.6;
+const DRONE_AIR_HEIGHT = HEX_WORLD_RADIUS * 0.5;
+
+/**
+ * Unit model footprint as a fraction of a hex radius. Units are deliberately
+ * tiny relative to the terrain (a tank is a handful of metres; a hex now reads
+ * as a swathe of ground hundreds of metres across, with a formation spread out
+ * inside it). Bump this to make units larger.
+ */
+const UNIT_HEX_FRACTION = 0.055;
+
+/** Radius (world units) of the selection ring under the player's own unit.
+ *  Decoupled from unit size so the (now small) selected unit stays findable. */
+const SELECT_RING_RADIUS = HEX_WORLD_RADIUS * 0.4;
 
 export class FirstPersonView {
   private world: WorldData;
@@ -313,6 +327,29 @@ export class FirstPersonView {
     if (!isFinite(minTop)) minTop = 0;
     const floorY = minTop - HEX_WORLD_RADIUS * 1.5;
 
+    // Continuous surface: average each shared boundary vertex's height across
+    // every tile that touches it. Because adjacent hexes share the same
+    // projected vertices, they resolve to identical heights — so the plateau
+    // tops tilt to meet their neighbours and the terrain reads as one smooth,
+    // sloping landform rather than stepped plateaus. Steeper neighbours produce
+    // steeper tilts. (Skirts below still close the outer rim and any coastline.)
+    const vKey = (p: { x: number; y: number }): string =>
+      `${Math.round(p.x * 1e4)}:${Math.round(p.y * 1e4)}`;
+    const vAccum = new Map<string, { sum: number; count: number }>();
+    for (const ft of flatTiles) {
+      const tTop = elevationWorldHeight(this.world.tiles[ft.tileIndex]);
+      for (const p of ft.poly) {
+        const k = vKey(p);
+        const acc = vAccum.get(k);
+        if (acc) { acc.sum += tTop; acc.count++; }
+        else vAccum.set(k, { sum: tTop, count: 1 });
+      }
+    }
+    const vertexHeight = (p: { x: number; y: number }): number => {
+      const acc = vAccum.get(vKey(p));
+      return acc ? acc.sum / acc.count : 0;
+    };
+
     // Far horizon ground so there's no void beyond the rendered hexes.
     const horizonGeo = new THREE.CircleGeometry(FIELD_EXTENT * 5, 48);
     const horizonMat = new THREE.MeshBasicMaterial({ color: 0x6f7d54 });
@@ -337,13 +374,13 @@ export class FirstPersonView {
     for (const ft of flatTiles) {
       const tile = this.world.tiles[ft.tileIndex];
       const [r, g, b] = tileColorRGB(tile);
-      const top = elevationWorldHeight(tile);
       const n = ft.poly.length;
 
-      // World positions of the boundary vertices at the tile's top height.
+      // World positions of the boundary vertices, each lifted to its shared
+      // (averaged) height so neighbouring tiles meet seamlessly.
       const tv = ft.poly.map((p) => {
         const w = toWorld(p.x, p.y);
-        return [w[0], top, w[2]] as [number, number, number];
+        return [w[0], vertexHeight(p), w[2]] as [number, number, number];
       });
 
       // Per-tile UVs: map the hex's flat bounding box onto the full texture so
@@ -462,7 +499,7 @@ export class FirstPersonView {
       const size = new THREE.Vector3();
       box.getSize(size);
       const maxXZ = Math.max(size.x, size.z) || 1;
-      const targetW = HEX_WORLD_RADIUS * 0.55;
+      const targetW = HEX_WORLD_RADIUS * UNIT_HEX_FRACTION;
       const s = targetW / maxXZ;
       model.scale.setScalar(s);
 
@@ -480,9 +517,10 @@ export class FirstPersonView {
       const dir = facingDirection(ft, unit.facing);
       model.rotation.y = Math.atan2(-dir.x, -dir.z);
 
-      // Subtle highlight ring under the player's own selected unit.
+      // Subtle highlight ring under the player's own selected unit. Sized off
+      // the hex (not the unit) so the tiny model is still easy to locate.
       if (unit.id === selectedUnitId) {
-        const ringGeo = new THREE.RingGeometry(targetW * 0.6, targetW * 0.8, 32);
+        const ringGeo = new THREE.RingGeometry(SELECT_RING_RADIUS * 0.8, SELECT_RING_RADIUS, 32);
         const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
         const ring = new THREE.Mesh(ringGeo, ringMat);
         ring.rotation.x = -Math.PI / 2;
@@ -636,26 +674,13 @@ function isDrone(unit: UnitData): boolean {
 }
 
 /**
- * World-space terrain height for a tile, derived from its elevation label.
- * Mirrors the 0→1 scale used by the 2D map (terrainContext.elevationHeight) and
- * lifts it into world units via ELEV_WORLD_SCALE.
+ * World-space terrain height for a tile, derived from its discrete 0–11 height.
+ * Normalised to the shared 0→1 scale and lifted into world units via
+ * ELEV_WORLD_SCALE. Ocean sits slightly below the flat floor.
  */
-function elevationWorldHeight(tile: { terrain: string; elevType: string }): number {
-  const elev = tile.elevType ?? tile.terrain;
-  let h: number;
-  switch (elev) {
-    case 'ocean':    h = -0.25; break;
-    case 'flat':     h = 0.0;   break;
-    case 'rolling':  h = 0.28;  break;
-    case 'hills':    h = 0.58;  break;
-    case 'mountain': h = 1.0;   break;
-    default:
-      if (tile.terrain === 'ocean') h = -0.25;
-      else if (tile.terrain === 'hills') h = 0.58;
-      else if (tile.terrain === 'mountain') h = 1.0;
-      else h = 0.0;
-  }
-  return h * ELEV_WORLD_SCALE;
+function elevationWorldHeight(tile: TileData): number {
+  if (tile.terrain === 'ocean' || tile.elevType === 'ocean') return -0.25 * ELEV_WORLD_SCALE;
+  return (tileHeight(tile) / (HEIGHT_LEVELS - 1)) * ELEV_WORLD_SCALE;
 }
 
 /** Average distance from a flat tile's centre to its boundary vertices. */

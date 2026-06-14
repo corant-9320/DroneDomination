@@ -137,9 +137,9 @@ describe('movement', () => {
   });
 
   describe('isImpassable', () => {
-    it('returns true for mountain elevation', () => {
+    it('returns false for mountain elevation (only steepness blocks high ground)', () => {
       const tile = makeTile({ index: 0, neighbours: [1], elevationType: 'mountain' });
-      expect(isImpassable(tile)).toBe(true);
+      expect(isImpassable(tile)).toBe(false);
     });
 
     it('returns true for ocean terrain', () => {
@@ -198,9 +198,9 @@ describe('movement', () => {
       expect(hexEntryCost(tile, 'wheeled', false)).toBe(Infinity);
     });
 
-    it('mountain is impassable for wheeled', () => {
+    it('mountain alone is passable for wheeled (steepness needs an origin tile)', () => {
       const tile = makeTile({ index: 0, neighbours: [1], elevationType: 'mountain' });
-      expect(hexEntryCost(tile, 'wheeled', false)).toBe(Infinity);
+      expect(hexEntryCost(tile, 'wheeled', false)).toBe(0.25);
     });
 
     it('ocean is impassable for wheeled', () => {
@@ -208,9 +208,9 @@ describe('movement', () => {
       expect(hexEntryCost(tile, 'wheeled', false)).toBe(Infinity);
     });
 
-    it('mountain is impassable for limb', () => {
+    it('mountain alone is passable for limb', () => {
       const tile = makeTile({ index: 0, neighbours: [1], elevationType: 'mountain' });
-      expect(hexEntryCost(tile, 'limb', false)).toBe(Infinity);
+      expect(hexEntryCost(tile, 'limb', false)).toBe(0.50);
     });
   });
 
@@ -305,7 +305,7 @@ describe('movement', () => {
 
     it('stops at impassable tile', () => {
       const tiles = linearGrid();
-      tiles[2] = makeTile({ index: 2, neighbours: [1, 3, 2, 2, 2, 2], elevationType: 'mountain' });
+      tiles[2] = makeTile({ index: 2, neighbours: [1, 3, 2, 2, 2, 2], terrainType: 'ocean' });
       expect(maxReachableHexes(10, 'limb', tiles, [0, 1, 2, 3])).toBe(1);
     });
   });

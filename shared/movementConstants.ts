@@ -19,7 +19,17 @@
  *   Spider (limb):   0.50 per step always. Forbidden: mountain, ocean.
  *   Tank (wheeled):  0.25 on flat/clear.
  *                    0.75 on hills.
- *                    Forbidden: forest, mountain, ocean.
+ *                    Forbidden: forest, ocean.
+ *
+ * ─── STEEPNESS GATE ──────────────────────────────────────────────────────────
+ *
+ * Elevation is a discrete height 0–11 (HEIGHT_LEVELS). Units are NOT blocked by
+ * absolute height — a tank can stand on the highest peak if it climbed a gentle
+ * ramp to get there. They are blocked by the *step* between two adjacent hexes:
+ * crossing a border whose |height delta| exceeds the chassis climb limit is
+ * forbidden. Drones (flight) ignore steepness entirely. This is why segmentCost
+ * takes an optional `fromTile` — the cost of a step depends on the edge, not
+ * just the destination cell.
  */
 
 import type { UnitAttributes } from './unitTypes.js';
@@ -68,6 +78,10 @@ export interface MovementTile {
   forested?: boolean;
   /** Forest flag as used in the compact/client wire format. */
   f?: boolean;
+  /** Discrete terrain height 0–11 (authoritative server field). */
+  height?: number;
+  /** Discrete terrain height 0–11 as used in the compact/client wire format. */
+  h?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,11 +94,46 @@ function isHill(tile: MovementTile): boolean {
   return elev === 'hills';
 }
 
-/** Whether a tile is mountain. */
-function isMountain(tile: MovementTile): boolean {
-  const elev = tile.elevationType ?? tile.elevType ?? '';
-  return elev === 'mountain';
+/** Number of discrete terrain height levels (0 … HEIGHT_LEVELS-1). */
+export const HEIGHT_LEVELS = 12;
+
+/**
+ * Representative height for an elevation band, used as a fallback when a tile
+ * carries no explicit `height`/`h` (e.g. test mocks or legacy data). Bands span
+ * the 0–11 range in even thirds: flat 0–2, rolling 3–5, hills 6–8, mountain 9–11.
+ */
+export function bandToHeight(band: string | undefined): number {
+  switch (band) {
+    case 'mountain': return 10;
+    case 'hills':    return 7;
+    case 'rolling':  return 4;
+    case 'flat':     return 1;
+    default:         return 1;
+  }
 }
+
+/** Derive the 4-way elevation band from a discrete height 0–11. */
+export function heightToBand(height: number): 'flat' | 'rolling' | 'hills' | 'mountain' {
+  if (height >= 9) return 'mountain';
+  if (height >= 6) return 'hills';
+  if (height >= 3) return 'rolling';
+  return 'flat';
+}
+
+/** Discrete terrain height 0–11 for a tile, with band fallback when absent. */
+export function tileHeight(tile: MovementTile): number {
+  if (typeof tile.height === 'number') return tile.height;
+  if (typeof tile.h === 'number') return tile.h;
+  return bandToHeight(tile.elevationType ?? tile.elevType);
+}
+
+/**
+ * Maximum climbable step (|height delta|) per movement mode. Crossing a border
+ * steeper than this is forbidden. Tanks are limited to gentle grades; spiders
+ * can scale almost any slope; drones (flight) are unaffected.
+ */
+export const MAX_CLIMB_WHEELED = 4;
+export const MAX_CLIMB_LIMB = 8;
 
 /** Whether a tile is ocean. */
 function isOcean(tile: MovementTile): boolean {
@@ -165,26 +214,43 @@ export function isImpassableTerrain(terrain: string): boolean {
 
 /**
  * Cost to move one segment step into a destination tile, given the unit's
- * movement mode. The destination tile's terrain determines the cost.
+ * movement mode. The destination tile's terrain determines the base cost; the
+ * step (delta) between `fromTile` and `tile` determines whether the move is
+ * climbable at all.
  *
- * For intra-hex moves (same tile), pass the current tile as destination.
+ * For intra-hex moves (same tile), omit `fromTile` (or pass the same tile) —
+ * there is no height delta within a hex.
  *
- * Returns Infinity if the destination is forbidden for this movement mode.
+ * Returns Infinity if the destination is forbidden for this movement mode, or
+ * if the border step is too steep for the chassis.
  *
  * Drones can traverse ocean segments but cannot end a turn there — that
  * restriction is enforced at the turn-state level, not here.
  */
-export function segmentCost(tile: MovementTile, mode: MovementMode): number {
-  // Drones can go anywhere (ocean end-of-turn restriction is separate)
+export function segmentCost(
+  tile: MovementTile,
+  mode: MovementMode,
+  fromTile?: MovementTile,
+): number {
+  // Drones can go anywhere (ocean end-of-turn restriction is separate) and are
+  // unaffected by terrain steepness.
   if (mode === 'flight') {
     return COST_DRONE;
   }
 
-  // Ground units cannot enter ocean or mountain
+  // Ground units cannot enter ocean. Mountains are no longer impassable by
+  // height alone — only the steepness gate below can block a high tile.
   if (isOcean(tile)) return Infinity;
-  if (isMountain(tile)) return Infinity;
 
-  // Spider: constant cost, any non-mountain non-ocean terrain
+  // Steepness gate: a border step taller than the chassis climb limit is
+  // impassable, regardless of the absolute elevation involved.
+  if (fromTile) {
+    const delta = Math.abs(tileHeight(tile) - tileHeight(fromTile));
+    const limit = mode === 'limb' ? MAX_CLIMB_LIMB : MAX_CLIMB_WHEELED;
+    if (delta > limit) return Infinity;
+  }
+
+  // Spider: constant cost, any non-ocean terrain within the climb limit
   if (mode === 'limb') {
     return COST_SPIDER;
   }

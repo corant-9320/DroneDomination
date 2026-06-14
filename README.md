@@ -73,7 +73,7 @@ Quick guide to "I want to change X — where do I go?"
 | Change terrain generation | `src/world/terrain.ts` |
 | Adjust movement costs | `shared/movementConstants.ts` |
 | Modify the HUD / panels | `client/` — see `detailPanel.ts`, `combatPanel.ts`, `main.ts` |
-| Change world size | `src/world/goldberg.ts` (FREQUENCY constant) |
+| Change world size | `src/world/generate.ts` (`FREQUENCY` constant) |
 | Add an API endpoint | `server/devPlugin.ts` (Vite plugin routes) |
 
 After editing `src/world/**`, run `npm run build` to regenerate world data.

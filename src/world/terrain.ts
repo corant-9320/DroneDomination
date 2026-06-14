@@ -7,16 +7,19 @@
  *   ElevationType — flat | rolling | hills | mountain  (ocean tiles are always flat)
  *   forested      — boolean                            (false for ocean/tundra/desert)
  *
- * Target proportions (out of ~5762 tiles):
- *   ocean    ≈ 500 tiles  (~8.7%)
- *   mountain ≈ 500 tiles  (~8.7%)
- *   desert   ≈ 300 tiles  (contiguous patches, flat or rolling elevation)
- *   tundra   ≈ polar caps
- *   grassland/plains — remainder
+ * ─── Scale-aware feature sizing ──────────────────────────────────────────────
+ * The map keeps the same *proportions* regardless of tessellation frequency:
+ * targets (ocean/mountain/desert tile counts) scale with the tile count, and
+ * polar bands scale with the pole-to-equator hop distance (`densityScale`).
  *
- * Mountain ranges: elongated chains 3–20 hexes long, 1–3 hexes wide.
- * Mountains are surrounded by hills; hills are surrounded by rolling.
- * Desert forms contiguous patches seeded by noise.
+ * Feature *footprints* are deliberately enlarged beyond proportional growth by
+ * `PATCH_BOOST`: mountain chains and desert blobs grow longer/wider and the
+ * noise fields run at lower frequency, so on a bigger globe you get fewer, much
+ * larger sweeping landforms (a mountain range spans dozens of hexes) instead of
+ * a finely-stippled version of the small map. Tune PATCH_BOOST to taste.
+ *
+ * Base proportions (calibrated at the G(36) / 12,962-tile world):
+ *   ocean ≈ 3.9%, mountain ≈ 3.9%, desert ≈ 2.3%, tundra ≈ polar caps.
  */
 
 import { Vec3, TerrainType, ElevationType } from './types.js';
@@ -159,13 +162,15 @@ function growMountainRanges(
   poleDistances: number[],
   targetCount: number,
   rng: () => number,
+  featureScale: number,
+  poleMin: number,
 ): Set<number> {
   const mountains = new Set<number>();
 
   // Candidate seeds: tiles not too close to poles
   const candidates: number[] = [];
   for (let i = 0; i < numTiles; i++) {
-    if (poleDistances[i] > 8) candidates.push(i);
+    if (poleDistances[i] > poleMin) candidates.push(i);
   }
 
   // Shuffle candidates for random seed selection
@@ -199,7 +204,7 @@ function growMountainRanges(
 
       for (let d = 0; d < nbrs.length; d++) {
         const nb = nbrs[d];
-        if (poleDistances[nb] <= 8) { weights.push(0); continue; }
+        if (poleDistances[nb] <= poleMin) { weights.push(0); continue; }
         if (mountains.has(nb))       { weights.push(0); continue; }
 
         let w = 1.0;
@@ -249,10 +254,10 @@ function growMountainRanges(
   while (mountains.size < targetCount && seedIdx < candidates.length) {
     const seed = candidates[seedIdx++];
     if (mountains.has(seed)) continue;
-    if (poleDistances[seed] <= 8) continue;
+    if (poleDistances[seed] <= poleMin) continue;
 
-    // Main spine: 4–22 tiles, random initial direction
-    const spineLength = 4 + Math.floor(rng() * 19);
+    // Main spine: 4–22 tiles (× featureScale), random initial direction
+    const spineLength = Math.max(2, Math.round((4 + Math.floor(rng() * 19)) * featureScale));
     const initBias = Math.floor(rng() * (neighbours[seed]?.length || 6));
     const spine = walkChain(seed, spineLength, initBias);
 
@@ -262,7 +267,7 @@ function growMountainRanges(
     const branchCount = Math.floor(rng() * 4); // 0–3
     for (let b = 0; b < branchCount; b++) {
       const branchOrigin = spine[Math.floor(rng() * spine.length)];
-      const branchLength = 2 + Math.floor(rng() * 7); // 2–8 tiles
+      const branchLength = Math.max(2, Math.round((2 + Math.floor(rng() * 7)) * featureScale)); // 2–8 tiles × scale
       // Pick a bias direction perpendicular-ish to the spine
       const nbrs = neighbours[branchOrigin];
       const perpBias = nbrs ? Math.floor(rng() * nbrs.length) : -1;
@@ -274,7 +279,7 @@ function growMountainRanges(
     for (const t of spine) {
       if (rng() < 0.40) {
         const nbrs = neighbours[t];
-        const valid = nbrs.filter((nb) => !mountains.has(nb) && poleDistances[nb] > 8);
+        const valid = nbrs.filter((nb) => !mountains.has(nb) && poleDistances[nb] > poleMin);
         if (valid.length > 0) {
           mountains.add(valid[Math.floor(rng() * valid.length)]);
         }
@@ -301,20 +306,22 @@ function growDesertPatches(
   desertNoise: number[],
   targetCount: number,
   rng: () => number,
+  featureScale: number,
+  poleMin: number,
 ): Set<number> {
   const desert = new Set<number>();
 
   // Sort candidates by desert noise (highest first) — these become patch seeds
   const candidates = Array.from({ length: numTiles }, (_, i) => i)
-    .filter((i) => poleDistances[i] > 15 && desertNoise[i] > 0)
+    .filter((i) => poleDistances[i] > poleMin && desertNoise[i] > 0)
     .sort((a, b) => desertNoise[b] - desertNoise[a]);
 
   for (const seed of candidates) {
     if (desert.size >= targetCount) break;
     if (desert.has(seed)) continue;
 
-    // Patch size: 5–40 tiles
-    const patchSize = 5 + Math.floor(rng() * 36);
+    // Patch size: 5–40 tiles (× featureScale)
+    const patchSize = Math.max(3, Math.round((5 + Math.floor(rng() * 36)) * featureScale));
     const patch: number[] = [seed];
     const frontier: number[] = [seed];
     const inPatch = new Set<number>([seed]);
@@ -327,7 +334,7 @@ function growDesertPatches(
 
       for (const nb of neighbours[current]) {
         if (inPatch.has(nb)) continue;
-        if (poleDistances[nb] <= 15) continue;
+        if (poleDistances[nb] <= poleMin) continue;
         inPatch.add(nb);
         patch.push(nb);
         frontier.push(nb);
@@ -348,6 +355,8 @@ function growDesertPatches(
 export interface TileTerrainData {
   terrainType: TerrainType;
   elevationType: ElevationType;
+  /** Discrete terrain height 0–11. Ocean tiles are 0. */
+  height: number;
   forested: boolean;
 }
 
@@ -382,22 +391,57 @@ export function generateTerrain(
 
   const numTiles = positions.length;
 
+  // --- Scale-aware feature sizing ------------------------------------------
+  // Derive the tessellation frequency from the tile count (T = 10·F² + 2) so
+  // terrain features track the globe size without a hard-coded frequency here.
+  const frequency = Math.sqrt(Math.max(1, (numTiles - 2) / 10));
+  // densityScale = 1.0 at the original G(36) world; >1 on a bigger globe.
+  const densityScale = frequency / 36;
+  // Enlarge feature footprints beyond proportional growth → fewer, larger,
+  // sweeping landforms. Bump this for even broader regions.
+  const PATCH_BOOST = 1.6;
+  const featureScale = densityScale * PATCH_BOOST;
+  // Lower noise frequencies → physically larger ocean/desert/elevation blobs.
+  const noiseScale = 1 / PATCH_BOOST;
+  // Keep ocean/mountain/desert *proportions* constant as the globe grows.
+  const targetScale = numTiles / 12962;
+  // Polar bands (tundra cap, ocean ring, near-polar fade) scale with hop
+  // distance so the caps stay the same fraction of the globe. Clamped to ≥1 so
+  // they never fall below the baseline G(36) structure (and tiny test meshes
+  // keep the original hop thresholds).
+  const poleScale = Math.max(1, densityScale);
+  const POLE_TUNDRA_CAP   = Math.round(2  * poleScale);
+  const POLE_OCEAN_BUFFER = Math.round(4  * poleScale);
+  const POLE_NEARPOLAR    = Math.round(9  * poleScale);
+  const POLE_MOUNTAIN_MIN = Math.round(8  * poleScale);
+  const POLE_DESERT_MIN   = Math.round(15 * poleScale);
+  const POLE_GRASS_FLAT   = Math.round(12 * poleScale);
+  const POLE_GRASS_HILLS  = Math.round(20 * poleScale);
+  const poleBands: PoleBands = {
+    tundraCap: POLE_TUNDRA_CAP,
+    oceanBuffer: POLE_OCEAN_BUFFER,
+    nearPolar: POLE_NEARPOLAR,
+    grassFlat: POLE_GRASS_FLAT,
+    grassHills: POLE_GRASS_HILLS,
+  };
+
   // --- Pole distances ---
   const poleDistances = computePoleDistances(positions, neighbours, sides);
 
   // ---------------------------------------------------------------------------
-  // Step 1: Ocean — target ~500 tiles
-  // Use noise ranking: bottom ~8.7% by rank become ocean.
+  // Step 1: Ocean — proportional to tile count (~3.9%).
+  // Use noise ranking: lowest-noise tiles become ocean. Lower noise frequency
+  // (× noiseScale) makes ocean basins broader on a larger globe.
   // ---------------------------------------------------------------------------
-  const OCEAN_TARGET = 500;
+  const OCEAN_TARGET = Math.round(500 * targetScale);
   const oceanFraction = OCEAN_TARGET / numTiles;
 
   const oceanNoise = positions.map((pos) => {
     let e = 0;
-    e += gradientNoise3D(pos, 3,  gradients, permutation) * 0.5;
-    e += gradientNoise3D(pos, 6,  gradients, permutation) * 0.25;
-    e += gradientNoise3D(pos, 12, gradients, permutation) * 0.125;
-    e += gradientNoise3D(pos, 24, gradients, permutation) * 0.0625;
+    e += gradientNoise3D(pos, 3  * noiseScale, gradients, permutation) * 0.5;
+    e += gradientNoise3D(pos, 6  * noiseScale, gradients, permutation) * 0.25;
+    e += gradientNoise3D(pos, 12 * noiseScale, gradients, permutation) * 0.125;
+    e += gradientNoise3D(pos, 24 * noiseScale, gradients, permutation) * 0.0625;
     return e;
   });
 
@@ -413,10 +457,10 @@ export function generateTerrain(
   // Step 2: Mountain ranges — target ~500 mountain tiles
   // Grown as elongated chains, then surrounded by hills/rolling buffers.
   // ---------------------------------------------------------------------------
-  const MOUNTAIN_TARGET = 500;
+  const MOUNTAIN_TARGET = Math.round(500 * targetScale);
 
   const mountainSet = growMountainRanges(
-    numTiles, neighbours, poleDistances, MOUNTAIN_TARGET, rng
+    numTiles, neighbours, poleDistances, MOUNTAIN_TARGET, rng, featureScale, POLE_MOUNTAIN_MIN
   );
 
   // Hills buffer: all non-mountain neighbours of mountain tiles
@@ -439,15 +483,15 @@ export function generateTerrain(
   // Step 3: Desert patches — target ~300 tiles, contiguous, far from poles
   // Desert can be flat or rolling elevation.
   // ---------------------------------------------------------------------------
-  const DESERT_TARGET = 300;
+  const DESERT_TARGET = Math.round(300 * targetScale);
 
   const desertNoise = positions.map((pos) =>
-    gradientNoise3D(pos, 4, gradients, permutation) * 0.6 +
-    gradientNoise3D(pos, 8, gradients, permutation) * 0.4
+    gradientNoise3D(pos, 4 * noiseScale, gradients, permutation) * 0.6 +
+    gradientNoise3D(pos, 8 * noiseScale, gradients, permutation) * 0.4
   );
 
   const desertSet = growDesertPatches(
-    numTiles, neighbours, poleDistances, desertNoise, DESERT_TARGET, rng
+    numTiles, neighbours, poleDistances, desertNoise, DESERT_TARGET, rng, featureScale, POLE_DESERT_MIN
   );
 
   // ---------------------------------------------------------------------------
@@ -466,9 +510,9 @@ export function generateTerrain(
   // ---------------------------------------------------------------------------
   const elevNoise = positions.map((pos) => {
     let e = 0;
-    e += gradientNoise3D(pos, 5,  gradients, permutation) * 0.5;
-    e += gradientNoise3D(pos, 10, gradients, permutation) * 0.25;
-    e += gradientNoise3D(pos, 20, gradients, permutation) * 0.125;
+    e += gradientNoise3D(pos, 5  * noiseScale, gradients, permutation) * 0.5;
+    e += gradientNoise3D(pos, 10 * noiseScale, gradients, permutation) * 0.25;
+    e += gradientNoise3D(pos, 20 * noiseScale, gradients, permutation) * 0.125;
     return e;
   });
 
@@ -487,6 +531,27 @@ export function generateTerrain(
     else if (rank < nq * 2)  normalElevMap.set(i, 'rolling');
     else                     normalElevMap.set(i, 'hills');
   });
+
+  // Normalise the elevation noise to 0–1 so it can drive within-band height
+  // variation (each band spans 3 discrete levels). Smooth + spatially coherent,
+  // so neighbouring tiles get similar heights and slopes read naturally.
+  let eMin = Infinity;
+  let eMax = -Infinity;
+  for (const e of elevNoise) {
+    if (e < eMin) eMin = e;
+    if (e > eMax) eMax = e;
+  }
+  const eRange = eMax - eMin || 1;
+  /** Map an elevation band + tile noise to a discrete height 0–11. */
+  const bandHeight = (band: ElevationType, i: number): number => {
+    const base =
+      band === 'mountain' ? 9 :
+      band === 'hills'    ? 6 :
+      band === 'rolling'  ? 3 : 0;
+    const norm = (elevNoise[i] - eMin) / eRange;     // 0–1
+    const offset = Math.min(2, Math.max(0, Math.floor(norm * 3)));
+    return base + offset;                            // band-base + 0..2
+  };
 
   // ---------------------------------------------------------------------------
   // Step 5: Tundra — polar caps (same logic as before)
@@ -517,23 +582,35 @@ export function generateTerrain(
     // --- TerrainType ---
     const isMountainHill = hillsSet.has(i) && !mountainSet.has(i);
     const terrainType = classifyTerrain(
-      isOcean, elevationType, poleDist, mountainSet.has(i), desertSet.has(i), isMountainHill, rng
+      isOcean, elevationType, poleDist, mountainSet.has(i), desertSet.has(i), isMountainHill, rng, poleBands
     );
 
     // Ocean tiles are always flat — no elevation geometry
     if (terrainType === 'ocean') elevationType = 'flat';
 
+    // Discrete height 0–11: ocean is 0, otherwise band base + noise offset.
+    const height = terrainType === 'ocean' ? 0 : bandHeight(elevationType, i);
+
     // --- Forested ---
     const forestNoise = gradientNoise3D(pos, 5, gradients, permutation);
     const forested = classifyForested(terrainType, elevationType, forestNoise);
 
-    return { terrainType, elevationType, forested };
+    return { terrainType, elevationType, height, forested };
   });
 }
 
 // ---------------------------------------------------------------------------
 // Terrain classification
 // ---------------------------------------------------------------------------
+
+/** Scaled polar-band hop thresholds (computed per-world from tile density). */
+interface PoleBands {
+  tundraCap: number;
+  oceanBuffer: number;
+  nearPolar: number;
+  grassFlat: number;
+  grassHills: number;
+}
 
 function classifyTerrain(
   isOcean: boolean,
@@ -543,16 +620,18 @@ function classifyTerrain(
   isDesert: boolean,
   isMountainHill: boolean,
   rng: () => number,
+  pole: PoleBands,
 ): TerrainType {
-  // --- Hard tundra cap: pentagon + 2 hex rings ---
-  if (poleDist <= 2) return 'tundra';
+  // --- Hard tundra cap: pentagon + polar rings ---
+  if (poleDist <= pole.tundraCap) return 'tundra';
 
   // --- Ocean buffer just outside the tundra cap ---
-  if (poleDist <= 4) return 'ocean';
+  if (poleDist <= pole.oceanBuffer) return 'ocean';
 
-  // --- Near-polar band (dist 5–9): tundra probability fades with distance ---
-  if (poleDist <= 9) {
-    const tundraChance = (10 - poleDist) / 5;
+  // --- Near-polar band: tundra probability fades with distance ---
+  if (poleDist <= pole.nearPolar) {
+    const span = Math.max(1, pole.nearPolar - pole.oceanBuffer);
+    const tundraChance = (pole.nearPolar + 1 - poleDist) / span;
     if (rng() < tundraChance) return 'tundra';
   }
 
@@ -570,12 +649,12 @@ function classifyTerrain(
 
   // --- Grassland for flat/rolling/hills land ---
   if (elevationType === 'flat' || elevationType === 'rolling') {
-    return poleDist > 12 ? 'grassland' : 'plains';
+    return poleDist > pole.grassFlat ? 'grassland' : 'plains';
   }
 
   // hills → grassland near equator, plains further out
   if (elevationType === 'hills') {
-    return poleDist > 20 ? 'grassland' : 'plains';
+    return poleDist > pole.grassHills ? 'grassland' : 'plains';
   }
 
   return 'plains';

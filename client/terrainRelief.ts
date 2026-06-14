@@ -200,9 +200,9 @@ export class TerrainRelief {
     const highNx = -nx;             // back into the high tile
     const highNy = -ny;
 
-    const ownLevel = this.c.elevationLevel(tile);
-    const neighbourLevel = this.c.elevationLevel(neighbour);
-    const heightDrop = Math.max(1, ownLevel - neighbourLevel);
+    // Shadow strength scales with the true 0–11 height drop (cliff size), not
+    // just the 4-way band difference, so a tall cliff casts a deeper shadow.
+    const heightDrop = Math.max(1, this.c.height12(tile) - this.c.height12(neighbour));
     const radius = this.c.screenHexRadius(ft);
 
     const strength = Math.min(1, 0.36 + heightDrop * 0.22 + level * 0.08);

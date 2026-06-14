@@ -7,12 +7,15 @@
  *   segment of the neighbour — costs segmentCost(destinationTile, mode),
  *   which depends only on the destination terrain and the unit's chassis:
  *
- *   Tank (wheeledMovement):  flat/clear 0.25, hills 0.75, forest/mountain/ocean ∞
- *   Spider (limbMovement):   0.50 on any passable terrain, mountain/ocean ∞
+ *   Tank (wheeledMovement):  flat/clear 0.25, hills 0.75, forest/ocean ∞
+ *   Spider (limbMovement):   0.50 on any passable terrain, ocean ∞
  *   Drone (flightMovement):  0.25 everywhere
  *
  *   - There is no separate per-hex entry cost; crossing a border is just one step.
- *   - Mountain and ocean are impassable for ground units.
+ *   - Ocean is impassable for ground units; high elevation is not. Instead, a
+ *     border step taller than the chassis climb limit (steepness gate in
+ *     segmentCost) is impassable — that is why each cost call passes the origin
+ *     tile as well as the destination.
  *   - Attack requires at least 1 MP remaining after all movement.
  *
  * Rotation (changing facing) is charged separately as a flat once-per-turn
@@ -57,9 +60,13 @@ export function isHillTerrain(tile: Tile): boolean {
   return tile.elevationType === 'hills';
 }
 
-/** Whether a tile is impassable (mountain elevation or ocean terrain). */
+/**
+ * Whether a tile is impassable to ground units by virtue of the cell itself.
+ * Only ocean qualifies now — high elevation is no longer a blanket block;
+ * steep *borders* are blocked per-edge by the segmentCost steepness gate.
+ */
 export function isImpassable(tile: Tile): boolean {
-  return tile.elevationType === 'mountain' || tile.terrainType === 'ocean';
+  return tile.terrainType === 'ocean';
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +112,7 @@ export function pathMovementCost(
 ): number {
   let total = 0;
   for (let i = 1; i < path.length; i++) {
-    const cost = segmentCostShared(tiles[path[i]], mode);
+    const cost = segmentCostShared(tiles[path[i]], mode, tiles[path[i - 1]]);
     if (cost === Infinity) return Infinity;
     total += cost;
   }
@@ -125,7 +132,7 @@ export function maxHexesWithAttack(
   let spent = 0;
   let hexes = 0;
   for (let i = 1; i < path.length; i++) {
-    const cost = segmentCostShared(tiles[path[i]], mode);
+    const cost = segmentCostShared(tiles[path[i]], mode, tiles[path[i - 1]]);
     if (cost === Infinity) break;
     spent += cost;
     if (spent + 1 > totalMP) break; // need at least 1 MP remaining for attack
@@ -146,7 +153,7 @@ export function maxReachableHexes(
   let spent = 0;
   let hexes = 0;
   for (let i = 1; i < path.length; i++) {
-    const cost = segmentCostShared(tiles[path[i]], mode);
+    const cost = segmentCostShared(tiles[path[i]], mode, tiles[path[i - 1]]);
     if (cost === Infinity) break;
     spent += cost;
     if (spent > totalMP) break;
@@ -193,8 +200,8 @@ export function moveUnit(
       const destTile = tiles[toTileIndex];
 
       // Unified segment-step cost: one step into the destination tile, priced
-      // by destination terrain. No separate hex-entry cost.
-      const cost = segmentCostShared(destTile, mode);
+      // by destination terrain and gated by the height step from the origin.
+      const cost = segmentCostShared(destTile, mode, tiles[fromIndex]);
 
       if (cost === Infinity) return false;
       const remaining = movementRemaining(unit, turnState);

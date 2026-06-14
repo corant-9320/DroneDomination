@@ -233,7 +233,7 @@ export function computeMovementCostRoute(
     if (currentSeg < tile.n.length) {
       const neighbour = tile.n[currentSeg];
       const nTile = tiles[neighbour];
-      const crossCost = sharedSegmentCost(nTile, mode);
+      const crossCost = sharedSegmentCost(nTile, mode, tile);
       if (crossCost !== Infinity) {
         const newCost = currentCost + crossCost;
         if (newCost <= remainingMP) {
@@ -273,7 +273,8 @@ export function computeMovementCostRoute(
 
   for (const key of segPath) {
     const tileIdx = Math.floor(key / 6);
-    const hopCost = sharedSegmentCost(tiles[tileIdx], mode);
+    const prevTileIdx = Math.floor(prevHopKey / 6);
+    const hopCost = sharedSegmentCost(tiles[tileIdx], mode, tiles[prevTileIdx]);
     cumulative += hopCost;
     const mpAfter = remainingMP - cumulative;
     let zone: RouteHopZone;

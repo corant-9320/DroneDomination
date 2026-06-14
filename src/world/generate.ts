@@ -1,6 +1,6 @@
 /**
  * World generation entry point.
- * Generates the complete authoritative Goldberg G(36,0) world.
+ * Generates the complete authoritative Goldberg G(100,0) world.
  */
 
 import { World, Tile } from './types.js';
@@ -8,7 +8,19 @@ import { generateGeodesicSphere, computeDual } from './goldberg.js';
 import { generateTerrain } from './terrain.js';
 import { placeCities } from './cities.js';
 
-const FREQUENCY = 36;
+/**
+ * Geodesic subdivision frequency. Tile count = 10·F² + 2.
+ *   F = 36  → 12,962 tiles (the original "asteroid"-scale world)
+ *   F = 100 → 100,002 tiles (~7.7× the surface, ~2.8× the diameter)
+ *
+ * Terrain feature sizes scale automatically with tile density (see terrain.ts),
+ * so a larger F yields a bigger world with proportionally larger landforms
+ * rather than just a finer-grained version of the same map.
+ *
+ * Practical ceilings (see globe.ts notes): ~65k tiles was the old Uint16 wall
+ * (now lifted to Uint32); JSON load/parse stays comfortable to ~130k tiles.
+ */
+export const FREQUENCY = 100;
 
 export function generateWorld(seed: number): World {
   console.log(`Generating Goldberg G(${FREQUENCY},0) world with seed ${seed}...`);
@@ -51,6 +63,7 @@ export function generateWorld(seed: number): World {
     boundary: dt.boundary,
     terrainType: terrainData[i].terrainType,
     elevationType: terrainData[i].elevationType,
+    height: terrainData[i].height,
     forested: terrainData[i].forested,
   }));
 
@@ -123,10 +136,12 @@ export function generateWorld(seed: number): World {
         // Promote to plains at flat elevation
         t.terrainType  = 'plains';
         t.elevationType = 'flat';
+        t.height        = 1;
         t.forested      = false;
       } else if (t.elevationType === 'mountain') {
         // Demote mountain → hills, keep terrain type (already 'plains' for mountains)
         t.elevationType = 'hills';
+        t.height        = 7;
       }
     }
   }

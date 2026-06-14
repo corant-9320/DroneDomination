@@ -13,6 +13,7 @@ import { WorldData, TileData } from './worldData.js';
 import { baseTerrainColor, factionColor } from './colors.js';
 import { FlatTile } from './localMapProjection.js';
 import { TerrainTextures } from './terrainTextures.js';
+import { tileHeight, HEIGHT_LEVELS } from '../shared/movementConstants.js';
 
 export class TerrainContext {
   ctx: CanvasRenderingContext2D;
@@ -70,19 +71,18 @@ export class TerrainContext {
 
   /** Convert terrain/elevation labels into a small continuous height scale. */
   elevationHeight(tile: TileData): number {
-    const elev = tile.elevType ?? tile.terrain;
-    switch (elev) {
-      case 'ocean':    return -0.25;
-      case 'flat':     return 0.0;
-      case 'rolling':  return 0.28;
-      case 'hills':    return 0.58;
-      case 'mountain': return 1.0;
-      default:
-        if (tile.terrain === 'ocean')    return -0.25;
-        if (tile.terrain === 'hills')    return 0.58;
-        if (tile.terrain === 'mountain') return 1.0;
-        return 0.0;
-    }
+    if (this.isWaterTile(tile)) return -0.25;
+    // Map the 0–11 discrete height onto the legacy 0→1 relief scale.
+    return this.height12(tile) / (HEIGHT_LEVELS - 1);
+  }
+
+  /**
+   * Discrete terrain height 0–11 for a tile (band fallback when absent).
+   * The authoritative scalar behind cliff-shadow strength and the contour
+   * relief height drop.
+   */
+  height12(tile: TileData): number {
+    return tileHeight(tile);
   }
 
   /** Convert elevation labels into discrete contour levels. */

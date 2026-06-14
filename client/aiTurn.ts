@@ -403,7 +403,7 @@ function affordableSteps(
     if (spent + reserve > totalMP) break;
 
     // Cross border
-    const crossCost = segmentCost(tiles[path[i]], mode);
+    const crossCost = segmentCost(tiles[path[i]], mode, tiles[path[i - 1]]);
     if (crossCost === Infinity) break;
     spent += crossCost;
     if (spent + reserve > totalMP) break;

@@ -9,6 +9,9 @@ import {
   COST_SPIDER,
   COST_TANK_FLAT,
   COST_TANK_HILLS,
+  MAX_CLIMB_WHEELED,
+  MAX_CLIMB_LIMB,
+  HEIGHT_LEVELS,
   type MovementMode,
   type MovementTile,
 } from '../movementConstants.js';
@@ -131,8 +134,8 @@ describe('movementConstants (shared)', () => {
         expect(COST_SPIDER).toBe(0.50);
       });
 
-      it('mountain is forbidden', () => {
-        expect(segmentCost({ elevType: 'mountain' }, 'limb')).toBe(Infinity);
+      it('mountain alone is passable (only steepness or ocean blocks)', () => {
+        expect(segmentCost({ elevType: 'mountain' }, 'limb')).toBe(COST_SPIDER);
       });
 
       it('ocean is forbidden', () => {
@@ -165,8 +168,8 @@ describe('movementConstants (shared)', () => {
         expect(segmentCost({ elevType: 'hills', f: true }, 'wheeled')).toBe(Infinity);
       });
 
-      it('mountain is forbidden', () => {
-        expect(segmentCost({ elevType: 'mountain' }, 'wheeled')).toBe(Infinity);
+      it('mountain alone is passable (only steepness, forest, or ocean blocks)', () => {
+        expect(segmentCost({ elevType: 'mountain' }, 'wheeled')).toBe(COST_TANK_FLAT);
       });
 
       it('ocean is forbidden', () => {
@@ -180,7 +183,7 @@ describe('movementConstants (shared)', () => {
       });
 
       it('uses elevType field when elevationType is absent', () => {
-        expect(segmentCost({ elevType: 'mountain' }, 'limb')).toBe(Infinity);
+        expect(segmentCost({ elevType: 'hills' }, 'wheeled')).toBe(COST_TANK_HILLS);
       });
 
       it('uses f field when forested is absent', () => {
@@ -199,6 +202,53 @@ describe('movementConstants (shared)', () => {
 
       it('uses forested field', () => {
         expect(segmentCost({ elevationType: 'flat', forested: true }, 'wheeled')).toBe(Infinity);
+      });
+    });
+
+    describe('steepness gate', () => {
+      it('blocks a wheeled step taller than the wheeled climb limit', () => {
+        const from: MovementTile = { terrain: 'plains', elevType: 'flat', height: 0 };
+        const to: MovementTile = { terrain: 'plains', elevType: 'flat', height: MAX_CLIMB_WHEELED + 1 };
+        expect(segmentCost(to, 'wheeled', from)).toBe(Infinity);
+      });
+
+      it('allows a wheeled step at exactly the climb limit', () => {
+        const from: MovementTile = { terrain: 'plains', elevType: 'flat', height: 0 };
+        const to: MovementTile = { terrain: 'plains', elevType: 'flat', height: MAX_CLIMB_WHEELED };
+        expect(segmentCost(to, 'wheeled', from)).toBe(COST_TANK_FLAT);
+      });
+
+      it('a spider climbs a step that blocks a tank', () => {
+        const from: MovementTile = { terrain: 'plains', elevType: 'flat', height: 0 };
+        const to: MovementTile = { terrain: 'plains', elevType: 'flat', height: MAX_CLIMB_WHEELED + 2 };
+        expect(segmentCost(to, 'wheeled', from)).toBe(Infinity);
+        expect(segmentCost(to, 'limb', from)).toBe(COST_SPIDER);
+      });
+
+      it('blocks a spider step taller than the limb climb limit', () => {
+        const from: MovementTile = { terrain: 'plains', elevType: 'flat', height: 0 };
+        const to: MovementTile = { terrain: 'plains', elevType: 'flat', height: MAX_CLIMB_LIMB + 1 };
+        expect(segmentCost(to, 'limb', from)).toBe(Infinity);
+      });
+
+      it('flight ignores steepness entirely', () => {
+        const from: MovementTile = { height: 0 };
+        const to: MovementTile = { height: HEIGHT_LEVELS - 1 };
+        expect(segmentCost(to, 'flight', from)).toBe(COST_DRONE);
+      });
+
+      it('descending is gated the same as climbing (absolute delta)', () => {
+        const high: MovementTile = { terrain: 'plains', elevType: 'flat', height: MAX_CLIMB_WHEELED + 1 };
+        const low: MovementTile = { terrain: 'plains', elevType: 'flat', height: 0 };
+        expect(segmentCost(low, 'wheeled', high)).toBe(Infinity);
+      });
+
+      it('uses the h wire field for steepness', () => {
+        expect(segmentCost({ h: HEIGHT_LEVELS - 1 }, 'wheeled', { h: 0 })).toBe(Infinity);
+      });
+
+      it('omitting fromTile skips the steepness gate (intra-hex)', () => {
+        expect(segmentCost({ terrain: 'plains', elevType: 'flat', height: 11 }, 'wheeled')).toBe(COST_TANK_FLAT);
       });
     });
   });

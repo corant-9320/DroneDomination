@@ -192,7 +192,7 @@ export function computeMovementRange(
     if (currentSeg < tile.n.length) {
       const neighbour = tile.n[currentSeg];
       const nTile = tiles[neighbour];
-      const crossCost = sharedSegmentCost(nTile, mode);
+      const crossCost = sharedSegmentCost(nTile, mode, tile);
       if (crossCost !== Infinity) {
         const newCost = currentCost + crossCost;
         if (newCost <= remainingMP) {

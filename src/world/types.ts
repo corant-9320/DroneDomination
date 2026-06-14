@@ -38,8 +38,18 @@ export interface Tile {
   terrainType: TerrainType;
   /**
    * Elevation layer. Always set, but semantically ignored for ocean tiles.
+   * Derived band over `height` (see HEIGHT_LEVELS): used for textures, terrain
+   * classification, and the combat elevation-advantage multiplier.
    */
   elevationType: ElevationType;
+  /**
+   * Discrete terrain height, 0–11 (HEIGHT_LEVELS). The authoritative elevation
+   * scalar: movement steepness, globe cliff shadows, and the continuous
+   * first-person terrain mesh all read this. `elevationType` is a 4-way band
+   * derived from it. Optional only so test/mock tiles can omit it; real
+   * generated worlds always set it. Ocean tiles are 0.
+   */
+  height?: number;
   /**
    * Whether this tile has forest cover.
    * Always false for ocean, tundra, and desert.

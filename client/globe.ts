@@ -28,7 +28,7 @@ export class GlobeView {
   private overlayCtx: CanvasRenderingContext2D;
   private onTileSelect: (tileIndex: number) => void;
   private onViewCentreChange: ((tileIndex: number) => void) | null = null;
-  private tileIdByFace: Uint16Array; // maps triangle index -> tile index
+  private tileIdByFace: Uint32Array; // maps triangle index -> tile index (Uint32: supports >65k tiles)
   private lastViewCentreTile: number = -1;
   private isProgrammaticPan: boolean = false;
   private panTarget: THREE.Vector3 | null = null;
@@ -181,7 +181,7 @@ export class GlobeView {
     // ── Tile top buffers (unlit) ─────────────────────────────────────────────
     const tPositions = new Float32Array(totalTriangles * 9);
     const tColors    = new Float32Array(totalTriangles * 9);
-    const faceToTile = new Uint16Array(totalTriangles);
+    const faceToTile = new Uint32Array(totalTriangles);
 
     // ── Cliff wall buffers (unlit — MeshBasicMaterial) ──────────────────────
     const cPositions = new Float32Array(cliffTriangles * 9);

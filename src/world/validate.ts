@@ -18,14 +18,19 @@ export function validateWorld(world: World): ValidationResult {
 
   // --- Graph invariants ---
 
-  // Total tile count
+  // Total tile count must be a valid Goldberg number: T = 10·F² + 2 for some
+  // integer frequency F. This stays correct regardless of the chosen FREQUENCY.
+  const f2 = (tiles.length - 2) / 10;
+  const fApprox = Math.sqrt(Math.max(0, f2));
+  const fRounded = Math.round(fApprox);
+  const isGoldbergCount = Number.isInteger(f2) && fRounded * fRounded === f2;
   checks.push({
-    name: 'total_tiles == 12962',
-    passed: tiles.length === 12962,
-    detail: `Got ${tiles.length}`,
+    name: 'total_tiles is a Goldberg number (10·F² + 2)',
+    passed: isGoldbergCount,
+    detail: `Got ${tiles.length} (F≈${fApprox.toFixed(2)})`,
   });
 
-  // Pentagon count
+  // Pentagon count — always exactly 12 for a Goldberg polyhedron
   const pentagons = tiles.filter((t) => t.sides === 5);
   checks.push({
     name: 'pentagon_count == 12',
@@ -33,11 +38,11 @@ export function validateWorld(world: World): ValidationResult {
     detail: `Got ${pentagons.length}`,
   });
 
-  // Hex count
+  // Hex count == total − 12 pentagons
   const hexes = tiles.filter((t) => t.sides === 6);
   checks.push({
-    name: 'hex_count == 12950',
-    passed: hexes.length === 12950,
+    name: 'hex_count == total - 12',
+    passed: hexes.length === tiles.length - 12,
     detail: `Got ${hexes.length}`,
   });
 

@@ -81,7 +81,8 @@ The world is a Goldberg polyhedron — mostly hexagons with 12 pentagons.
 | Property | Values | Combat Relevance |
 |----------|--------|-----------------|
 | `terrainType` | `grassland`, `plains`, `tundra`, `desert`, `ocean` | Determines forest eligibility. |
-| `elevationType` | `flat`, `rolling`, `hills`, `mountain` | Elevation advantage multiplier (offensive). Mountain is impassable to ground. |
+| `height` | `0`–`11` | Discrete terrain height. Drives movement steepness and globe cliff shadows. `elevationType` is a band derived from it. |
+| `elevationType` | `flat`, `rolling`, `hills`, `mountain` | Band over `height` (0–2/3–5/6–8/9–11). Elevation advantage multiplier (offensive). **Not impassable** — high ground is reachable; steep borders block movement (see Movement §). |
 | `forested` | `true` / `false` | +1 terrain defence. Only possible on grassland at non-mountain elevation. |
 | `neighbours` | Array of 5 or 6 adjacent tile indices | Defines adjacency for movement, range, formation. |
 | `sides` | 5 or 6 | Pentagon (5) or hexagon (6). |
@@ -561,6 +562,11 @@ Relative elevation between attacker and defender modifies final damage as a mult
 
 #### Elevation Levels
 
+The advantage multiplier uses the 4-way **band** (`elevationType`), which is
+derived from the tile's `height` (0–11): `flat` 0–2, `rolling` 3–5, `hills` 6–8,
+`mountain` 9–11. Using the band (not the raw height) keeps this multiplier's
+range and balance unchanged by the 12-level model.
+
 | ElevationType | Level |
 |---|---|
 | `flat` | 0 |
@@ -698,7 +704,7 @@ DefencePower = armour + EW + defensiveFormation + terrain
 Default air pathing uses the **shortest direct route** to the target:
 
 - Ignore enemy unit occupancy when calculating the path.
-- Ignore ground terrain restrictions (mountain, ocean).
+- Ignore ground terrain restrictions (ocean, steepness).
 - Prefer direct shortest paths over safer paths.
 - If multiple shortest paths exist, any deterministic tie-breaker may be used.
 
@@ -810,20 +816,23 @@ and the unit's chassis. There is **no separate per-hex entry cost**; crossing a
 border is just one more step.
 
 ```
-stepCost = segmentCost(destinationTile, mode)
+stepCost = segmentCost(destinationTile, mode, originTile)
 movementCost = sum of stepCost over every segment step taken
 ```
 
 ### Per-Step Costs
 
-| Mode | Flat/Clear | Hills | Forest | Mountain/Ocean |
-|------|-----------|-------|--------|----------------|
+| Mode | Flat/Clear | Hills | Forest | Ocean |
+|------|-----------|-------|--------|-------|
 | **Tank** (wheeledMovement) | 0.25 | 0.75 | Impassable | Impassable |
 | **Spider** (limbMovement) | 0.50 | 0.50 | 0.50 | Impassable |
 | **Drone** (flightMovement) | 0.25 | 0.25 | 0.25 | 0.25 (passable) |
 
-Drones may traverse ocean segments but cannot **end** a turn on ocean (enforced
-at the turn-state level, not in the per-step cost).
+High ground (including mountains) is **passable** — the cost above depends only
+on the destination terrain. What blocks a ground unit is the **steepness** of
+the border it crosses (see §16). Drones may traverse ocean segments but cannot
+**end** a turn on ocean (enforced at the turn-state level, not in the per-step
+cost).
 
 ### Effective Movement Ranges (5 MP budget, flat terrain)
 
@@ -840,9 +849,27 @@ agree on how far a unit can move. (Resolved DECISIONS KI-1.)
 
 ### Impassability
 
-- Mountain and ocean are **impassable** for ground units (tanks/spiders). Cost = ∞.
+- **Ocean** is impassable for ground units (tanks/spiders). Cost = ∞.
 - Tanks additionally cannot enter forest.
+- High elevation is **not** a blanket block — see Steepness below.
 - Drones can traverse any terrain at 0.25 per step.
+
+### Steepness Gate
+
+A ground unit is blocked from crossing a border whose **height step**
+`|height(to) − height(from)|` exceeds its chassis climb limit:
+
+| Mode | Max climbable step |
+|------|--------------------|
+| **Tank** (wheeled) | `MAX_CLIMB_WHEELED = 4` |
+| **Spider** (limb) | `MAX_CLIMB_LIMB = 8` |
+| **Drone** (flight) | unlimited (ignores steepness) |
+
+A step over the limit costs ∞. This applies equally to climbing and descending
+(absolute delta). Because generation buffers mountains with hills and rolling
+ground, peaks are normally reachable via gentle ramps; sheer faces wall them
+off. The gate lives in `segmentCost(toTile, mode, fromTile)` — when `fromTile`
+is omitted (intra-hex steps) there is no delta and the gate is skipped.
 
 ### Attack After Movement
 
@@ -1006,6 +1033,9 @@ Neither attacker gets priority — both fire at full health.
 | `COST_SPIDER` | 0.50 | MP per segment step for a spider (limb) on passable terrain. |
 | `COST_TANK_FLAT` | 0.25 | MP per segment step for a tank (wheeled) on flat/clear terrain. |
 | `COST_TANK_HILLS` | 0.75 | MP per segment step for a tank (wheeled) on hills. |
+| `HEIGHT_LEVELS` | 12 | Number of discrete terrain heights (0–11). `elevationType` is a band over this. |
+| `MAX_CLIMB_WHEELED` | 4 | Max border height step a tank can cross; steeper = impassable. |
+| `MAX_CLIMB_LIMB` | 8 | Max border height step a spider can cross; steeper = impassable. |
 | `PIVOT_COST_PER_SEGMENT_STEP` | 0.25 | MP per segment step when repositioning to a different segment within a hex (this is movement, not rotation). |
 | `ROTATION_FEE` | 0.25 | Flat MP to change facing, charged once per unit per turn. After it is paid, all further facing changes that turn are free. Terrain-independent. |
 | `SEGMENT_RANGE_PER_POINT` | 0.5 | Each point of `rangeAttack` extends weapon range by this many hex-units of segment distance. |

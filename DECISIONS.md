@@ -13,6 +13,82 @@ Format: `## YYYY-MM-DD — <short title>` then **Decision / Why / Impact**.
 
 ---
 
+## 2026-06-14 — Bigger globe (G100) + scale-aware terrain + tiny first-person units
+
+**Decision:** Three coordinated changes to push back on the "asteroid-scale"
+feel of the realistic first-person view:
+1. **Globe size:** `FREQUENCY` 36 → **100** in `src/world/generate.ts`
+   → 100,002 tiles (was 12,962). Lifted the hard 65,535-tile wall in
+   `client/globe.ts` (`tileIdByFace` `Uint16Array` → `Uint32Array`). Made
+   `validate.ts` tile-count checks frequency-independent (asserts `T = 10·F²+2`).
+2. **Scale-aware terrain** (`terrain.ts`): feature sizes now derive from tile
+   density (`densityScale = √((T-2)/10)/36`). Ocean/mountain/desert *targets*
+   scale with tile count (proportions preserved); polar bands scale with
+   `max(1, densityScale)`; mountain chains & desert blobs grow by
+   `featureScale = densityScale·PATCH_BOOST` (PATCH_BOOST=1.6) and noise
+   frequencies drop by `1/PATCH_BOOST` → fewer, larger sweeping landforms.
+3. **First-person units ×10 smaller** (`firstPersonView.ts`):
+   `UNIT_HEX_FRACTION = 0.055` (was 0.55). Selection ring decoupled to a
+   hex-relative `SELECT_RING_RADIUS` so the tiny unit stays findable; drone
+   hover `DRONE_AIR_HEIGHT` reduced 1.6→0.5 hex-radii for coherence.
+
+**Why:** At 20 m/hex the old globe implied a ~1.2 km asteroid with
+football-field "mountains". The √ relationship means tile count alone can't make
+it planetary, but combining a bigger globe (~3.8 km from tiles) with 10×-smaller
+units (hex now reads as hundreds of metres of ground holding a spread-out
+formation) makes terrain feel vast. This is an experiment, not a final answer to
+the hex-scale question.
+
+**Impact:** `world.json` ~4 MB → ~30 MB; runtime regen ~3 s, globe mesh build
+~320 ms, 0 load errors at 100k tiles. Practical ceiling ~130k tiles before JSON
+parse hurts; beyond that needs a binary format + raycast BVH. Tunable knobs:
+`FREQUENCY`, `PATCH_BOOST`, `UNIT_HEX_FRACTION`. **Known issue (unaddressed):**
+units still placed at the flat per-tile height, not the averaged/tilted surface,
+so float/sink near slopes — now *more* visible with smaller units. Fix is to
+sample the interpolated segment-centroid surface height.
+
+---
+
+## 2026-06-14 — 12-level elevation height + steepness-gated movement
+
+**Decision:** Elevation is now a discrete height `0–11` (`HEIGHT_LEVELS`) on each
+tile (`Tile.height`, wire field `h`). The old 4-way `elevationType`
+(`flat/rolling/hills/mountain`) is kept as a **derived band** over that height
+(0–2/3–5/6–8/9–11, see `heightToBand`) and still drives textures, terrain
+classification, and the combat elevation-advantage multiplier — so combat
+balance is unchanged. Generation derives height from the existing elevation
+noise: band base + a 0–2 within-band offset from normalised noise
+(`bandHeight` in `terrain.ts`). Ocean is height 0.
+
+Movement is no longer blocked by absolute elevation. Mountains are passable.
+Instead `segmentCost(toTile, mode, fromTile?)` applies a **steepness gate**: a
+border step whose `|height delta|` exceeds the chassis climb limit is `Infinity`.
+Limits: wheeled `MAX_CLIMB_WHEELED = 4`, limb `MAX_CLIMB_LIMB = 8`, flight
+ignores steepness. Ocean still blocks ground units per-cell. This is why every
+cost call now threads the origin tile.
+
+Rendering: the globe map keeps flat hexes, but cliff-shadow strength in
+`terrainRelief.drawContourEdgeRelief` now scales with the true 0–11 height drop
+(`TerrainContext.height12`) rather than the 4-way band difference, so taller
+cliffs cast deeper shadows. The first-person view builds a **continuous** mesh:
+each shared boundary vertex is lifted to the neighbour-averaged height, so hex
+tops tilt to meet each other and steepness reads as slope (no more flat
+plateaus). `elevationWorldHeight` is now `height/11 × scale`.
+
+**Why:** Requested change — finer terrain, high ground reachable via ramps but
+walled off by cliffs, and a smooth 3D landscape.
+
+**Impact:** `segmentCost` signature gained an optional `fromTile`; all callers
+(`movement.ts`, `aiTurn.ts`, `movementRange.ts`, `movementRoute.ts`) pass it.
+`isImpassable` is now ocean-only. Tests that asserted "mountain is impassable"
+were updated to the steepness model. Within-band height steps (e.g. flat h0 vs
+flat h2) don't currently get globe relief — only band-transition edges do; the
+3D view shows them as gentle tilts. Height/band helpers live in
+`shared/movementConstants.ts` (`tileHeight`, `bandToHeight`, `heightToBand`,
+`HEIGHT_LEVELS`).
+
+---
+
 ## 2026-06-14 — First-person view textures hex tops
 
 **Decision:** Plateau tops in `client/firstPersonView.ts` are now textured with

@@ -18,6 +18,7 @@
  *     boundary [{x,y,z}] → b [[x,y,z]]
  *     terrainType      → terrain
  *     elevationType    → elevType
+ *     height           → h
  *     forested         → f        (omitted when false)
  *     cityId           → city
  *
@@ -37,6 +38,8 @@ export interface TileData {
   b: [number, number, number][];
   terrain: string;
   elevType: string;
+  /** Discrete terrain height 0–11. */
+  h?: number;
   /** Whether this tile has forest cover. */
   f?: boolean;
   city?: string;
