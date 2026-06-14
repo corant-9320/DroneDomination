@@ -432,7 +432,6 @@ export class GlobeView {
       return;
     }
 
-    dbg.globe.log('panToTile:', tileIndex);
     const [x, y, z] = tile.pos;
     const len = Math.sqrt(x * x + y * y + z * z);
     const dist = this.camera.position.length();

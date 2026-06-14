@@ -353,17 +353,17 @@ describe('combat', () => {
       expect(result.reasonInvalid).toContain('range');
     });
 
-    it('rangeAttack 0 cannot reach adjacent tile (fallback distance 1.0 > 0.25 threshold)', () => {
+    it('rangeAttack 0 reaches adjacent tile (base threshold 1.0 >= fallback distance 1.0)', () => {
       const linear = createLinearGrid();
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 0, facing: 0 });
       attacker.attributes.kinetic = 2; attacker.attributes.rangeAttack = 0;
 
       const near = makeUnit({ id: 'n', ownerId: 'p2', tileIndex: 1, facing: 0 });
       near.currentHealth = 30;
-      expect(resolveAttack('a', 'n', [attacker, near], linear).wasValid).toBe(false);
+      expect(resolveAttack('a', 'n', [attacker, near], linear).wasValid).toBe(true);
     });
 
-    it('rangeAttack 2 reaches adjacent tile (threshold 1.25 > fallback distance 1.0)', () => {
+    it('rangeAttack 2 reaches adjacent tile (threshold 2.0 > fallback distance 1.0)', () => {
       const linear = createLinearGrid();
       const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 0, facing: 0 });
       attacker.attributes.kinetic = 2; attacker.attributes.rangeAttack = 2;

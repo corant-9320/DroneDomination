@@ -6,7 +6,8 @@
  *  ⏮  Step Rewind   — return to the previous enemy move
  *  ▶/⏸ Play         — auto-play enemy moves with a 3-second gap (toggle)
  *  ⏭  Step Forward  — show next enemy move (recorded replay or live)
- *  ⏩  Fast Forward  — auto-play enemy moves with a 1-second gap (toggle)
+ *  ⏩  Skip to End   — instantly resolve all remaining enemy moves to their
+ *                     final outcome (no per-step delay, animations skipped)
  *
  * The controller records unit-state snapshots after each AI action so the
  * player can rewind through already-executed moves without recomputing them.
@@ -16,7 +17,7 @@
 
 import type { WorldData, UnitData } from './worldData.js';
 
-export type PlaybackMode = 'paused' | 'play' | 'fastForward';
+export type PlaybackMode = 'paused' | 'play';
 
 export class AiPlaybackController {
   private mode: PlaybackMode = 'paused';
@@ -30,7 +31,14 @@ export class AiPlaybackController {
 
   // Timing
   private readonly PLAY_DELAY = 3000;
-  private readonly FF_DELAY = 1000;
+
+  /**
+   * Skip-to-end mode. When true, waitForNext() resolves immediately so the AI
+   * loop runs to completion as fast as the async combat calls allow, and the
+   * visual callbacks (animations, intermediate renders) are bypassed. Set by
+   * the ⏩ button; reset at the start/end of each round.
+   */
+  private skipping: boolean = false;
 
   // Recording & navigation
   /** Snapshots of world.units at each step. Index 0 is the state before any AI action. */
@@ -68,6 +76,7 @@ export class AiPlaybackController {
   begin(world: WorldData, renderCb: () => void): void {
     this.active = true;
     this.mode = 'paused';
+    this.skipping = false;
     this.world = world;
     this.renderCallback = renderCb;
     this.computationDone = false;
@@ -92,7 +101,7 @@ export class AiPlaybackController {
     this.renderBar();
 
     // If auto-playing, schedule the next advance
-    if (this.mode === 'play' || this.mode === 'fastForward') {
+    if (!this.skipping && this.mode === 'play') {
       this.scheduleAutoAdvance();
     }
   }
@@ -129,6 +138,7 @@ export class AiPlaybackController {
   /** Hide the bar and clean up — call after waitUntilDone resolves. */
   end(): void {
     this.active = false;
+    this.skipping = false;
     this.el.style.display = 'none';
     this.clearTimer();
 
@@ -153,6 +163,15 @@ export class AiPlaybackController {
   }
 
   /**
+   * Whether the round is being skipped to its end. The AI turn callbacks use
+   * this to bypass attack animations and intermediate map renders so the
+   * final outcome appears immediately.
+   */
+  isSkipping(): boolean {
+    return this.skipping;
+  }
+
+  /**
    * Await this between each AI action.
    * Resolves when the controller decides the next live action should execute
    * (via Step Forward, Play timer, or Fast Forward timer).
@@ -160,12 +179,15 @@ export class AiPlaybackController {
   waitForNext(): Promise<void> {
     if (!this.active) return Promise.resolve();
 
+    // Skip-to-end: never block, let the AI loop drain to completion.
+    if (this.skipping) return Promise.resolve();
+
     return new Promise<void>((resolve) => {
       this.pendingResolve = resolve;
       this.renderBar();
 
       // If in auto-play and at the live edge, schedule the timer
-      if (this.mode === 'play' || this.mode === 'fastForward') {
+      if (this.mode === 'play') {
         this.scheduleAutoAdvance();
       }
     });
@@ -206,14 +228,21 @@ export class AiPlaybackController {
     this.advanceOne();
   }
 
-  /** ⏩ Fast Forward toggle — auto-play at 1s intervals. */
-  private toggleFastForward(): void {
-    if (this.mode === 'fastForward') {
-      this.stopAutoPlay();
-    } else {
-      this.mode = 'fastForward';
-      this.renderBar();
-      this.scheduleAutoAdvance();
+  /** ⏩ Skip to End — instantly resolve all remaining moves to the final outcome. */
+  private skipToEnd(): void {
+    if (this.skipping) return;
+    this.skipping = true;
+    this.mode = 'paused';
+    this.clearTimer();
+    this.renderBar();
+
+    // If the AI loop is currently parked on waitForNext(), release it now.
+    // From here on every waitForNext() resolves immediately, so the loop
+    // drains to completion on its own; markComplete() then finishes playback.
+    if (this.pendingResolve) {
+      const r = this.pendingResolve;
+      this.pendingResolve = null;
+      r();
     }
   }
 
@@ -268,7 +297,7 @@ export class AiPlaybackController {
       return;
     }
 
-    const delay = this.mode === 'play' ? this.PLAY_DELAY : this.FF_DELAY;
+    const delay = this.PLAY_DELAY;
 
     // If we can replay (cursor behind live edge), use the timer directly
     // If at the live edge, the timer triggers a live computation
@@ -318,7 +347,6 @@ export class AiPlaybackController {
     const canRewind = this.cursor > 0;
     const canForward = this.canAdvance();
     const isPlaying = this.mode === 'play';
-    const isFF = this.mode === 'fastForward';
 
     this.el.innerHTML = `
       <div class="ai-pb-label">⚙ Enemy Turn</div>
@@ -327,7 +355,7 @@ export class AiPlaybackController {
         <button class="ai-pb-btn" id="ai-pb-rewind-step" title="Step Rewind (previous move)" ${canRewind ? '' : 'disabled'}>⏮</button>
         <button class="ai-pb-btn${isPlaying ? ' ai-pb-active' : ''}" id="ai-pb-play" title="${isPlaying ? 'Pause' : 'Play (3s interval)'}" ${!isPlaying && !canForward ? 'disabled' : ''}>${isPlaying ? '⏸' : '▶'}</button>
         <button class="ai-pb-btn" id="ai-pb-step-fwd" title="Step Forward (next move)" ${canForward ? '' : 'disabled'}>⏭</button>
-        <button class="ai-pb-btn${isFF ? ' ai-pb-active' : ''}" id="ai-pb-ff" title="${isFF ? 'Pause' : 'Fast Forward (1s interval)'}" ${!isFF && !canForward ? 'disabled' : ''}>${isFF ? '⏸' : '⏩'}</button>
+        <button class="ai-pb-btn" id="ai-pb-skip" title="Skip to End (resolve all moves instantly)" ${this.skipping || !canForward ? 'disabled' : ''}>⏩</button>
       </div>
       <div class="ai-pb-counter">${this.cursor}/${this.snapshots.length - 1}</div>
     `;
@@ -340,12 +368,12 @@ export class AiPlaybackController {
     const rewindStepBtn = this.el.querySelector('#ai-pb-rewind-step') as HTMLButtonElement | null;
     const playBtn = this.el.querySelector('#ai-pb-play') as HTMLButtonElement | null;
     const stepFwdBtn = this.el.querySelector('#ai-pb-step-fwd') as HTMLButtonElement | null;
-    const ffBtn = this.el.querySelector('#ai-pb-ff') as HTMLButtonElement | null;
+    const skipBtn = this.el.querySelector('#ai-pb-skip') as HTMLButtonElement | null;
 
     rewindAllBtn?.addEventListener('click', () => this.rewindAll());
     rewindStepBtn?.addEventListener('click', () => this.rewindStep());
     playBtn?.addEventListener('click', () => this.togglePlay());
     stepFwdBtn?.addEventListener('click', () => this.stepForward());
-    ffBtn?.addEventListener('click', () => this.toggleFastForward());
+    skipBtn?.addEventListener('click', () => this.skipToEnd());
   }
 }

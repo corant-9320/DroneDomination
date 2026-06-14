@@ -10,14 +10,20 @@ import { CombatPanel } from './combatPanel.js';
 import { DetailPanel } from './detailPanel.js';
 import { showNewWorldModal } from './newWorldModal.js';
 import { saveGame, showLoadModal } from './saveLoad.js';
+import { showRefitModal } from './refitModal.js';
 import { executeAiTurn } from './aiTurn.js';
 import { AiPlaybackController } from './aiPlayback.js';
-import { preRenderUnits } from './unitRenderer.js';
+import { preRenderUnits, rerenderUnitSprite } from './unitRenderer.js';
+import { FirstPersonView } from './firstPersonView.js';
 import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
+import { installErrorCapture, installDebugState } from './debugState.js';
+import { installGameDebug, emitDebugEvent } from './gameDebug.js';
 import { TurnManager } from './turnManager.js';
+import { getMaxMovement } from '../shared/movementConstants.js';
 
 async function main() {
+  installErrorCapture();
   dbg.init.log('main() starting');
   const loadingEl = document.getElementById('loading')!;
   const loadingStatus = loadingEl.querySelector('.loading-status') as HTMLElement;
@@ -65,6 +71,7 @@ async function main() {
     // ─── Turn Management ─────────────────────────────────────────────────
     // TurnManager owns faction cycling, turn counter, and per-unit MP/action state.
     const turnManager = new TurnManager(world);
+    detailPanel.setTurnManager(turnManager);
 
     function isPlayerTurn(): boolean {
       return turnManager.isPlayerTurn();
@@ -123,9 +130,10 @@ async function main() {
         const unitListHtml = unmovedUnits.map((u, i) => {
           const name = u.label || u.id;
           const mp = turnManager.getMovementPoints(u.id);
+          const maxMp = getMaxMovement(u.attributes);
           return `<div class="confirm-unit-row" data-idx="${i}" style="padding:4px 8px;cursor:pointer;border-radius:3px;font-size:12px;color:#ccc;display:flex;justify-content:space-between;align-items:center;">
             <span style="color:#eee;">${name}</span>
-            <span style="color:#7ec8e3;font-size:11px;">${mp} MP</span>
+            <span style="color:#7ec8e3;font-size:11px;">${mp}/${maxMp} MP</span>
           </div>`;
         }).join('');
 
@@ -199,7 +207,13 @@ async function main() {
       if (!confirmed) return;
 
       dbg.input.log('Player ending turn — processing AI factions');
-      const renderMap = () => localMap.render();
+      emitDebugEvent('turn-end', { turn: turnManager.turnNumber }, turnManager.turnNumber);
+      const renderMap = () => {
+        // While skipping to the end, suppress per-action renders — the final
+        // board state is drawn once after the AI round completes.
+        if (aiPlayback.isSkipping()) return;
+        localMap.render();
+      };
       aiPlayback.begin(world, renderMap);
 
       // Callbacks for visual feedback during AI turns
@@ -235,6 +249,8 @@ async function main() {
           targetDestroyed: boolean,
           splashVictims: Array<{ unitId: string; damage: number; destroyed: boolean }> = [],
         ) {
+          // Skip-to-end: resolve instantly so the round jumps to its final state.
+          if (aiPlayback.isSkipping()) return;
           await localMap.playAttackAnimation(attackerId, targetId, factionColorHex, damage, targetDestroyed, splashVictims);
         },
       };
@@ -249,6 +265,7 @@ async function main() {
         if (faction === playerFaction) break; // Back to the player
 
         dbg.input.log('AI faction turn:', faction);
+        emitDebugEvent('ai-turn-start', { faction }, turnManager.turnNumber);
         await executeAiTurn(world, faction, combatPanel, aiPlayback, aiCallbacks);
       }
 
@@ -268,6 +285,7 @@ async function main() {
       updateTurnIndicator();
       localMap.endTurn(); // Reset movement points for the new player turn
       localMap.render(); // Refresh map to show AI moves
+      emitDebugEvent('ai-turn-end', { newTurn: turnManager.turnNumber }, turnManager.turnNumber);
       dbg.input.log('All AI turns complete — player turn begins, turn:', turnManager.turnNumber);
     }
 
@@ -278,7 +296,6 @@ async function main() {
     }
 
     function onLocalTileSelected(tileIndex: number, segment?: number) {
-      dbg.input.log('LocalMap tile selected:', tileIndex, 'segment:', segment);
       globe.panToTile(tileIndex);
 
       // Update detail panel — hex info + selected unit + co-located units
@@ -312,6 +329,38 @@ async function main() {
 
     // Initialize localMap with the starting active faction
     localMap.setActiveFaction(turnManager.getActiveFaction());
+
+    // ─── First-Person View ──────────────────────────────────────────────
+    // Purely visual, read-only 3D "look around" mode from a selected unit's
+    // position. No mechanics run while it is open.
+    const firstPerson = new FirstPersonView(world);
+
+    function enterFirstPerson(): void {
+      if (firstPerson.isActive) {
+        firstPerson.close();
+        return;
+      }
+      const selected = localMap.getSelectedUnits();
+      if (selected.size === 0) {
+        dbg.input.log('First-person view: no unit selected');
+        return;
+      }
+      const unit = world.units.find((u) => selected.has(u.id));
+      if (!unit) return;
+      firstPerson.setWorld(world); // refresh ref (units may have changed)
+      firstPerson.open(unit);
+    }
+
+    // Expose for headless debugging/tests (mirrors __DD_STATE__ convention).
+    (window as unknown as { __DD_FIRSTPERSON__?: unknown }).__DD_FIRSTPERSON__ = firstPerson;
+
+    // Right-click "View" menu item → open first-person at the chosen unit.
+    localMap.setOnViewUnit((unitId) => {
+      const unit = world.units.find((u) => u.id === unitId);
+      if (!unit) return;
+      firstPerson.setWorld(world); // refresh ref (units may have changed)
+      firstPerson.open(unit);
+    });
 
     // ─── Curtain Toggle Setup ───────────────────────────────────────────
     // Left curtain (strategy panel) toggle
@@ -389,6 +438,15 @@ async function main() {
         event.preventDefault();
         strategyPanel.classList.toggle('collapsed');
         strategyToggle.textContent = strategyPanel.classList.contains('collapsed') ? '›' : '‹';
+      }
+    });
+
+    // Keyboard shortcut: V to toggle first-person view for the selected unit
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'v' || event.key === 'V') {
+        if ((event.target as HTMLElement).tagName === 'INPUT') return;
+        event.preventDefault();
+        enterFirstPerson();
       }
     });
 
@@ -472,13 +530,11 @@ async function main() {
 
     // When the user orbits the globe, auto-pan the peeled view to match
     globe.setOnViewCentreChange((tileIndex) => {
-      dbg.globe.log('View centre changed → localMap.setCentre:', tileIndex);
       localMap.setCentre(tileIndex);
     });
 
     // When the user drags the peeled view, spin the globe to match
     localMap.setOnCentreChange((tileIndex) => {
-      dbg.localMap.log('Centre changed → globe.panToTile:', tileIndex);
       globe.panToTile(tileIndex);
     });
 
@@ -489,6 +545,7 @@ async function main() {
         return;
       }
       dbg.input.log('Attack initiated:', attackerId, '→', targetId);
+      emitDebugEvent('attack', { attackerId, targetId }, turnManager.turnNumber);
       const attacker = world.units.find((u) => u.id === attackerId);
       const updatedUnits = await combatPanel.resolveAttack(attackerId, targetId);
       if (updatedUnits) {
@@ -540,6 +597,7 @@ async function main() {
         return;
       }
       dbg.input.log('Repair initiated:', repairerId, '→', targetId);
+      emitDebugEvent('repair', { repairerId, targetId }, turnManager.turnNumber);
       const updatedUnits = await combatPanel.resolveRepair(repairerId, targetId);
       if (updatedUnits) {
         // Sync updated unit state back into the world
@@ -551,7 +609,46 @@ async function main() {
     // Sleep handler: right-click own unit offers Sleep via context menu
     localMap.setOnSleepUnit((unitId) => {
       dbg.input.log('Unit put to sleep:', unitId);
+      emitDebugEvent('sleep', { unitId }, turnManager.turnNumber);
       turnManager.sleepUnit(unitId);
+    });
+
+    // Refit handler: right-click own unit with full MP → open designer modal
+    localMap.setOnRefit(async (unitId) => {
+      if (!isPlayerTurn()) {
+        dbg.input.log('Refit blocked — not player turn');
+        return;
+      }
+      const unit = world.units.find((u) => u.id === unitId);
+      if (!unit) return;
+
+      dbg.input.log('Refit initiated for:', unit.label);
+      emitDebugEvent('refit', { unitId, label: unit.label }, turnManager.turnNumber);
+      const result = await showRefitModal(unit);
+      if (!result) {
+        dbg.input.log('Refit cancelled');
+        return;
+      }
+
+      // Apply new attributes
+      unit.attributes = result.attributes;
+
+      // Restore HP to new max (maxHealth * 10 matches the game's health scale)
+      const newMaxHp = (result.attributes.maxHealth ?? 1) * 10;
+      unit.currentHealth = newMaxHp;
+
+      // Consume all MP
+      turnManager.movementPoints.set(unitId, 0);
+
+      // Re-render the sprite for the new loadout (shape may have changed).
+      // Health scale is applied at draw time so size updates automatically.
+      // rerenderUnitSprite does NOT dispose the renderer (safe after globe init).
+      await rerenderUnitSprite(unit, world);
+
+      dbg.input.log('Refit complete:', unit.label, '| new HP:', newMaxHp, '| MP zeroed');
+      localMap.computeMovementRange();
+      localMap.render();
+      detailPanel.showTile(localMap.selectedTile, localMap.selectedSegment >= 0 ? localMap.selectedSegment : undefined);
     });
 
     // Start centred on the battle gap tile (if present) or the player's home city
@@ -641,6 +738,14 @@ async function main() {
         showLoadModal();
       }
     });
+
+    // Expose a machine-readable runtime snapshot for headless debugging.
+    // Read via window.__DD_STATE__.snapshot() or scripts/debug-snapshot.mjs.
+    installDebugState({ world, localMap, turnManager });
+
+    // DOM instrumentation + window.gameDebug API (dev/test only — no-op when
+    // ?debug=true is absent and localStorage dd-gameDebug !== 'on').
+    installGameDebug({ world, localMap, turnManager });
 
   } catch (err) {
     loadingEl.classList.add('error');

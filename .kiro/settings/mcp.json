@@ -18,7 +18,7 @@
       "env": {
         "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS": "1"
       },
-      "disabled": true,
+      "disabled": false,
       "autoApprove": [
         "navigate_page",
         "take_screenshot",
@@ -29,7 +29,10 @@
         "evaluate_script",
         "list_pages",
         "select_page",
-        "new_page"
+        "new_page",
+        "take_snapshot",
+        "click",
+        "wait_for"
       ]
     }
   }

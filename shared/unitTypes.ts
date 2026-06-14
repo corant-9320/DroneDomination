@@ -4,7 +4,7 @@
  * Authoritative definition of UnitAttributes, shared between:
  *   - src/world/units.ts  (server-side unit logic)
  *   - client/worldData.ts (client-side wire format)
- *   - server/combat.ts    (combat API wire format)
+ *   - server/combatApi.ts (combat API wire format)
  */
 
 /**

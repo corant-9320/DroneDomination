@@ -7,7 +7,7 @@
  * Framework-agnostic — takes a plain object, returns one.
  */
 
-import { Tile } from '../src/world/types.js';
+import { Tile, ElevationType } from '../src/world/types.js';
 import { Unit, HexSegment } from '../src/world/units.js';
 import type { UnitAttributes } from '../shared/unitTypes.js';
 import {
@@ -51,6 +51,8 @@ interface WireTile {
   n: number[];
   /** Terrain type (needed for defence calculation). */
   t?: string;
+  /** Elevation type (needed for elevation advantage multiplier — COMBAT_RULES §13). */
+  elev?: string;
   /** Whether tile has forest cover (needed for movement cost). */
   f?: boolean;
   /** 3D position on unit sphere [x, y, z] (needed for bearing-based orientation). */
@@ -309,6 +311,7 @@ function rebuildTiles(wireTiles: WireTile[]): Tile[] {
       position3d: pos,
       boundary,
       terrainType: (wt.t as any) ?? 'plains',
+      elevationType: (wt.elev as ElevationType) ?? 'flat',
       forested: wt.f || undefined,
     };
   }

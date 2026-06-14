@@ -21,8 +21,14 @@ export class TurnManager {
   /** Remaining movement points per unit this turn (keyed by unit id). */
   movementPoints: Map<string, number> = new Map();
 
-  /** Units that have already used their action this turn (attack or repair). */
+  /**
+   * Units that have used their once-per-turn action (attack or repair) this turn.
+   * The action costs 1 MP and can be taken at any point during the turn (before or after moving).
+   */
   actedUnits: Set<string> = new Set();
+
+  /** Units that have already paid the once-per-turn rotation fee. */
+  rotatedUnits: Set<string> = new Set();
 
   /** Units the player has put to sleep this turn (suppresses "are you sure?" check). */
   sleepingUnits: Set<string> = new Set();
@@ -75,6 +81,7 @@ export class TurnManager {
   resetMovementPoints(): void {
     this.movementPoints.clear();
     this.actedUnits.clear();
+    this.rotatedUnits.clear();
     this.sleepingUnits.clear();
     for (const unit of this.world.units) {
       this.movementPoints.set(unit.id, this.getMaxMovement(unit));
@@ -97,7 +104,7 @@ export class TurnManager {
     return this.getMovementPoints(unitId) > 0;
   }
 
-  /** Whether a unit can still take an action (attack or repair) this turn. */
+  /** Whether a unit can still take an action (attack or repair) this turn (has >= 1 MP and hasn't acted yet). */
   canAct(unitId: string): boolean {
     return !this.actedUnits.has(unitId) && this.getMovementPoints(unitId) >= 1;
   }
@@ -108,10 +115,16 @@ export class TurnManager {
     this.movementPoints.set(unitId, Math.max(0, current - mpSpent));
   }
 
-  /** Record that a unit has used its action this turn and drain its MP. */
-  recordAction(unitId: string): void {
+  /** Record that a unit has used its once-per-turn action (attack). Costs 1 MP; unit may still move after. */
+  recordAttack(unitId: string): void {
     this.actedUnits.add(unitId);
-    this.movementPoints.set(unitId, 0);
+    this.recordMove(unitId, 1);
+  }
+
+  /** Record that a unit has used its once-per-turn action (repair). Costs 1 MP; unit may still move after. */
+  recordRepair(unitId: string): void {
+    this.actedUnits.add(unitId);
+    this.recordMove(unitId, 1);
   }
 
   // ─── Sleep helpers ──────────────────────────────────────────────────────

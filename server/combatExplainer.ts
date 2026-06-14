@@ -2,7 +2,7 @@
  * Step-by-step explanation builders for combat and repair actions.
  *
  * Pure functions — no HTTP handling, no state mutation.
- * Imported by server/combat.ts to attach explanations to API responses.
+ * Imported by server/combatApi.ts to attach explanations to API responses.
  */
 
 import { Tile } from '../src/world/types.js';
@@ -379,16 +379,21 @@ export function explainAttack(
   }
 
   // Step 7: Health outcome
+  // For splash, totalDamage is the aggregate score across all victims.
+  // The primary target only takes its individual share from chosenOption.damages.
+  const primaryTargetDamage = chosenOption.mode === 'splash'
+    ? (chosenOption.damages.find((d) => d.unitId === target.id)?.damage ?? 0)
+    : totalDamage;
   const maxHp = (target.attributes.maxHealth ?? 1) * HP_PER_POINT;
-  const healthAfter = Math.max(0, target.currentHealth - totalDamage);
+  const healthAfter = Math.max(0, target.currentHealth - primaryTargetDamage);
   const destroyed = healthAfter <= 0;
 
   steps.push({
     title: destroyed ? '☠ Target Destroyed' : '❤ Health Update',
     description: `${target.label}: ${target.currentHealth}/${maxHp} HP → ${healthAfter}/${maxHp} HP.`,
-    formula: `${target.currentHealth} − ${totalDamage} = ${healthAfter}`,
+    formula: `${target.currentHealth} − ${primaryTargetDamage} = ${healthAfter}`,
     result: destroyed ? `${target.label} is destroyed!` : `${healthAfter}/${maxHp} HP remaining`,
-    tone: destroyed ? 'critical' : (totalDamage > 0 ? 'negative' : 'neutral'),
+    tone: destroyed ? 'critical' : (primaryTargetDamage > 0 ? 'negative' : 'neutral'),
   });
 
   return {
@@ -402,8 +407,7 @@ export function explainAttack(
     directDamage: outOfRange ? 0 : totalDamage,
     targetHealthBefore: target.currentHealth,
     targetHealthAfter: outOfRange ? target.currentHealth : healthAfter,
-    targetDestroyed: outOfRange ? false : destroyed,
-    splash: [],
+    targetDestroyed: outOfRange ? false : destroyed,    splash: [],
     destroyedUnitIds: [],
     breakdown: buildBreakdown(
       attacker, target, allUnits, tiles,

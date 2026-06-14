@@ -1,0 +1,347 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`movementRoute — characterization > computeContextualAttackRoute: distant enemy → full move (green+blue) + weapon-range extension 1`] = `
+{
+  "hops": [
+    [
+      56,
+      4,
+      0.25,
+      "attackReady",
+    ],
+    [
+      46,
+      0,
+      0.5,
+      "attackReady",
+    ],
+    [
+      57,
+      4,
+      0.75,
+      "attackReady",
+    ],
+    [
+      47,
+      0,
+      1,
+      "attackReady",
+    ],
+    [
+      58,
+      4,
+      1.25,
+      "moveOnly",
+    ],
+    [
+      48,
+      0,
+      1.5,
+      "moveOnly",
+    ],
+    [
+      59,
+      4,
+      1.75,
+      "moveOnly",
+    ],
+    [
+      49,
+      0,
+      2,
+      "moveOnly",
+    ],
+    [
+      50,
+      3,
+      2,
+      "weaponRange",
+    ],
+  ],
+  "start": [
+    45,
+    0,
+  ],
+}
+`;
+
+exports[`movementRoute — characterization > computeContextualAttackRoute: enemy already in range → single red hop, no movement 1`] = `
+{
+  "hops": [
+    [
+      56,
+      3,
+      0,
+      "weaponRange",
+    ],
+  ],
+  "start": [
+    45,
+    0,
+  ],
+}
+`;
+
+exports[`movementRoute — characterization > computeContextualAttackRoute: enemy reachable this turn → move to firing position + red hop 1`] = `
+{
+  "hops": [
+    [
+      56,
+      4,
+      0.25,
+      "attackReady",
+    ],
+    [
+      56,
+      5,
+      0.5,
+      "attackReady",
+    ],
+    [
+      57,
+      2,
+      0.75,
+      "attackReady",
+    ],
+    [
+      75,
+      3,
+      0.75,
+      "weaponRange",
+    ],
+  ],
+  "start": [
+    45,
+    0,
+  ],
+}
+`;
+
+exports[`movementRoute — characterization > computeMovementCostRoute: reachable destination — invariants + golden 1`] = `
+{
+  "hops": [
+    [
+      56,
+      4,
+      0.25,
+      "attackReady",
+    ],
+    [
+      56,
+      5,
+      0.5,
+      "attackReady",
+    ],
+    [
+      56,
+      0,
+      0.75,
+      "attackReady",
+    ],
+  ],
+  "start": [
+    45,
+    0,
+  ],
+}
+`;
+
+exports[`movementRoute — characterization > computeMovementRouteForDestination: in-range destination matches computeMovementCostRoute 1`] = `
+{
+  "hops": [
+    [
+      56,
+      4,
+      0.25,
+      "attackReady",
+    ],
+    [
+      56,
+      5,
+      0.5,
+      "attackReady",
+    ],
+    [
+      57,
+      1,
+      0.75,
+      "attackReady",
+    ],
+    [
+      66,
+      5,
+      1,
+      "attackReady",
+    ],
+    [
+      66,
+      0,
+      1.25,
+      "moveOnly",
+    ],
+  ],
+  "start": [
+    45,
+    0,
+  ],
+}
+`;
+
+exports[`movementRoute — characterization > computeMovementRouteForDestination: out-of-range destination routes toward it 1`] = `
+{
+  "hops": [
+    [
+      56,
+      4,
+      0.25,
+      "attackReady",
+    ],
+    [
+      46,
+      0,
+      0.5,
+      "attackReady",
+    ],
+    [
+      57,
+      4,
+      0.75,
+      "attackReady",
+    ],
+    [
+      47,
+      0,
+      1,
+      "attackReady",
+    ],
+    [
+      58,
+      4,
+      1.25,
+      "moveOnly",
+    ],
+    [
+      48,
+      0,
+      1.5,
+      "moveOnly",
+    ],
+    [
+      59,
+      4,
+      1.75,
+      "moveOnly",
+    ],
+    [
+      49,
+      0,
+      2,
+      "moveOnly",
+    ],
+  ],
+  "start": [
+    45,
+    0,
+  ],
+}
+`;
+
+exports[`movementRoute — characterization > computeMovementTowardTile: out-of-range tile yields a movement-only route 1`] = `
+{
+  "hops": [
+    [
+      56,
+      4,
+      0.25,
+      "attackReady",
+    ],
+    [
+      46,
+      0,
+      0.5,
+      "attackReady",
+    ],
+    [
+      57,
+      4,
+      0.75,
+      "attackReady",
+    ],
+    [
+      47,
+      0,
+      1,
+      "attackReady",
+    ],
+    [
+      58,
+      4,
+      1.25,
+      "moveOnly",
+    ],
+    [
+      48,
+      0,
+      1.5,
+      "moveOnly",
+    ],
+    [
+      59,
+      4,
+      1.75,
+      "moveOnly",
+    ],
+    [
+      49,
+      0,
+      2,
+      "moveOnly",
+    ],
+  ],
+  "start": [
+    45,
+    0,
+  ],
+}
+`;
+
+exports[`movementRoute — characterization > extractMovePlan: ignores weapon-range hops and agrees with the route destination 1`] = `
+{
+  "hops": [
+    [
+      56,
+      4,
+      0.25,
+      "attackReady",
+    ],
+    [
+      56,
+      5,
+      0.5,
+      "attackReady",
+    ],
+    [
+      57,
+      1,
+      0.75,
+      "attackReady",
+    ],
+    [
+      66,
+      5,
+      1,
+      "attackReady",
+    ],
+    [
+      66,
+      0,
+      1.25,
+      "moveOnly",
+    ],
+  ],
+  "start": [
+    45,
+    0,
+  ],
+}
+`;

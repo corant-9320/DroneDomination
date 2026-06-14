@@ -3,6 +3,26 @@
  *
  * All saves use the compact format: seed + cities + units + metadata.
  * Tiles are always regenerated from the seed via POST /api/world-tiles.
+ *
+ * ── Compact wire-format mirror ──────────────────────────────────────────────
+ * The interfaces below MIRROR the authoritative server types. The wire format
+ * is produced by `src/world/compact.ts` (toCompactTile/toCompactUnit). When you
+ * rename or add a field on either side, update BOTH or the client silently reads
+ * `undefined`. Field name mapping (authoritative → wire/client):
+ *
+ *   Tile (src/world/types.ts)      → TileData (here) / CompactTile (compact.ts)
+ *     index            → idx
+ *     sides            → s
+ *     neighbours       → n
+ *     position3d {x,y,z} → pos [x,y,z]
+ *     boundary [{x,y,z}] → b [[x,y,z]]
+ *     terrainType      → terrain
+ *     elevationType    → elevType
+ *     forested         → f        (omitted when false)
+ *     cityId           → city
+ *
+ *   Unit (src/world/units.ts)      → UnitData (here) / CompactUnit (compact.ts)
+ *     same field names; attributes is UnitAttributes (shared/unitTypes.ts).
  */
 
 import { dbg } from './debug.js';

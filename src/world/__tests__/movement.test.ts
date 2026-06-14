@@ -395,12 +395,12 @@ describe('movement', () => {
       expect(unit.tileIndex).toBe(0);
     });
 
-    it('wheeled costs 0.50 per flat hex regardless of position in sequence', () => {
+    it('wheeled costs 0.25 per flat hex regardless of position in sequence', () => {
       tiles[1] = makeTile({ index: 1, neighbours: [0, 2, 6, 0, 2, 6], elevationType: 'flat', forested: false });
       const unit = makeUnit({ id: 'u', tileIndex: 0, attributes: { wheeledMovement: 1 } });
       const state = createTurnState();
       const result = moveUnit(unit, 1, tiles, undefined, state);
-      // Cost = 0.50 per flat hex, unit has 1 MP → should succeed
+      // Cost = 0.25 per flat hex, unit has 1 MP → should succeed
       expect(result).toBe(true);
     });
   });
@@ -432,14 +432,14 @@ describe('movement', () => {
       expect(unit.facing).toBe(3);
     });
 
-    it('with turn state: fails after unit has moved to another hex', () => {
+    it('with turn state: still allowed after moving (move does not lock rotation)', () => {
       const tiles = hexGrid();
       const unit = makeUnit({ id: 'u', tileIndex: 0, facing: 0 as HexSegment, attributes: { wheeledMovement: 5 } });
       const state = createTurnState();
       moveUnit(unit, 1, tiles, undefined, state);
       const result = pivotUnit(unit, 4 as HexSegment, undefined, state);
-      expect(result).toBe(false);
-      // Facing should not have changed (still whatever moveUnit set)
+      expect(result).toBe(true);
+      expect(unit.facing).toBe(4);
     });
 
     it('with turn state: fails when no MP remaining', () => {

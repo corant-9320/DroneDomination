@@ -21,14 +21,11 @@ import {
   isImpassableTerrain as sharedIsImpassableTerrain,
 } from '../shared/movementConstants.js';
 import {
-  findPathBFS as _findPathBFS,
   computeFacingAngle as _computeFacingAngle,
   angleToFacing as _angleToFacing,
   findPreferredSegment as _findPreferredSegment,
   findSegmentAt as _findSegmentAt,
   pointInTriangle as _pointInTriangle,
-  affordableHops as _affordableHops,
-  mpSpentForHops as _mpSpentForHops,
 } from './localMapGeometry.js';
 import {
   buildFlatView as _buildFlatView,
@@ -40,6 +37,7 @@ import {
   FlatTile,
 } from './localMapProjection.js';
 import { TerrainRenderer } from './localMapTerrain.js';
+import { TerrainTextures } from './localMapTerrain.js';
 import {
   getSegmentCentroid,
   getSegmentIconSize,
@@ -48,15 +46,17 @@ import {
 } from './localMapUnits.js';
 import {
   computeMovementRange as _computeMovementRange,
-  computeMovementCostRoute as _computeMovementCostRoute,
-  computeExtendedCostRoute as _computeExtendedCostRoute,
   computeContextualAttackRoute as _computeContextualAttackRoute,
-  computeMovementTowardTile as _computeMovementTowardTile,
+  computeMovementRouteForDestination as _computeMovementRouteForDestination,
+  extractMovePlan as _extractMovePlan,
   drawMovementCostRoute as _drawMovementCostRoute,
+  drawReachableSegments as _drawReachableSegments,
+  drawAttackRangeRings as _drawAttackRangeRings,
   weaponRangeInTileHops as _weaponRangeInTileHops,
   isInWeaponRange as _isInWeaponRange,
   MovementRangeResult,
   MovementCostRoute,
+  MovePlan,
 } from './localMapMovement.js';
 
 export class LocalMapView implements MapViewInterface {
@@ -85,6 +85,8 @@ export class LocalMapView implements MapViewInterface {
   onAttack: ((attackerId: string, targetId: string) => void) | null = null;
   onRepair: ((repairerId: string, targetId: string) => void) | null = null;
   onSleepUnit: ((unitId: string) => void) | null = null;
+  onRefit: ((unitId: string) => void) | null = null;
+  onViewUnit: ((unitId: string) => void) | null = null;
   /** The faction (ownerId) allowed to select and move units. */
   activeFaction: string = '';
   /** Optional TurnManager — when set, endTurn() syncs state back to it. */
@@ -107,11 +109,19 @@ export class LocalMapView implements MapViewInterface {
   }
   private _localActedUnits: Set<string> = new Set();
 
+  get rotatedUnits(): Set<string> {
+    return this.turnManager ? this.turnManager.rotatedUnits : this._localRotatedUnits;
+  }
+  private _localRotatedUnits: Set<string> = new Set();
+
   // Movement range overlay (results from last computeMovementRange call)
   private _rangeResult: MovementRangeResult = {
     moveRangeTiles: new Map(),
     attackReadyTiles: new Set(),
     weaponRangeTiles: new Set(),
+    reachableSegments: new Map(),
+    staticAttackSegments: new Set(),
+    maxAttackSegments: new Set(),
   };
 
   // Movement cost route overlay (computed on hover when unit is selected)
@@ -131,6 +141,8 @@ export class LocalMapView implements MapViewInterface {
   // Combat animations
   private animator: CombatAnimator;
   private hiddenUnits: Set<string> = new Set();
+  /** Screen-position overrides for units currently being move-animated. */
+  private unitScreenOverrides: Map<string, { x: number; y: number }> = new Map();
 
   // Terrain renderer (stateless except for view transform)
   private terrain: TerrainRenderer;
@@ -156,9 +168,17 @@ export class LocalMapView implements MapViewInterface {
 
     window.addEventListener('resize', () => this.render());
 
+    // Load terrain textures asynchronously; trigger a re-render once ready.
+    const textures = new TerrainTextures();
+    textures.load().then(() => {
+      this.terrain.setTextures(textures);
+      this.render();
+    });
+
     // Initialize movement points for all units (pre-TurnManager fallback)
     this._localMovementPoints.clear();
     this._localActedUnits.clear();
+    this._localRotatedUnits.clear();
     for (const unit of world.units) {
       this._localMovementPoints.set(unit.id, sharedGetMaxMovement(unit.attributes));
     }
@@ -291,7 +311,49 @@ export class LocalMapView implements MapViewInterface {
     return this.animator.isAnimating;
   }
 
-  // ─── Render orchestrator ────────────────────────────────────────────────────
+  /**
+   * Animate a unit gliding from its current screen position to its destination.
+   *
+   * The unit's facing is updated to point toward the destination BEFORE the
+   * animation begins (so the sprite rotates immediately, then slides).
+   * During the animation the unit is rendered via a screen-position override
+   * rather than its tile centroid, so the world state can be updated
+   * (tileIndex / segment changed) at any point without snapping the sprite.
+   *
+   * @param unitId     The id of the unit to animate
+   * @param fromPos    The screen position the unit started at (before world update)
+   * @param newFacing  Facing index to apply before animating
+   */
+  async playMoveAnimation(
+    unitId: string,
+    fromPos: { x: number; y: number },
+    newFacing: 0 | 1 | 2 | 3 | 4 | 5,
+  ): Promise<void> {
+    const unit = this.world.units.find((u) => u.id === unitId);
+    if (!unit) return;
+
+    // Apply facing immediately so the sprite points the right way from frame 1
+    unit.facing = newFacing;
+
+    // Compute where the unit will end up (world state already reflects destination)
+    const toPos = this.getUnitScreenPos(unitId);
+    if (!toPos) return;
+
+    // Skip if start and end are essentially the same screen position
+    const dx = toPos.x - fromPos.x;
+    const dy = toPos.y - fromPos.y;
+    if (dx * dx + dy * dy < 4) return;
+
+    // Seed the override at the start position so the first frame is correct
+    this.unitScreenOverrides.set(unitId, { ...fromPos });
+
+    await this.animator.playMove(fromPos, toPos, (pos) => {
+      this.unitScreenOverrides.set(unitId, { x: pos.x, y: pos.y });
+    });
+
+    this.unitScreenOverrides.delete(unitId);
+    this.render();
+  }
 
   render(): void {
     const rect = this.canvas.parentElement!.getBoundingClientRect();
@@ -315,6 +377,24 @@ export class LocalMapView implements MapViewInterface {
     // Draw terrain (fills, contours, water, forest, selection highlight, city labels)
     this.terrain.drawAllTiles(this.flatTiles, this.selectedTile, this.selectedSegment);
 
+    // Draw reachable segment shading (green/blue triangle fills behind units)
+    _drawReachableSegments(
+      this.ctx,
+      this.flatTiles,
+      this._rangeResult.reachableSegments,
+      (wx, wy) => this.worldToScreen(wx, wy),
+    );
+
+    // Draw attack range rings (segment-level perimeter outlines)
+    _drawAttackRangeRings(
+      this.ctx,
+      this.world,
+      this.flatTiles,
+      this._rangeResult.staticAttackSegments,
+      this._rangeResult.maxAttackSegments,
+      (wx, wy) => this.worldToScreen(wx, wy),
+    );
+
     // Draw movement cost route overlay (hover feedback)
     _drawMovementCostRoute(
       this.ctx,
@@ -333,6 +413,8 @@ export class LocalMapView implements MapViewInterface {
       this.movementPoints,
       this.hiddenUnits,
       (wx, wy) => this.worldToScreen(wx, wy),
+      this.actedUnits,
+      this.unitScreenOverrides,
     );
 
     // Draw AI combat highlights (attacker ring + target ring + connecting line)
@@ -413,8 +495,19 @@ export class LocalMapView implements MapViewInterface {
     return _findPreferredSegment(sourceSegment, occupied);
   }
 
-  findPathBFS(from: number, to: number): number[] | null {
-    return _findPathBFS(from, to, this.world.tiles);
+  /**
+   * Compute the executable move plan for a unit toward a destination tile.
+   *
+   * Delegates to the SAME route computation that draws the on-screen movement
+   * line (computeMovementRouteForDestination), then reduces it to a concrete
+   * destination + MP cost + facing. Because the preview and the right-click
+   * execution share this one path, the line and the move can never diverge.
+   */
+  planMove(unit: UnitData, destTile: number, destSegment: number, remainingMP: number): MovePlan | null {
+    const route = _computeMovementRouteForDestination(
+      this.world, unit, destTile, destSegment, remainingMP, this._rangeResult,
+    );
+    return _extractMovePlan(route, this.world.tiles);
   }
 
   // ─── Movement helpers delegation (MapViewInterface) ─────────────────────────
@@ -431,14 +524,6 @@ export class LocalMapView implements MapViewInterface {
     return sharedIsImpassableTerrain(terrain);
   }
 
-  affordableHops(path: number[], unit: UnitData, remainingMP: number, hexesAlreadyMoved: number): number {
-    return _affordableHops(path, unit, remainingMP, hexesAlreadyMoved, this.world.tiles);
-  }
-
-  mpSpentForHops(path: number[], unit: UnitData, hops: number, hexesAlreadyMoved: number): number {
-    return _mpSpentForHops(path, unit, hops, hexesAlreadyMoved, this.world.tiles);
-  }
-
   // ─── Movement range ─────────────────────────────────────────────────────────
 
   computeMovementRange(): void {
@@ -446,6 +531,9 @@ export class LocalMapView implements MapViewInterface {
       moveRangeTiles: new Map(),
       attackReadyTiles: new Set(),
       weaponRangeTiles: new Set(),
+      reachableSegments: new Map(),
+      staticAttackSegments: new Set(),
+      maxAttackSegments: new Set(),
     };
 
     if (this.selectedUnits.size === 0) return;
@@ -454,7 +542,9 @@ export class LocalMapView implements MapViewInterface {
     const unit   = this.world.units.find((u) => u.id === unitId);
     if (!unit) return;
 
-    const remainingMP = this.movementPoints.get(unitId) ?? 0;
+    const remainingMP = this.movementPoints.has(unitId)
+      ? (this.movementPoints.get(unitId) ?? 0)
+      : sharedGetMaxMovement(unit.attributes);
     if (remainingMP <= 0) return;
 
     this._rangeResult = _computeMovementRange(this.world, unit, remainingMP);
@@ -501,18 +591,12 @@ export class LocalMapView implements MapViewInterface {
       );
     } else {
       // ─── Empty tile hover cases ──────────────────────────────────────────
-      // Within movement range: show green/blue movement path (no red)
-      if (this._rangeResult.moveRangeTiles.has(destTile) ||
-          this._rangeResult.attackReadyTiles.has(destTile)) {
-        this._movementCostRoute = _computeMovementCostRoute(
-          this.world, unit, null, destSegment, remainingMP, destTile,
-        );
-      } else {
-        // Out of movement range: show path to the edge of movement toward that tile
-        this._movementCostRoute = _computeMovementTowardTile(
-          this.world, unit, destTile, remainingMP, this._rangeResult,
-        );
-      }
+      // Uses the same route computation as the right-click execution
+      // (computeMovementRouteForDestination), so the previewed line and the
+      // actual move are guaranteed identical.
+      this._movementCostRoute = _computeMovementRouteForDestination(
+        this.world, unit, destTile, destSegment, remainingMP, this._rangeResult,
+      );
     }
   }
 
@@ -575,18 +659,30 @@ export class LocalMapView implements MapViewInterface {
     this.movementPoints.set(unitId, 0);
   }
 
-  /** Whether a unit has already used its action (attack or repair) this turn. */
+  /** Whether a unit has already used its once-per-turn repair action this turn. */
   hasActed(unitId: string): boolean {
     return this.actedUnits.has(unitId);
   }
 
-  /** Record that a unit has used its action this turn and drain its MP. */
-  recordAction(unitId: string): void {
+  /** Record that a unit has attacked (costs 1 MP, once per turn). */
+  recordAttack(unitId: string): void {
     if (this.turnManager) {
-      this.turnManager.recordAction(unitId);
+      this.turnManager.recordAttack(unitId);
     } else {
       this._localActedUnits.add(unitId);
-      this._localMovementPoints.set(unitId, 0);
+      const current = this._localMovementPoints.get(unitId) ?? 0;
+      this._localMovementPoints.set(unitId, Math.max(0, current - 1));
+    }
+  }
+
+  /** Record that a unit has used its once-per-turn repair action (costs 1 MP). */
+  recordAction(unitId: string): void {
+    if (this.turnManager) {
+      this.turnManager.recordRepair(unitId);
+    } else {
+      this._localActedUnits.add(unitId);
+      const current = this._localMovementPoints.get(unitId) ?? 0;
+      this._localMovementPoints.set(unitId, Math.max(0, current - 1));
     }
   }
 
@@ -595,6 +691,7 @@ export class LocalMapView implements MapViewInterface {
     this.turnManager = tm;
     this._localMovementPoints.clear();
     this._localActedUnits.clear();
+    this._localRotatedUnits.clear();
     this._localSelectedUnits.clear();
   }
 
@@ -614,6 +711,14 @@ export class LocalMapView implements MapViewInterface {
     this.onSleepUnit = cb;
   }
 
+  setOnRefit(cb: (unitId: string) => void): void {
+    this.onRefit = cb;
+  }
+
+  setOnViewUnit(cb: (unitId: string) => void): void {
+    this.onViewUnit = cb;
+  }
+
   setActiveFaction(factionId: string): void {
     this.activeFaction = factionId;
     // Also update terrain renderer's world reference (faction colors may change)
@@ -627,7 +732,8 @@ export class LocalMapView implements MapViewInterface {
     } else {
       this._localMovementPoints.clear();
       this._localActedUnits.clear();
-      this._localSelectedUnits.clear();
+          this._localRotatedUnits.clear();
+    this._localSelectedUnits.clear();
       for (const unit of this.world.units) {
         this._localMovementPoints.set(unit.id, sharedGetMaxMovement(unit.attributes));
       }

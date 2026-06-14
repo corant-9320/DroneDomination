@@ -143,11 +143,11 @@ describe('turnState', () => {
       expect(canPivot(unit, state)).toBe(true);
     });
 
-    it('disallowed after inter-hex move', () => {
+    it('still allowed after an inter-hex move (move does not lock rotation)', () => {
       const unit = makeUnit({ id: 'u', attributes: { wheeledMovement: 5 } });
       const state = createTurnState();
-      recordMove(unit, state, 1); // sets hasMoved
-      expect(canPivot(unit, state)).toBe(false);
+      recordMove(unit, state, 1);
+      expect(canPivot(unit, state)).toBe(true);
     });
 
     it('disallowed when no MP remaining (even without moving)', () => {
@@ -205,11 +205,21 @@ describe('turnState', () => {
       expect(unit.segment).toBe(5);
     });
 
-    it('does not cost movement points', () => {
-      const unit = makeUnit({ id: 'u', attributes: { wheeledMovement: 4 } });
+    it('first facing change costs the flat rotation fee', () => {
+      const unit = makeUnit({ id: 'u', facing: 0 as HexSegment, attributes: { wheeledMovement: 4 } });
       const state = createTurnState();
       recordPivot(unit, state, 2 as HexSegment);
-      expect(movementRemaining(unit, state)).toBe(4);
+      expect(movementRemaining(unit, state)).toBe(3.75); // 4 - ROTATION_FEE(0.25)
+    });
+
+    it('further facing changes in the same turn are free', () => {
+      const unit = makeUnit({ id: 'u', facing: 0 as HexSegment, attributes: { wheeledMovement: 4 } });
+      const state = createTurnState();
+      recordPivot(unit, state, 2 as HexSegment); // pays 0.25
+      recordPivot(unit, state, 5 as HexSegment); // free
+      recordPivot(unit, state, 1 as HexSegment); // free
+      expect(movementRemaining(unit, state)).toBe(3.75);
+      expect(unit.facing).toBe(1);
     });
 
     it('does not set hasMoved', () => {
@@ -232,11 +242,12 @@ describe('turnState', () => {
       expect(movementRemaining(unit, state)).toBe(2);
     });
 
-    it('sets hasMoved flag', () => {
+    it('sets hasMoved flag without locking rotation', () => {
       const unit = makeUnit({ id: 'u', attributes: { wheeledMovement: 5 } });
       const state = createTurnState();
       recordMove(unit, state, 1);
-      expect(canPivot(unit, state)).toBe(false); // hasMoved prevents pivot
+      expect(getRecord(state, unit.id).hasMoved).toBe(true);
+      expect(canPivot(unit, state)).toBe(true); // moving no longer prevents pivot
     });
 
     it('accumulates across multiple moves', () => {

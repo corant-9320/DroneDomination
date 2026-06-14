@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "postbuild": "node dist/src/generate.js",
-    "generate": "node dist/src/generate.js",
+    "postbuild": "node dist/src/generateCli.js",
+    "generate": "node dist/src/generateCli.js",
     "validate": "node dist/src/validate.js",
     "dev": "vite",
     "test": "vitest run",
-    "e2e": "node --max-old-space-size=4096 node_modules/.bin/playwright test"
+    "e2e": "node --max-old-space-size=4096 node_modules/@playwright/test/cli.js test",
+    "debug:snapshot": "node scripts/debug-snapshot.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

@@ -114,6 +114,15 @@ export const COST_TANK_FLAT = 0.25;
 export const COST_TANK_HILLS = 0.75;
 
 /**
+ * Flat MP cost to rotate (change facing), charged once per unit per turn.
+ * Terrain-independent. After the fee is paid, all further facing changes that
+ * turn are free — this lets the player freely correct orientation mistakes
+ * without extra cost. Changing which segment a unit occupies is movement, not
+ * rotation, and is charged per segment step via segmentCost().
+ */
+export const ROTATION_FEE = 0.25;
+
+/**
  * Base intra-hex pivot cost per segment step for a given movement mode.
  * Tanks use their flat cost (they're already on the tile, terrain doesn't change).
  */

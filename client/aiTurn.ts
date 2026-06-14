@@ -13,7 +13,7 @@
 
 import { WorldData, UnitData, TileData } from './worldData.js';
 import { CombatPanel } from './combatPanel.js';
-import { weaponRangeInTileHops } from '../shared/rangeCheck.js';
+import { isTargetInRange, weaponRangeFromAttributes, RangeTile } from '../shared/rangeCheck.js';
 import { AiPlaybackController } from './aiPlayback.js';
 import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
@@ -123,6 +123,24 @@ function findPath(
 }
 
 // ---------------------------------------------------------------------------
+// RangeTile adapter
+// ---------------------------------------------------------------------------
+
+/**
+ * Adapt client TileData[] to the RangeTile[] interface expected by
+ * shared/rangeCheck.ts so the AI can use the exact same range check as the
+ * server before committing an attack.
+ */
+function toRangeTiles(tiles: TileData[]): RangeTile[] {
+  return tiles.map((t) => ({
+    pos: t.pos,
+    boundary: t.b,
+    neighbours: t.n,
+    sides: t.s,
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // AI turn execution
 // ---------------------------------------------------------------------------
 
@@ -149,6 +167,9 @@ export async function executeAiTurn(
 
   // Set the combat panel's active faction so server accepts AI actions
   combatPanel.setActiveFaction(factionId);
+
+  // Build RangeTile adapter once — used for server-accurate range checks
+  const rangeTiles = toRangeTiles(world.tiles);
 
   // Build a set of occupied tile indices (for pathfinding avoidance)
   const occupiedTiles = new Set<number>();
@@ -184,8 +205,18 @@ export async function executeAiTurn(
     const movement = getMovement(unit);
     const attackRange = getAttackRange(unit);
 
-    // If already in attack range, attack immediately
-    if (nearestDist <= attackRange && nearestDist > 0) {
+    // If already in attack range, attack immediately.
+    // Use BFS hops as a cheap pre-filter, then confirm with the exact
+    // segment-distance check (same formula as the server) so we never fire
+    // an attack the server will reject as "out of range".
+    const inRangeNow =
+      nearestDist <= attackRange &&
+      nearestDist > 0 &&
+      isTargetInRange(rangeTiles,
+        { tileIndex: unit.tileIndex, segment: unit.segment, rangeAttack: unit.attributes.rangeAttack ?? 0, hasWeapon: attackRange > 0 },
+        { tileIndex: nearestEnemy.tileIndex, segment: nearestEnemy.segment },
+      );
+    if (inRangeNow) {
       dbg.input.log(`AI ${unit.label} attacks ${nearestEnemy.label} (dist=${nearestDist})`);
 
       // Show the acting unit + combat preview in the panels, highlight, then wait
@@ -266,7 +297,20 @@ export async function executeAiTurn(
           );
           // Can attack if we moved stepsWithAttack steps (reserved 1 MP)
           const canStillAttack = (movePath.length - 1) <= stepsWithAttack;
-          if (canStillAttack && newDist > 0 && newDist <= attackRange) {
+          // Confirm with the exact segment-distance check after move so the
+          // decision matches the server.  The unit is now at the end of movePath;
+          // we need its new segment (arrival side of the last step).
+          const movedUnit = world.units.find((u) => u.id === unit.id);
+          const inRangeAfterMove =
+            canStillAttack &&
+            newDist > 0 &&
+            newDist <= attackRange &&
+            movedUnit != null &&
+            isTargetInRange(rangeTiles,
+              { tileIndex: movedUnit.tileIndex, segment: movedUnit.segment, rangeAttack: movedUnit.attributes.rangeAttack ?? 0, hasWeapon: attackRange > 0 },
+              { tileIndex: nearestEnemy.tileIndex, segment: nearestEnemy.segment },
+            );
+          if (inRangeAfterMove) {
             // Re-check enemy is still alive
             const target = world.units.find(
               (u) => u.id === nearestEnemy!.id && u.currentHealth > 0,
@@ -366,7 +410,7 @@ function affordableSteps(
 
     // Arrival segment in the new hex
     const arrivalSeg = tiles[path[i]].n.indexOf(path[i - 1]);
-    currentSegment = arrivalSeg >= 0 ? arrivalSeg : 0;
+    currentSegment = (arrivalSeg >= 0 ? arrivalSeg : 0) as UnitData['segment'];
     steps++;
   }
   return steps;
@@ -377,10 +421,5 @@ function affordableSteps(
  * Uses the shared range formula so client and server agree.
  */
 function getAttackRange(unit: UnitData): number {
-  const r = unit.attributes.rangeAttack ?? 0;
-  const hasWeapon = (unit.attributes.kinetic ?? 0) > 0 ||
-    (unit.attributes.splashAttack ?? 0) > 0 ||
-    (unit.attributes.antiAir ?? 0) > 0 ||
-    r > 0;
-  return weaponRangeInTileHops(r, hasWeapon);
+  return weaponRangeFromAttributes(unit.attributes);
 }

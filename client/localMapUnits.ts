@@ -24,6 +24,7 @@ import { factionColor } from './colors.js';
 import { drawUnitIcon } from './unitIcons.js';
 import { FlatTile } from './localMapProjection.js';
 import { getMaxMovement as sharedGetMaxMovement } from '../shared/movementConstants.js';
+import { spriteFacingForRender } from './facing.js';
 
 // ─── Segment geometry helpers ─────────────────────────────────────────────────
 
@@ -95,47 +96,10 @@ function pointToEdgeDist(
 }
 
 // ─── Facing correction ────────────────────────────────────────────────────────
-
-/**
- * Compute the corrected facing index for rendering.
- *
- * The 3D sprite renderer pre-renders 6 sprites assuming facing N points at
- * screen angle (N * 60°) from north. But on the actual local-map projection,
- * tile.neighbours[N] may be at a different screen angle on the tangent plane.
- *
- * Rather than applying a 2D canvas rotation (which breaks the isometric
- * perspective), we pick the pre-rendered sprite whose baked-in direction
- * best matches the actual screen direction of the unit's faced neighbour.
- *
- * @returns The corrected facing index (0–5) to use when fetching the sprite.
- */
-function getCorrectedFacing(
-  tile: TileData,
-  facing: number,
-  ft: FlatTile,
-  wts: (wx: number, wy: number) => [number, number],
-): number {
-  // Screen position of the tile's centre
-  const [cx, cy] = wts(ft.cx, ft.cy);
-
-  // Direction toward the faced edge: midpoint of boundary edge facing→(facing+1)
-  if (ft.poly.length < 6) return facing;
-  const v0 = ft.poly[facing % 6];
-  const v1 = ft.poly[(facing + 1) % 6];
-  const edgeMidX = (v0.x + v1.x) / 2;
-  const edgeMidY = (v0.y + v1.y) / 2;
-  const [ex, ey] = wts(edgeMidX, edgeMidY);
-
-  // Actual screen angle from tile centre to faced edge midpoint
-  // atan2(dx, -dy) gives angle from screen-north (up), clockwise positive
-  const actualAngle = Math.atan2(ex - cx, -(ey - cy));
-
-  // Find the closest pre-rendered facing (quantize to nearest 60°)
-  // Pre-rendered facing i is at angle i * 60° = i * π/3
-  const normalised = ((actualAngle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-  const index = Math.round(normalised / (Math.PI / 3)) % 6;
-  return index;
-}
+//
+// The NeighbourFacing → SpriteFacing conversion lives in facing.ts
+// (`spriteFacingForRender`). See that module for the full explanation of why
+// the stored neighbour-index facing must be re-projected to a screen sprite.
 
 // ─── Unit drawing ─────────────────────────────────────────────────────────────
 
@@ -155,6 +119,10 @@ function getCorrectedFacing(
  * @param movementPoints Map of unit id → remaining MP
  * @param hiddenUnits    Set of unit ids to skip (e.g. mid-animation)
  * @param wts            worldToScreen bound to current view params
+ * @param _actedUnits    Units that have used their action this turn
+ * @param screenOverrides Optional map of unit id → {x,y} screen position overrides
+ *                        (used during movement animation to draw the unit at its
+ *                        interpolated position rather than its tile centroid)
  */
 export function drawUnits(
   ctx: CanvasRenderingContext2D,
@@ -164,6 +132,8 @@ export function drawUnits(
   movementPoints: Map<string, number>,
   hiddenUnits: Set<string>,
   wts: (wx: number, wy: number) => [number, number],
+  _actedUnits: Set<string> = new Set(),
+  screenOverrides: Map<string, { x: number; y: number }> = new Map(),
 ): void {
   const units = world.units;
   if (!units || units.length === 0) return;
@@ -182,19 +152,38 @@ export function drawUnits(
 
     const segPos = getSegmentCentroid(ft, unit.segment);
     if (!segPos) continue;
-    const [sx, sy] = wts(segPos.x, segPos.y);
+    // Allow an animated override position (e.g. during movement animation)
+    const override = screenOverrides.get(unit.id);
+    const [sx, sy] = override ? [override.x, override.y] : wts(segPos.x, segPos.y);
 
     const size  = getSegmentIconSize(ft, unit.segment, wts);
     const color = factionColor(world, unit.ownerId);
 
     // Compute the correction angle between the renderer's assumed facing
     // direction and the actual screen-space direction toward the faced neighbour.
-    const correctedFacing = getCorrectedFacing(tile, unit.facing, ft, wts);
+    const correctedFacing = spriteFacingForRender(unit.facing, ft, wts);
 
     const currentMP = movementPoints.get(unit.id) ?? 0;
     const maxMP     = sharedGetMaxMovement(unit.attributes);
 
     drawUnitIcon(ctx, unit, sx, sy, size, color, correctedFacing, currentMP, maxMP);
+
+    // Unit number label — same id suffix as the detail panel (#N)
+    // Rendered in red when the unit has already used its attack this turn.
+    const idSuffix = unit.id.replace(/^unit_/, '');
+    const fontSize = Math.max(6, size * 0.75);
+    const labelX = sx + size * 0.5;
+    const labelY = sy + size * 0.9 + fontSize;
+    const noMP = (movementPoints.get(unit.id) ?? 0) === 0;
+    ctx.save();
+    ctx.font = `${fontSize}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillText(`#${idSuffix}`, labelX + 1, labelY + 1);
+    ctx.fillStyle = noMP ? 'rgba(255,80,80,0.95)' : 'rgba(220,220,220,0.85)';
+    ctx.fillText(`#${idSuffix}`, labelX, labelY);
+    ctx.restore();
 
     // Selection ring for selected units
     if (selectedUnits.has(unit.id)) {

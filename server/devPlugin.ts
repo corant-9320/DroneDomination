@@ -56,7 +56,7 @@ export function apiPlugin(): Plugin {
         console.log('[DD][api] Request body:', JSON.stringify(body));
 
         // Dynamic import so it uses the latest TS via Vite's transform
-        const { handleGenerate } = await server.ssrLoadModule('/server/generate.ts');
+        const { handleGenerate } = await server.ssrLoadModule('/server/generateApi.ts');
         const result = (handleGenerate as Function)(body);
 
         res.setHeader('Content-Type', 'application/json');
@@ -81,7 +81,7 @@ export function apiPlugin(): Plugin {
         const body = JSON.parse(Buffer.concat(chunks).toString());
         console.log('[DD][api] Combat request action:', body.action);
 
-        const { handleCombat } = await server.ssrLoadModule('/server/combat.ts');
+        const { handleCombat } = await server.ssrLoadModule('/server/combatApi.ts');
         const result = (handleCombat as Function)(body);
 
         res.setHeader('Content-Type', 'application/json');

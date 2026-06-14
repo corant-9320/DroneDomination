@@ -1,7 +1,7 @@
 /**
  * Shared wire types for combat API responses.
  *
- * Used by both server/combat.ts (produces) and client/combatPanel.ts (consumes).
+ * Used by both server/combatApi.ts (produces) and client/combatPanel.ts (consumes).
  */
 
 /** Step-by-step explanation entry. */

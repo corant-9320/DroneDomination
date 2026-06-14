@@ -230,6 +230,24 @@ function disposeRenderer(): void {
 }
 
 /**
+ * Invalidate the cached sprites for a unit (by its current attributes) and
+ * immediately re-render them. Use after a refit changes a unit's loadout.
+ *
+ * Does NOT call disposeRenderer() so the globe's WebGL context is unaffected.
+ * Resolves once all 6 facings for the unit are cached.
+ */
+export async function rerenderUnitSprite(unit: UnitData, world?: WorldData): Promise<void> {
+  const attrs = unitDataToModelAttrs(unit);
+  const fc = world ? factionColor(world, unit.ownerId) : undefined;
+  const key = attrKey(attrs, fc);
+  // Force re-render even if key already in cache
+  spriteCache.delete(key);
+  pendingRenders.delete(key);
+  pendingRenders.add(key);
+  await renderAllFacings(attrs, key, fc);
+}
+
+/**
  * Pre-render sprites for all units in the world (call once on load).
  * Also schedules a re-render once the hull texture has finished loading.
  */

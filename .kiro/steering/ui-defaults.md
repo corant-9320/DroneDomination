@@ -42,8 +42,10 @@ Spans local map width minus curtain (280 px). Shows:
 ## AI Turn Playback
 
 `#ai-playback-bar` during enemy turns:
-- ▶/⏸ auto-play (~1.5 s intervals)
-- ⏩ skip/fast-forward
+- ▶/⏸ auto-play (~3 s intervals)
+- ⏭ step forward (one move) · ⏮/⏪ step/rewind to start
+- ⏩ skip to end — instantly resolves all remaining AI moves to their final
+  outcome (no per-step delay, animations bypassed); turn then returns to player
 
 Combat highlights: red attacker ring, cyan target ring, dashed arrow.
 
@@ -53,9 +55,10 @@ Combat highlights: red attacker ring, cyan target ring, dashed arrow.
 |---|---|
 | Home | Centre on home city |
 | Space | End Turn |
+| V | First-person view of selected unit (toggle; Esc exits) |
 | Ctrl+S | Save game |
 | Ctrl+L | Load game |
-| Escape | Close modal / deselect |
+| Escape | Close modal / deselect / exit first-person view |
 
 ## Design Principles
 
@@ -93,10 +96,17 @@ Since we only have 6 pre-rendered directions, there's up to ±30° of visual err
 
 | File | Role |
 |------|------|
+| `client/facing.ts` | **Single source of truth** for all facing conversions — `facingFromTravel`, `rotateHexIndex`, `screenAngleBetweenTiles`, `screenAngleToSpriteFacing`, `spriteFacingForRender`. No other file may do raw `.neighbours.indexOf()` or `(facing ± n) % 6`. |
 | `src/world/combatFacing.ts` | Authoritative bearing/bonus math (tangent-plane, continuous) |
 | `client/unitRenderer.ts` | Pre-renders 6 isometric sprites per unit type (Y rotation in 3D) |
 | `client/unitIcons.ts` | `drawUnitIcon` — draws the sprite at the given corrected facing |
-| `client/localMapUnits.ts` | `getCorrectedFacing` — maps data facing to correct screen sprite |
+| `client/localMapUnits.ts` | Calls `spriteFacingForRender` from `facing.ts` to map data facing to screen sprite |
+
+### The Three Facing Frames (all are integers/values that look alike but differ)
+
+1. **NeighbourFacing** — index into `tile.neighbours[]`. Tile-relative; the same integer means a different world direction on every tile. This is what `unit.facing` stores. **Never reuse a NeighbourFacing computed for one tile on a different tile.**
+2. **ScreenAngle** — radians, north-clockwise (0 = up). Continuous, view-dependent.
+3. **SpriteFacing** — index into the pre-rendered sprite set, fixed screen mapping (0 = up, +60°/step). What the renderer expects. **Never store a SpriteFacing in `unit.facing`.**
 
 ## Related Files
 

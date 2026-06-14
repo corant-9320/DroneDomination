@@ -590,19 +590,32 @@ export class CombatPanel {
       if (!c.wasValid) {
         detailHtml += `<div class="cl-step"><span style="color:#f66;">Invalid: ${esc(c.reasonInvalid ?? '')}</span></div>`;
       } else {
+        // Build label→short-ref map so step descriptions don't repeat full names
+        const labelMap = buildLabelMap(this.world, [
+          { id: c.attackerId, label: c.attackerLabel },
+          { id: c.targetId,   label: c.targetLabel },
+        ]);
         for (const step of c.steps) {
-          detailHtml += this.renderStep(step);
+          detailHtml += this.renderStep(step, labelMap);
         }
         if (c.splash.length > 0) {
           detailHtml += `<div class="cl-splash-header">💥 Splash (${c.splash.length} victim${c.splash.length > 1 ? 's' : ''})</div>`;
           for (const s of c.splash) {
             const vUnit = this.world.units.find((u) => u.id === s.victimId);
             const vMax = vUnit ? (vUnit.attributes.maxHealth ?? 1) * 10 : '?';
-            detailHtml += `<div class="cl-step"><span class="cl-step-title">${esc(s.victimLabel)}</span> <span style="color:#999;">${s.victimHealthBefore}→${s.victimHealthAfter}/${vMax} HP</span>`;
+            const vSuffix = s.victimId.replace(/^unit_/, '');
+            const vColor = factionColorForUnit(this.world, s.victimId);
+            detailHtml += `<div class="cl-step"><span class="cl-step-title"><span style="color:${esc(vColor)};">#${esc(vSuffix)}</span></span> <span style="color:#999;">${s.victimHealthBefore}→${s.victimHealthAfter}/${vMax} HP</span>`;
             if (s.victimDestroyed) detailHtml += ` <span style="color:#f44;">☠</span>`;
             detailHtml += `</div>`;
+            // Splash steps: include victim in the label map too
+            const splashLabelMap = buildLabelMap(this.world, [
+              { id: c.attackerId, label: c.attackerLabel },
+              { id: c.targetId,   label: c.targetLabel },
+              { id: s.victimId,   label: s.victimLabel },
+            ]);
             for (const step of s.steps) {
-              detailHtml += this.renderStep(step);
+              detailHtml += this.renderStep(step, splashLabelMap);
             }
           }
         }
@@ -649,8 +662,12 @@ export class CombatPanel {
     let detailHtml = '';
     if (isExpanded && r.wasValid) {
       detailHtml = `<div class="cl-detail">`;
+      const labelMap = buildLabelMap(this.world, [
+        { id: r.repairerId, label: r.repairerLabel },
+        { id: r.targetId,   label: r.targetLabel },
+      ]);
       for (const step of r.steps) {
-        detailHtml += this.renderStep(step);
+        detailHtml += this.renderStep(step, labelMap);
       }
       detailHtml += `</div>`;
     }
@@ -664,15 +681,16 @@ export class CombatPanel {
     </div>`;
   }
 
-  private renderStep(step: ExplanationStep): string {
+  private renderStep(step: ExplanationStep, labelMap?: Map<string, string>): string {
     const col = toneColor(step.tone);
+    const fmt = (text: string) => labelMap ? substituteLabels(text, labelMap) : esc(text);
     let html = `<div class="cl-step">`;
     html += `<span class="cl-step-title">${esc(step.title)}</span>`;
-    html += `<span class="cl-step-desc">${esc(step.description)}</span>`;
+    html += `<span class="cl-step-desc">${fmt(step.description)}</span>`;
     if (step.formula) {
-      html += `<br><span class="cl-step-formula">${esc(step.formula)}</span>`;
+      html += `<br><span class="cl-step-formula">${fmt(step.formula)}</span>`;
     }
-    html += `<br><span class="cl-step-result" style="color:${col};">${esc(step.result)}</span>`;
+    html += `<br><span class="cl-step-result" style="color:${col};">${fmt(step.result)}</span>`;
     html += `</div>`;
     return html;
   }
@@ -700,8 +718,8 @@ export class CombatPanel {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function minimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; f?: boolean; pos: [number, number, number]; b: [number, number, number][] } {
-  return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, f: t.f || undefined, pos: t.pos, b: t.b };
+function minimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; elev: string; f?: boolean; pos: [number, number, number]; b: [number, number, number][] } {
+  return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, elev: t.elevType, f: t.f || undefined, pos: t.pos, b: t.b };
 }
 
 /** Return the faction colour for a unit, looking it up from the live world. */
@@ -718,6 +736,40 @@ function weaponModeIcon(mode?: string): string {
     case 'antiAir':  return '🎯';
     default:         return '⚔';
   }
+}
+
+/**
+ * Build a Map of full unit label → coloured `#N` HTML snippet.
+ * Used to replace verbose labels inside step descriptions with compact refs.
+ */
+function buildLabelMap(world: WorldData, units: Array<{ id: string; label: string }>): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const { id, label } of units) {
+    if (!label) continue;
+    const suffix = id.replace(/^unit_/, '');
+    const color = factionColorForUnit(world, id);
+    map.set(label, `<span style="color:${color};">#${esc(suffix)}</span>`);
+  }
+  return map;
+}
+
+/**
+ * Replace all occurrences of known unit labels in `text` with their coloured
+ * `#N` HTML equivalents.  Longer labels are replaced first to avoid partial
+ * matches when one label is a prefix of another.
+ */
+function substituteLabels(text: string, labelMap: Map<string, string>): string {
+  // Sort by label length descending so longer labels match first
+  const entries = [...labelMap.entries()].sort((a, b) => b[0].length - a[0].length);
+  // Split into segments to avoid double-escaping
+  // Strategy: escape the whole string first, then replace escaped label occurrences
+  let result = esc(text);
+  for (const [label, html] of entries) {
+    // esc() escapes & < > " ' — we need to match the escaped form of the label
+    const escapedLabel = esc(label);
+    result = result.split(escapedLabel).join(html);
+  }
+  return result;
 }
 
 

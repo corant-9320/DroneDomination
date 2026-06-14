@@ -11,10 +11,10 @@
 // ─── Constants (must match src/world/combatMath.ts) ───────────────────────────
 
 /** Each point of rangeAttack extends range by this many hex-units of segment distance. */
-export const SEGMENT_RANGE_PER_POINT = 1.0;
+export const SEGMENT_RANGE_PER_POINT = 0.5;
 
 /** Base reach — a unit with rangeAttack=0 can hit adjacent segments within this. */
-export const SEGMENT_RANGE_BASE = 0.5;
+export const SEGMENT_RANGE_BASE = 1.0;
 
 // ─── Minimal tile interface ───────────────────────────────────────────────────
 
@@ -162,6 +162,41 @@ export function weaponRangeInTileHops(rangeAttack: number, hasWeapon: boolean): 
   if (!hasWeapon) return 0;
   if (rangeAttack <= 0) return 1; // melee only: adjacent tile
   return Math.ceil(getRangeThreshold(rangeAttack));
+}
+
+/**
+ * Whether a unit has any offensive weapon — at least 1 point in kinetic,
+ * splashAttack, rangeAttack, or antiAir. Single source of truth for the
+ * "can this unit attack at all" check.
+ */
+export function hasWeapon(attributes: {
+  rangeAttack?: number;
+  kinetic?: number;
+  splashAttack?: number;
+  antiAir?: number;
+}): boolean {
+  return (
+    (attributes.rangeAttack ?? 0) > 0 ||
+    (attributes.kinetic ?? 0) > 0 ||
+    (attributes.splashAttack ?? 0) > 0 ||
+    (attributes.antiAir ?? 0) > 0
+  );
+}
+
+/**
+ * Convenience overload: derive `hasWeapon` from a unit's attribute bag and return
+ * the tile-hop weapon range.  Avoids duplicating the has-weapon check in every caller.
+ *
+ * A unit "has a weapon" if it has at least 1 point in any offensive attribute:
+ * kinetic, splashAttack, rangeAttack, or antiAir.
+ */
+export function weaponRangeFromAttributes(attributes: {
+  rangeAttack?: number;
+  kinetic?: number;
+  splashAttack?: number;
+  antiAir?: number;
+}): number {
+  return weaponRangeInTileHops(attributes.rangeAttack ?? 0, hasWeapon(attributes));
 }
 
 // ─── Internal BFS ─────────────────────────────────────────────────────────────

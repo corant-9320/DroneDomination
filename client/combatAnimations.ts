@@ -83,7 +83,15 @@ interface SmokeState {
   duration: number;
 }
 
-type AnimationState = MissileState | ExplosionState | SmokeState;
+interface MoveState {
+  type: 'move';
+  from: Vec2;
+  to: Vec2;
+  progress: number;
+  onStep: (pos: Vec2) => void;
+}
+
+type AnimationState = MissileState | ExplosionState | SmokeState | MoveState;
 
 interface QueuedAnimation {
   state: AnimationState;
@@ -99,6 +107,7 @@ interface QueuedAnimation {
 const MISSILE_DURATION = 520;        // ms
 const EXPLOSION_DURATION = 680;      // ms
 const SMOKE_DURATION = 800;          // ms
+const MOVE_DURATION = 480;           // ms — unit glide animation
 const EXPLOSION_PARTICLES = 34;
 const EXPLOSION_SPRITES = 7;
 const SMOKE_PARTICLES = 18;
@@ -162,6 +171,10 @@ export class CombatAnimator {
           this.updateSmoke(anim.state, t);
           this.drawSmoke(anim.state);
           break;
+        case 'move':
+          this.updateMove(anim.state, t);
+          // move animation drives rendering via onStep callback; nothing extra to draw here
+          break;
       }
     }
 
@@ -224,6 +237,19 @@ export class CombatAnimator {
         duration: SMOKE_DURATION,
       };
       this.enqueue(state, SMOKE_DURATION, resolve);
+    });
+  }
+
+  /**
+   * Play a smooth movement animation for a unit sliding from `from` to `to`.
+   * `onStep` is called each frame with the current interpolated position so
+   * the caller can re-render the unit at the right screen location.
+   * Resolves when the unit reaches its destination.
+   */
+  playMove(from: Vec2, to: Vec2, onStep: (pos: Vec2) => void): Promise<void> {
+    return new Promise((resolve) => {
+      const state: MoveState = { type: 'move', from, to, progress: 0, onStep };
+      this.enqueue(state, MOVE_DURATION, resolve);
     });
   }
 
@@ -666,6 +692,14 @@ export class CombatAnimator {
       this.ctx.fill();
     }
     this.ctx.restore();
+  }
+
+  // ─── Move ────────────────────────────────────────────────────────────
+
+  private updateMove(m: MoveState, t: number) {
+    m.progress = this.easeInOutCubic(t);
+    const pos = this.lerpVec(m.from, m.to, m.progress);
+    m.onStep(pos);
   }
 
   // ─── Helpers ────────────────────────────────────────────────────────

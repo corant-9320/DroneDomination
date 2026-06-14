@@ -11,6 +11,7 @@ Scoped guidance for AI agents working on Drone Domination.
 | File | Loads when | One-line summary |
 |------|-----------|-----------------|
 | `conventions.md` | Always | Build/test commands, import rules, post-change checklists |
+| `docs-as-we-go.md` | Always | When to log decisions, where docs live, headless debug workflow |
 | `ui-defaults.md` | Editing `client/**` | Civ6-style HUD layout, panel structure, keyboard shortcuts |
 | `architecture.md` | Editing `src/**`, `server/**`, configs | Pulls in `ARCHITECTURE.md` — module map, types, data flow |
 
@@ -21,3 +22,4 @@ Scoped guidance for AI agents working on Drone Domination.
 | [README.md](/README.md) | Player setup, controls, common dev workflows |
 | [ARCHITECTURE.md](/ARCHITECTURE.md) | Full module map, data flow, API contract |
 | [COMBAT_RULES.md](/COMBAT_RULES.md) | Authoritative combat formulas, validation rules, constants |
+| [DECISIONS.md](/DECISIONS.md) | Design decisions, gotchas, and open known-issues |

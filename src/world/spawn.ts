@@ -1,8 +1,8 @@
 /**
  * Unit spawning — places initial units around cities.
  *
- * Shared between the CLI generator (src/generate.ts) and the
- * API handler (server/generate.ts).
+ * Shared between the CLI generator (src/generateCli.ts) and the
+ * API handler (server/generateApi.ts).
  */
 
 import { Tile } from './types.js';

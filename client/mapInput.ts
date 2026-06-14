@@ -4,9 +4,11 @@
  * on drawing.
  */
 
-import { UnitData, TileData, WorldData } from './worldData.js';
-import { dbg } from './debug.js';
-import { segmentCost as sharedSegmentCost } from '../shared/movementConstants.js';
+import { UnitData, WorldData } from './worldData.js';
+import { ROTATION_FEE } from '../shared/movementConstants.js';
+import type { MovePlan } from './localMapMovement.js';
+import { rotateHexIndex } from './facing.js';
+import { UnitContextMenu } from './unitContextMenu.js';
 
 /** Minimal polygon tile reference needed by the input handler. */
 export interface FlatTileRef {
@@ -53,6 +55,8 @@ export interface MapViewInterface {
   selectedUnits: Set<string>;
   movementPoints: Map<string, number>;
   actedUnits: Set<string>;
+  /** Units that have already paid the once-per-turn rotation fee. */
+  rotatedUnits: Set<string>;
 
   // Hover-enemy tracking (read + write)
   lastHoveredEnemyId: string | null;
@@ -65,6 +69,8 @@ export interface MapViewInterface {
   readonly onHoverEnemy: ((attacker: UnitData | null, target: UnitData | null) => void) | null;
   readonly onCentreChange: ((tileIndex: number) => void) | null;
   readonly onSleepUnit: ((unitId: string) => void) | null;
+  readonly onRefit: ((unitId: string) => void) | null;
+  readonly onViewUnit: ((unitId: string) => void) | null;
 
   // Coordinate conversion
   worldToScreen(wx: number, wy: number): [number, number];
@@ -84,13 +90,22 @@ export interface MapViewInterface {
   /** Check if an enemy tile+segment is within immediate attack range (no movement needed). */
   isInAttackRange(enemyTile: number, enemySegment?: number): boolean;
 
+  /** Animate a unit sliding from fromPos to its current world position. */
+  playMoveAnimation(unitId: string, fromPos: { x: number; y: number }, newFacing: 0 | 1 | 2 | 3 | 4 | 5): Promise<void>;
+
+  /** Get the current screen position of a unit (null if not visible). */
+  getUnitScreenPos(unitId: string): { x: number; y: number } | null;
+
   // Movement helpers
   getMaxMovement(unit: UnitData): number;
   getMovementMode(unit: UnitData): 'wheeled' | 'limb' | 'flight';
-  affordableHops(path: number[], unit: UnitData, remainingMP: number, hexesAlreadyMoved: number): number;
-  mpSpentForHops(path: number[], unit: UnitData, hops: number, hexesAlreadyMoved: number): number;
   findPreferredSegment(sourceSegment: number, occupied: Set<number>): number;
-  findPathBFS(from: number, to: number): number[] | null;
+  /**
+   * Compute the executable move plan for a unit toward a destination tile,
+   * using the same route the preview line draws. Returns null if there is
+   * nothing to move.
+   */
+  planMove(unit: UnitData, destTile: number, destSegment: number, remainingMP: number): MovePlan | null;
   isImpassableTerrain(terrain: string): boolean;
   computeFacingAngle(fromTileIndex: number, toTileIndex: number): number;
   angleToFacing(angle: number): 0 | 1 | 2 | 3 | 4 | 5;
@@ -99,6 +114,7 @@ export interface MapViewInterface {
 export class MapInputHandler {
   private canvas: HTMLCanvasElement;
   private view: MapViewInterface;
+  private contextMenu = new UnitContextMenu();
 
   // Bound listener references (needed for removeEventListener)
   private boundClick: (e: MouseEvent) => void;
@@ -171,11 +187,11 @@ export class MapInputHandler {
       if (!event.shiftKey && ft && v.world.tiles[tileIdx].s === 6) {
         segment = v.findSegmentAt(x, y, ft);
       }
-      dbg.localMap.log('Click hit tile:', tileIdx, 'segment:', segment, '| terrain:', v.world.tiles[tileIdx]?.terrain);
       v.selectedTile = tileIdx;
       v.selectedSegment = segment;
 
-      // Unit selection: select units on this tile (only active faction)
+      // Unit selection: prefer active-faction unit in the segment; fall back to any unit
+      // so enemy units can be selected for movement-range display.
       const tileUnits = v.world.units.filter((u) => u.tileIndex === tileIdx);
       if (event.shiftKey) {
         // Shift+click: select all active-faction units on the hex
@@ -186,10 +202,10 @@ export class MapInputHandler {
           }
         }
       } else if (segment >= 0) {
-        // Normal click on segment: select unit in that segment (if it's active faction)
+        // Normal click on segment: select whatever unit is in that segment
         v.selectedUnits.clear();
         const segUnit = tileUnits.find((u) => u.segment === segment);
-        if (segUnit && segUnit.ownerId === v.activeFaction) {
+        if (segUnit) {
           v.selectedUnits.add(segUnit.id);
         }
       } else {
@@ -197,13 +213,11 @@ export class MapInputHandler {
         v.selectedUnits.clear();
       }
 
-      dbg.localMap.log('Selected units:', [...v.selectedUnits]);
       v.computeMovementRange();
       v.onTileSelectCb(tileIdx, segment >= 0 ? segment : undefined);
       if (v.selectedUnits.size === 0) this.canvas.style.cursor = '';
       v.render();
     } else {
-      dbg.localMap.log('Click missed (no tile at position)');
       v.selectedUnits.clear();
       v.computeMovementRange();
       this.canvas.style.cursor = '';
@@ -287,7 +301,6 @@ export class MapInputHandler {
     const factor = event.deltaY > 0 ? 0.9 : 1.1;
     v.scale *= factor;
     v.scale = Math.max(0.3, Math.min(15, v.scale));
-    dbg.localMap.log('Zoom scale:', v.scale.toFixed(2));
     v.render();
   }
 
@@ -312,6 +325,21 @@ export class MapInputHandler {
     this.onMouseUp();
   }
 
+  /**
+   * Charge the once-per-turn rotation fee for a unit's facing change.
+   * Returns true if the rotation is allowed (fee already paid this turn, or
+   * paid now), false if the unit cannot afford the flat ROTATION_FEE.
+   */
+  private chargeRotation(unitId: string): boolean {
+    const v = this.view;
+    if (v.rotatedUnits.has(unitId)) return true; // already paid this turn → free
+    const remaining = v.movementPoints.get(unitId) ?? 0;
+    if (remaining < ROTATION_FEE) return false;  // cannot afford
+    v.movementPoints.set(unitId, remaining - ROTATION_FEE);
+    v.rotatedUnits.add(unitId);
+    return true;
+  }
+
   private onKeyDown(event: KeyboardEvent): void {
     const v = this.view;
     if (v.selectedTile < 0) return;
@@ -331,9 +359,10 @@ export class MapInputHandler {
       if (tileUnits.length === 0) return;
       event.preventDefault();
       for (const unit of tileUnits) {
+        if (unit.facing === 0) continue;            // no change
+        if (!this.chargeRotation(unit.id)) continue; // can't afford the fee
         unit.facing = 0 as 0 | 1 | 2 | 3 | 4 | 5;
       }
-      dbg.localMap.log('All units face North');
       v.onTileSelectCb(v.selectedTile, undefined);
       v.render();
       return;
@@ -351,9 +380,11 @@ export class MapInputHandler {
       for (let i = 0; i < tileUnits.length; i++) {
         const seg = (i * step) % 6;
         tileUnits[i].segment = seg as 0 | 1 | 2 | 3 | 4 | 5;
-        tileUnits[i].facing = seg as 0 | 1 | 2 | 3 | 4 | 5;
+        // Facing change costs the once-per-turn rotation fee.
+        if (tileUnits[i].facing !== seg && this.chargeRotation(tileUnits[i].id)) {
+          tileUnits[i].facing = seg as 0 | 1 | 2 | 3 | 4 | 5;
+        }
       }
-      dbg.localMap.log('Defensive orientation: units spread outward');
       v.onTileSelectCb(v.selectedTile, undefined);
       v.render();
       return;
@@ -372,30 +403,30 @@ export class MapInputHandler {
     if (wholeHexSelected) {
       if (event.shiftKey) {
         for (const unit of tileUnits) {
-          unit.segment = ((unit.segment + direction + 6) % 6) as 0 | 1 | 2 | 3 | 4 | 5;
+          unit.segment = rotateHexIndex(unit.segment, direction);
         }
-        dbg.localMap.log('Whole-hex Shift-rotate segments (facing preserved), dir:', direction);
       } else {
         for (const unit of tileUnits) {
-          unit.facing = ((unit.facing + direction + 6) % 6) as 0 | 1 | 2 | 3 | 4 | 5;
+          if (!this.chargeRotation(unit.id)) continue;
+          unit.facing = rotateHexIndex(unit.facing, direction);
         }
-        dbg.localMap.log('Whole-hex rotate facing, dir:', direction);
       }
     } else {
       if (event.shiftKey) {
         const selectedUnit = tileUnits.find((u) => u.segment === v.selectedSegment);
         const selectedFacing = selectedUnit ? selectedUnit.facing : 0;
         for (const unit of tileUnits) {
-          unit.segment = ((unit.segment + direction + 6) % 6) as 0 | 1 | 2 | 3 | 4 | 5;
-          unit.facing = selectedFacing;
+          unit.segment = rotateHexIndex(unit.segment, direction);
+          // Copying the selected unit's facing is a rotation — charge the fee.
+          if (unit.facing !== selectedFacing && this.chargeRotation(unit.id)) {
+            unit.facing = selectedFacing;
+          }
         }
-        v.selectedSegment = ((v.selectedSegment + direction + 6) % 6);
-        dbg.localMap.log('Single-unit Shift-rotate segments (facing copies selected), dir:', direction);
+        v.selectedSegment = rotateHexIndex(v.selectedSegment, direction);
       } else {
         const selectedUnit = tileUnits.find((u) => u.segment === v.selectedSegment);
-        if (selectedUnit) {
-          selectedUnit.facing = ((selectedUnit.facing + direction + 6) % 6) as 0 | 1 | 2 | 3 | 4 | 5;
-          dbg.localMap.log('Single-unit rotate facing:', selectedUnit.label, 'dir:', direction);
+        if (selectedUnit && this.chargeRotation(selectedUnit.id)) {
+          selectedUnit.facing = rotateHexIndex(selectedUnit.facing, direction);
         }
       }
     }
@@ -449,28 +480,28 @@ export class MapInputHandler {
 
       let enemyTarget: UnitData | undefined;
       if (targetSegment >= 0) {
+        // Only attack if the clicked segment specifically contains an enemy.
+        // If the player clicked an empty segment in an enemy-occupied hex, fall
+        // through to movement so they can move into that free segment.
         enemyTarget = unitsOnTarget.find((u) => u.segment === targetSegment && u.ownerId !== playerOwner);
-      }
-      if (!enemyTarget) {
+      } else {
+        // No specific segment identified (pentagon tile or shift-click) — pick any enemy.
         enemyTarget = unitsOnTarget.find((u) => u.ownerId !== playerOwner);
       }
 
       if (enemyTarget && v.onAttack) {
         // Range check: only allow attack if enemy is within weapon range from current position
         if (!v.isInAttackRange(enemyTarget.tileIndex, enemyTarget.segment)) {
-          dbg.localMap.log('Attack blocked — target out of range');
           return;
         }
         const attacker = playerUnits.find(
           (u) => (v.movementPoints.get(u.id) ?? 0) >= 1 && !v.actedUnits.has(u.id)
         );
         if (!attacker) {
-          dbg.localMap.log('Attack blocked — no eligible attacker (no MP or already acted)');
           return;
         }
-        dbg.localMap.log('Attack command:', attacker.label, '→', enemyTarget.label);
         v.actedUnits.add(attacker.id);
-        v.movementPoints.set(attacker.id, 0);
+        v.movementPoints.set(attacker.id, Math.max(0, (v.movementPoints.get(attacker.id) ?? 0) - 1));
         v.onAttack(attacker.id, enemyTarget.id);
         return;
       }
@@ -503,9 +534,8 @@ export class MapInputHandler {
             );
           }
           if (friendlyTarget && repairer.tileIndex === friendlyTarget.tileIndex) {
-            dbg.localMap.log('Repair command:', repairer.label, '→', friendlyTarget.label);
             v.actedUnits.add(repairer.id);
-            v.movementPoints.set(repairer.id, 0);
+            v.movementPoints.set(repairer.id, Math.max(0, (v.movementPoints.get(repairer.id) ?? 0) - 1));
             v.onRepair(repairer.id, friendlyTarget.id);
             return;
           }
@@ -513,190 +543,74 @@ export class MapInputHandler {
       }
     }
 
-    // --- Movement ---
+    // --- Movement (single unit) ---
+    // NOTE: Group movement is deprecated. Only the primary selected unit moves.
+    // The destination and cost come from planMove(), which uses the exact same
+    // route computation that draws the on-screen movement line — so the unit
+    // always travels precisely where the preview line shows.
     const units = v.world.units;
-    const movingUnits = units.filter(
-      (u) => v.selectedUnits.has(u.id) && (v.movementPoints.get(u.id) ?? 0) > 0
+    const unit = units.find(
+      (u) => v.selectedUnits.has(u.id) && (v.movementPoints.get(u.id) ?? 0) > 0,
     );
-    if (movingUnits.length === 0) return;
+    if (!unit) return;
 
-    if (v.isImpassableTerrain(targetTileData.terrain)) {
-      const allFlight = movingUnits.every((u) => v.getMovementMode(u) === 'flight');
-      if (!allFlight) {
-        dbg.localMap.log('Movement blocked: impassable tile');
-        return;
-      }
-    }
-
-    const originTile = movingUnits[0].tileIndex;
-    const allSameOrigin = movingUnits.every((u) => u.tileIndex === originTile);
-
-    // --- Intra-hex segment reposition (same tile, different segment) ---
-    if (allSameOrigin && originTile === targetTile && targetSegment >= 0) {
-      const mode = v.getMovementMode(movingUnits[0]);
-      const tile = v.world.tiles[targetTile];
-      const stepCost = sharedSegmentCost(tile, mode);
-      if (stepCost === Infinity) return;
-
-      const occupiedByOthers = new Set<number>(
-        v.world.units
-          .filter((u) => u.tileIndex === targetTile && !v.selectedUnits.has(u.id))
-          .map((u) => u.segment)
-      );
-
-      for (const unit of movingUnits) {
-        if (unit.segment === targetSegment) continue;
-        const remaining = v.movementPoints.get(unit.id) ?? 0;
-        // Compute shortest arc cost
-        const diff = Math.abs(targetSegment - unit.segment);
-        const steps = Math.min(diff, 6 - diff);
-        const cost = steps * stepCost;
-        if (cost > remaining) continue;
-        if (occupiedByOthers.has(targetSegment)) {
-          // Target occupied — find nearest free segment
-          const free = v.findPreferredSegment(targetSegment, occupiedByOthers);
-          if (free < 0) continue;
-          unit.segment = free as 0 | 1 | 2 | 3 | 4 | 5;
-        } else {
-          unit.segment = targetSegment as 0 | 1 | 2 | 3 | 4 | 5;
-        }
-        v.movementPoints.set(unit.id, Math.max(0, remaining - cost));
-        occupiedByOthers.add(unit.segment);
-        dbg.localMap.log(
-          'Intra-hex reposition', unit.label, '→ segment', unit.segment,
-          '| steps:', steps, '| MP spent:', cost, '| points left:', v.movementPoints.get(unit.id)
-        );
-      }
-
-      v.selectedSegment = movingUnits.length === 1 ? movingUnits[0].segment : -1;
-      v.computeMovementRange();
-      v.onTileSelectCb(v.selectedTile, v.selectedSegment >= 0 ? v.selectedSegment : undefined);
-      v.render();
+    if (v.isImpassableTerrain(targetTileData.terrain) && v.getMovementMode(unit) !== 'flight') {
       return;
     }
 
-    if (allSameOrigin) {
-      const path = v.findPathBFS(originTile, targetTile);
-      if (!path || path.length < 2) return;
+    const remaining = v.movementPoints.get(unit.id) ?? 0;
+    const preferredSegment = targetSegment >= 0 ? targetSegment : unit.segment;
 
-      const groupHops = Math.min(
-        ...movingUnits.map((u) => {
-          const remaining = v.movementPoints.get(u.id) ?? 0;
-          const totalMP = v.getMaxMovement(u);
-          const alreadyMoved = totalMP - remaining > 0 ? 1 : 0;
-          return v.affordableHops(path, u, remaining, alreadyMoved);
-        })
-      );
+    const plan = v.planMove(unit, targetTile, preferredSegment, remaining);
+    if (!plan) return;
 
-      if (groupHops === 0) return;
+    // Nothing to do if the plan keeps the unit exactly where it is
+    if (plan.destTile === unit.tileIndex && plan.destSegment === unit.segment) return;
 
-      const hops = Math.min(groupHops, path.length - 1);
-      const destTileIndex = path[hops];
-      const prevTileIndex = path[hops - 1];
-
-      const existingAtDest = units.filter(
-        (u) => u.tileIndex === destTileIndex && !v.selectedUnits.has(u.id)
-      );
-      if (existingAtDest.length + movingUnits.length > 5) {
-        dbg.localMap.log('Movement blocked: destination tile would exceed 5 units');
-        return;
-      }
-
-      // Determine facing from neighbour index (matches server logic exactly).
-      // Falls back to geometric angle if tiles are not adjacent (shouldn't happen
-      // for a valid BFS path, but be defensive).
-      const neighbourDir = v.world.tiles[prevTileIndex].n.indexOf(destTileIndex);
-      const moveFacing = neighbourDir >= 0
-        ? neighbourDir as 0 | 1 | 2 | 3 | 4 | 5
-        : v.angleToFacing(v.computeFacingAngle(prevTileIndex, destTileIndex));
-      dbg.localMap.log(
-        'Facing: from tile', prevTileIndex, '→ to tile', destTileIndex,
-        '| neighbour idx:', neighbourDir,
-        '| facing idx:', moveFacing
-      );
-
-      const reachedTarget = destTileIndex === targetTile;
-      const useTargetSegment = reachedTarget && targetSegment >= 0 && movingUnits.length === 1;
-      const occupiedSegments = new Set<number>(existingAtDest.map((u) => u.segment));
-      for (const unit of movingUnits) {
-        const preferred = useTargetSegment ? targetSegment : unit.segment;
-        const freeSegment = v.findPreferredSegment(preferred, occupiedSegments);
-        if (freeSegment < 0) break;
-
-        const remaining = v.movementPoints.get(unit.id) ?? 0;
-        const totalMP = v.getMaxMovement(unit);
-        const alreadyMoved = totalMP - remaining > 0 ? 1 : 0;
-        const mpCost = v.mpSpentForHops(path, unit, hops, alreadyMoved);
-
-        unit.tileIndex = destTileIndex;
-        unit.segment = freeSegment as 0 | 1 | 2 | 3 | 4 | 5;
-        unit.facing = moveFacing;
-        v.movementPoints.set(unit.id, Math.max(0, remaining - mpCost));
-        occupiedSegments.add(freeSegment as 0 | 1 | 2 | 3 | 4 | 5);
-
-        dbg.localMap.log(
-          'Moved', unit.label, '→ tile', destTileIndex,
-          'segment', freeSegment, '| MP spent:', mpCost, '| points left:', v.movementPoints.get(unit.id)
-        );
-      }
-    } else {
-      for (const unit of movingUnits) {
-        const path = v.findPathBFS(unit.tileIndex, targetTile);
-        if (!path || path.length < 2) continue;
-
-        const remaining = v.movementPoints.get(unit.id) ?? 0;
-        const totalMP = v.getMaxMovement(unit);
-        const alreadyMoved = totalMP - remaining > 0 ? 1 : 0;
-        const maxHops = v.affordableHops(path, unit, remaining, alreadyMoved);
-        if (maxHops === 0) continue;
-
-        const hops = Math.min(maxHops, path.length - 1);
-        const destTileIndex = path[hops];
-        const prevTileIndex = path[hops - 1];
-
-        const unitsAtDest = units.filter((u) => u.tileIndex === destTileIndex && u.id !== unit.id);
-        if (unitsAtDest.length >= 5) continue;
-
-        const reachedTarget = destTileIndex === targetTile;
-        const useTarget = reachedTarget && targetSegment >= 0 && movingUnits.length === 1;
-        const preferred = useTarget ? targetSegment : unit.segment;
-        const occupiedSegments = new Set<number>(unitsAtDest.map((u) => u.segment));
-        const freeSegment = v.findPreferredSegment(preferred, occupiedSegments);
-        if (freeSegment < 0) continue;
-
-        const mpCost = v.mpSpentForHops(path, unit, hops, alreadyMoved);
-
-        unit.tileIndex = destTileIndex;
-        unit.segment = freeSegment as 0 | 1 | 2 | 3 | 4 | 5;
-        const nDir = v.world.tiles[prevTileIndex].n.indexOf(destTileIndex);
-        unit.facing = nDir >= 0
-          ? nDir as 0 | 1 | 2 | 3 | 4 | 5
-          : v.angleToFacing(v.computeFacingAngle(prevTileIndex, destTileIndex));
-        v.movementPoints.set(unit.id, Math.max(0, remaining - mpCost));
-
-        dbg.localMap.log(
-          'Moved', unit.label, '→ tile', destTileIndex,
-          'segment', freeSegment, '| MP spent:', mpCost, '| points left:', v.movementPoints.get(unit.id)
-        );
-      }
+    // Destination occupancy: max 5 units per tile (only when changing tiles)
+    const existingAtDest = units.filter(
+      (u) => u.tileIndex === plan.destTile && u.id !== unit.id,
+    );
+    if (plan.destTile !== unit.tileIndex && existingAtDest.length >= 5) {
+      return;
     }
 
-    // Move selection to follow the units that just moved
-    if (movingUnits.length > 0) {
-      const dest = movingUnits[0].tileIndex;
-      v.selectedTile = dest;
-      v.selectedSegment = movingUnits.length === 1 ? movingUnits[0].segment : -1;
-    } else {
-      v.selectedTile = -1;
-      v.selectedSegment = -1;
-    }
+    const occupiedSegments = new Set<number>(existingAtDest.map((u) => u.segment));
+    const freeSegment = v.findPreferredSegment(plan.destSegment, occupiedSegments);
+    if (freeSegment < 0) return;
+
+    // Capture screen position BEFORE updating world state
+    const fromPos = v.getUnitScreenPos(unit.id);
+
+    // Compute travel facing toward the destination tile.
+    // plan.facing is the neighbour index in destTile's neighbour array pointing
+    // forward (most aligned with the travel direction). See extractMovePlan.
+    const travelFacing = plan.facing ?? unit.facing;  // null = intra-hex: keep current facing
+
+    // Update world state (MP, position) — the animation will interpolate from
+    // fromPos to the unit's new screen position
+    unit.tileIndex = plan.destTile;
+    unit.segment = freeSegment as 0 | 1 | 2 | 3 | 4 | 5;
+    v.movementPoints.set(unit.id, Math.max(0, remaining - plan.mpCost));
+
+    // Move selection to follow the unit that just moved
+    v.selectedTile = unit.tileIndex;
+    v.selectedSegment = unit.segment;
 
     v.computeMovementRange();
     // Refresh detail panel (unit info, squad mates) to reflect the unit's new tile
-    if (v.selectedTile >= 0) {
-      v.onTileSelectCb(v.selectedTile, v.selectedSegment >= 0 ? v.selectedSegment : undefined);
+    v.onTileSelectCb(v.selectedTile, v.selectedSegment);
+
+    // Animate the glide, then lock in the final facing.
+    if (fromPos) {
+      v.playMoveAnimation(unit.id, fromPos, travelFacing).then(() => {
+        unit.facing = travelFacing;
+        v.render();
+      });
+    } else {
+      unit.facing = travelFacing;
+      v.render();
     }
-    v.render();
   }
 
   // ─── Drag helpers ──────────────────────────────────────────────────────────
@@ -721,7 +635,6 @@ export class MapInputHandler {
       v.lastEmittedCentreTile = tileIdx;
 
       if (v.scale < 1.5 && tileIdx !== v.centreTileIndex) {
-        dbg.localMap.log('Recentering during drag (low zoom):', v.scale.toFixed(2));
         v.centreTileIndex = tileIdx;
         // Rebuild flat view in-place via the view's buildFlatView
         v.flatTiles = v.buildFlatView(tileIdx, v.radius);
@@ -764,11 +677,6 @@ export class MapInputHandler {
         const threshold = v.scale < 1.0 ? avgRadius * 1.0 : avgRadius * 3.0;
 
         if (dist > threshold) {
-          dbg.localMap.log(
-            'Recentering after drag: distance =', dist.toFixed(3),
-            'threshold =', threshold.toFixed(3),
-            'zoom =', v.scale.toFixed(2)
-          );
           v.centreTileIndex = tileIdx;
           v.flatTiles = v.buildFlatView(tileIdx, v.radius);
           v.offsetX = 0;
@@ -781,75 +689,17 @@ export class MapInputHandler {
 
   // ─── Context menu ──────────────────────────────────────────────────────────
 
-  private contextMenuEl: HTMLElement | null = null;
-  private contextMenuCleanup: (() => void) | null = null;
-
   /** Close and remove any open context menu. */
   private closeContextMenu(): void {
-    if (this.contextMenuEl) {
-      this.contextMenuEl.remove();
-      this.contextMenuEl = null;
-    }
-    if (this.contextMenuCleanup) {
-      this.contextMenuCleanup();
-      this.contextMenuCleanup = null;
-    }
+    this.contextMenu.close();
   }
 
   /** Show a right-click context menu for the player's own unit. */
   private showContextMenu(clientX: number, clientY: number, unit: UnitData): void {
-    const menu = document.createElement('div');
-    Object.assign(menu.style, {
-      position: 'fixed',
-      left: clientX + 'px',
-      top: clientY + 'px',
-      background: '#1e1e1e',
-      border: '1px solid #555',
-      borderRadius: '4px',
-      padding: '4px 0',
-      minWidth: '120px',
-      zIndex: '3000',
-      fontFamily: "'Segoe UI', sans-serif",
-      fontSize: '13px',
-      color: '#eee',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+    this.contextMenu.show(clientX, clientY, unit, {
+      chargeRotation: (id) => this.chargeRotation(id),
+      closeContextMenu: () => this.closeContextMenu(),
+      view: this.view,
     });
-
-    // Menu item: Sleep
-    const sleepItem = document.createElement('div');
-    Object.assign(sleepItem.style, {
-      padding: '6px 14px',
-      cursor: 'pointer',
-    });
-    sleepItem.textContent = '💤 Sleep';
-    sleepItem.title = 'Put this unit to sleep (suppresses end-turn warning)';
-    sleepItem.addEventListener('mouseenter', () => { sleepItem.style.background = '#333'; });
-    sleepItem.addEventListener('mouseleave', () => { sleepItem.style.background = ''; });
-    sleepItem.addEventListener('click', () => {
-      if (this.view.onSleepUnit) {
-        this.view.onSleepUnit(unit.id);
-      }
-      this.closeContextMenu();
-    });
-    menu.appendChild(sleepItem);
-
-    document.body.appendChild(menu);
-    this.contextMenuEl = menu;
-
-    // Close on next click anywhere or Escape
-    const closeHandler = () => this.closeContextMenu();
-    const keyHandler = (e: KeyboardEvent) => { if (e.key === 'Escape') this.closeContextMenu(); };
-    // Delay registering the click handler to avoid catching the current right-click release
-    setTimeout(() => {
-      document.addEventListener('click', closeHandler, { once: true });
-      document.addEventListener('contextmenu', closeHandler, { once: true });
-    }, 0);
-    window.addEventListener('keydown', keyHandler);
-
-    this.contextMenuCleanup = () => {
-      document.removeEventListener('click', closeHandler);
-      document.removeEventListener('contextmenu', closeHandler);
-      window.removeEventListener('keydown', keyHandler);
-    };
   }
 }

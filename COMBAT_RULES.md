@@ -125,18 +125,29 @@ The segment distance feeds into **range efficiency** (range falloff), meaning un
 
 ### Effective Attack Range
 
+The range gate uses **segment-distance** compared against a threshold:
+
 ```
-attackRange = max(rangeAttack, (kinetic > 0 ? 1 : 0), (antiAir > 0 ? 1 : 0))
+RangeThreshold = rangeAttack × SEGMENT_RANGE_PER_POINT + SEGMENT_RANGE_BASE
 ```
 
-- If `rangeAttack = 0` but `kinetic > 0`: effective range is 1 (melee).
-- If only `antiAir > 0`: effective range is 1.
-- `rangeAttack` of 2–5 allows attacking from that many hexes away.
+With `SEGMENT_RANGE_PER_POINT = 0.5` and `SEGMENT_RANGE_BASE = 1.0`:
+
+| rangeAttack | Threshold | Approximate reach |
+|-------------|-----------|-------------------|
+| 0 | 1.0 | Adjacent segments (melee) |
+| 1 | 1.5 | Adjacent + slight overhang |
+| 2 | 2.0 | ~2 hexes |
+| 3 | 2.5 | ~2–3 hexes |
+| 5 | 3.5 | ~3–4 hexes |
+
+- `rangeAttack = 0` with `kinetic > 0`: can attack adjacent segments (threshold 1.0 ≥ adjacent distance ~1.0).
+- `rangeAttack = 0` with only `antiAir > 0`: same threshold, can target adjacent drones.
 
 ### Validation
 
-- `distance ≤ attackRange` → attack is valid.
-- `distance > attackRange` or `distance < 0` (unreachable) → attack is invalid.
+- `segmentDistance ≤ RangeThreshold` → attack is valid.
+- `segmentDistance > RangeThreshold` → attack is invalid (out of range).
 
 ### Range Falloff
 
@@ -790,71 +801,77 @@ function calculateEffectiveDefenceForAntiAirReaction(drone, gameState):
 ---
 
 ## 17. Movement & Attack Eligibility
+### Movement Cost Model (Segment-Step Count)
 
-### Movement Cost Model (Segment-Distance Based)
-
-Movement cost is computed from the **segment-to-segment distance** between the unit's current position and its destination, multiplied by a **terrain multiplier** based on the destination tile:
+A move is a **count of segment steps**. Each step — whether to an adjacent
+segment within the same hex or across a hex border into the neighbour's facing
+segment — costs a flat amount determined by the **destination segment's terrain**
+and the unit's chassis. There is **no separate per-hex entry cost**; crossing a
+border is just one more step.
 
 ```
-movementCost = segmentDistance(from, to) × terrainMultiplier(destinationTile, mode)
+stepCost = segmentCost(destinationTile, mode)
+movementCost = sum of stepCost over every segment step taken
 ```
 
-Where `segmentDistance` is the chord distance between segment centroids normalised to hex-spacing units (~1.0 for adjacent tile centers).
+### Per-Step Costs
 
-### Terrain Multipliers
+| Mode | Flat/Clear | Hills | Forest | Mountain/Ocean |
+|------|-----------|-------|--------|----------------|
+| **Tank** (wheeledMovement) | 0.25 | 0.75 | Impassable | Impassable |
+| **Spider** (limbMovement) | 0.50 | 0.50 | 0.50 | Impassable |
+| **Drone** (flightMovement) | 0.25 | 0.25 | 0.25 | 0.25 (passable) |
 
-| Mode | Flat/Clear | Hill OR Forest | Hill AND Forest | Mountain/Ocean |
-|------|-----------|----------------|-----------------|----------------|
-| **Tank** (wheeledMovement) | ×1.75 | ×2.5 | ×3.5 | Impassable |
-| **Spider** (limbMovement) | ×2.5 | ×2.5 | ×2.5 | Impassable |
-| **Drone** (flightMovement) | ×1.0 | ×1.0 | ×1.0 | ×1.0 (passable) |
+Drones may traverse ocean segments but cannot **end** a turn on ocean (enforced
+at the turn-state level, not in the per-step cost).
 
 ### Effective Movement Ranges (5 MP budget, flat terrain)
 
-| Mode | Hex-distances per turn | Approx tiles center-to-center |
-|------|----------------------|-------------------------------|
-| Tank | 5 ÷ 1.75 ≈ 2.85 | ~3 tiles |
-| Spider | 5 ÷ 2.5 = 2.0 | ~2 tiles |
-| Drone | 5 ÷ 1.0 = 5.0 | ~5 tiles |
+| Mode | Segment steps per turn |
+|------|------------------------|
+| Tank (flat) | 5 ÷ 0.25 = 20 steps |
+| Tank (hills) | 5 ÷ 0.75 ≈ 6 steps |
+| Spider | 5 ÷ 0.50 = 10 steps |
+| Drone | 5 ÷ 0.25 = 20 steps |
 
-### Segment Positioning Affects Cost
-
-Because cost is distance-based, the unit's starting segment matters:
-- Moving from the **near segment** (facing the destination) costs less — shorter distance.
-- Moving from the **far segment** (facing away) costs more — longer distance.
-- A unit on the far side of its hex moving to the far side of the next hex pays ~40% more than one on the near side moving to the near side.
+This single model is used by the server (`moveUnit`), the client overlays, and
+the AI — all via `segmentCost` in `shared/movementConstants.ts` — so they always
+agree on how far a unit can move. (Resolved DECISIONS KI-1.)
 
 ### Impassability
 
 - Mountain and ocean are **impassable** for ground units (tanks/spiders). Cost = ∞.
-- Drones can fly over any terrain at multiplier ×1.0.
+- Tanks additionally cannot enter forest.
+- Drones can traverse any terrain at 0.25 per step.
 
 ### Attack After Movement
 
 - A unit needs **at least 1 MP remaining** after movement to attack.
-- Once a unit has moved to a different hex, facing and segment are locked for the rest of the turn.
+- Moving does **not** lock rotation — a unit may move and rotate in any order
+  while it still has MP.
 
-### Intra-Hex Repositioning (Pivot)
+### Intra-Hex Repositioning vs Rotation
 
-Changing a unit's **segment** within its hex costs fractional MP based on segment distance. Changing **facing only** (no segment change) is free.
+These are two distinct, independently-priced actions:
+
+**Repositioning** (changing which **segment** the unit occupies) is movement,
+charged per segment step:
 
 ```
-pivotCost = segmentSteps × PIVOT_COST_PER_SEGMENT_STEP
+repositionCost = segmentSteps × PIVOT_COST_PER_SEGMENT_STEP
 ```
-
-With `PIVOT_COST_PER_SEGMENT_STEP = 0.25`:
 
 | Segment Move | Steps | MP Cost |
 |-------------|-------|---------|
-| Same segment (facing only) | 0 | 0.00 |
 | Adjacent segment (±1) | 1 | 0.25 |
 | Two segments away (±2) | 2 | 0.50 |
 | Opposite segment (±3) | 3 | 0.75 |
 
-Pivot rules:
-- Requires movement points remaining (enough to cover the pivot cost).
-- The unit must NOT have moved to a different hex this turn.
-- Segment steps = shortest arc distance between current and target segment (mod 6).
+**Rotation** (changing **facing**) costs a flat `ROTATION_FEE = 0.25`, charged
+**once per unit per turn**, regardless of how far the unit turns. After the fee
+is paid, every further facing change that turn is free — this lets a player
+correct an orientation mistake at no extra cost. Rotation cost is
+terrain-independent. Segment steps = shortest arc distance (mod 6).
 
 ### Turn State Rules
 
@@ -985,12 +1002,14 @@ Neither attacker gets priority — both fire at full health.
 | `REACTION_FIRE_USES_ANTI_AIR_ONLY` | true | Reaction Fire may only use Anti-Air Fire. |
 | `DRONE_PATHING_IGNORES_ENEMY_OCCUPANCY` | true | Drone pathing ignores enemy-occupied tiles. |
 | `DRONE_DEFAULT_PATHING_DIRECT` | true | Drone default pathing uses a direct shortest route rather than avoiding danger. |
-| `PIVOT_COST_PER_SEGMENT_STEP` | 0.25 | MP cost per segment step when repositioning within a hex (discrete fallback). |
-| `TERRAIN_MULTIPLIER_TANK_FLAT` | 1.75 | Movement cost multiplier for tanks on flat/clear terrain. |
-| `TERRAIN_MULTIPLIER_TANK_HILL` | 2.5 | Movement cost multiplier for tanks on hill or forested terrain. |
-| `TERRAIN_MULTIPLIER_TANK_HILL_FOREST` | 3.5 | Movement cost multiplier for tanks on hill+forest terrain. |
-| `TERRAIN_MULTIPLIER_SPIDER` | 2.5 | Movement cost multiplier for spiders (all terrain). |
-| `TERRAIN_MULTIPLIER_DRONE` | 1.0 | Movement cost multiplier for drones (all terrain). |
+| `COST_DRONE` | 0.25 | MP per segment step for a drone (flight), any terrain. |
+| `COST_SPIDER` | 0.50 | MP per segment step for a spider (limb) on passable terrain. |
+| `COST_TANK_FLAT` | 0.25 | MP per segment step for a tank (wheeled) on flat/clear terrain. |
+| `COST_TANK_HILLS` | 0.75 | MP per segment step for a tank (wheeled) on hills. |
+| `PIVOT_COST_PER_SEGMENT_STEP` | 0.25 | MP per segment step when repositioning to a different segment within a hex (this is movement, not rotation). |
+| `ROTATION_FEE` | 0.25 | Flat MP to change facing, charged once per unit per turn. After it is paid, all further facing changes that turn are free. Terrain-independent. |
+| `SEGMENT_RANGE_PER_POINT` | 0.5 | Each point of `rangeAttack` extends weapon range by this many hex-units of segment distance. |
+| `SEGMENT_RANGE_BASE` | 1.0 | Base range threshold — a unit with `rangeAttack = 0` can hit targets within 1.0 segment-distance (adjacent). |
 
 **Implementation note**: Only one weapon mode is resolved per attack. Direct, Splash, and Anti-Air damage are not additive. Reaction Fire is an anti-air-only mechanic — ground units do not trigger it and do not perform it against other ground units.
 

@@ -4,6 +4,11 @@
  * Converts authoritative World objects into the minified JSON format
  * used by the API and data/world.json. Shared between the CLI generator
  * and the API handler.
+ *
+ * The CompactTile/CompactUnit shapes here are the SERVER-SIDE source of truth
+ * for the wire format. The client mirror lives in `client/worldData.ts`
+ * (TileData/UnitData) — keep the two in sync. See that file's header for the
+ * full authoritative→wire field-name mapping (e.g. position3d→pos, terrainType→terrain).
  */
 
 import { Tile } from './types.js';

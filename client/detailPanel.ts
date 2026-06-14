@@ -1,12 +1,13 @@
-/**
+﻿/**
  * Detail Panel — populates the right curtain's info sections when the player
  * selects a hex or unit, hovers an enemy, or a combat preview arrives.
  *
  * Sections (all in index.html):
- *   #hex-info-body     — terrain, elevation, city
+ *   #hex-info-desc     — terrain inline in Unit Info header
  *   #unit-info-body    — selected unit: name + full attribute table
- *   #squad-info-body   — other friendly units on the same hex
+ *   #enemy-info-desc   — terrain inline in Enemy Info header
  *   #enemy-info-body   — hovered enemy unit: name + full attribute table
+ *   #enemy-hex-body    — other units sharing the enemy's hex (splash context)
  *   #combat-info-body  — combat preview steps (from server)
  */
 
@@ -16,6 +17,8 @@ import { dbg } from './debug.js';
 import { readableUnitName } from './unitNames.js';
 import { esc, capitalize, toneColor } from './htmlUtils.js';
 import type { ExplainedCombat } from '../shared/combatTypes.js';
+import { getMaxMovement } from '../shared/movementConstants.js';
+import type { TurnManager } from './turnManager.js';
 
 // ---------------------------------------------------------------------------
 // Attribute display config
@@ -48,19 +51,22 @@ const ATTR_ROWS: AttrRow[] = [
 
 export class DetailPanel {
   private hexDesc: HTMLElement;
+  private enemyDesc: HTMLElement;
   private unitBody: HTMLElement;
-  private squadBody: HTMLElement;
   private enemyBody: HTMLElement;
+  private enemyHexBody: HTMLElement;
   private combatBody: HTMLElement;
   private world: WorldData;
+  private turnManager: TurnManager | null = null;
 
   constructor(world: WorldData) {
     this.world = world;
-    this.hexDesc    = document.getElementById('hex-info-desc')!;
-    this.unitBody   = document.getElementById('unit-info-body')!;
-    this.squadBody  = document.getElementById('squad-info-body')!;
-    this.enemyBody  = document.getElementById('enemy-info-body')!;
-    this.combatBody = document.getElementById('combat-info-body')!;
+    this.hexDesc      = document.getElementById('hex-info-desc')!;
+    this.enemyDesc    = document.getElementById('enemy-info-desc')!;
+    this.unitBody     = document.getElementById('unit-info-body')!;
+    this.enemyBody    = document.getElementById('enemy-info-body')!;
+    this.enemyHexBody = document.getElementById('enemy-hex-body')!;
+    this.combatBody   = document.getElementById('combat-info-body')!;
     this.clear();
   }
 
@@ -68,6 +74,11 @@ export class DetailPanel {
   setWorld(world: WorldData): void {
     this.world = world;
     this.clear();
+  }
+
+  /** Provide the turn manager so movement can be shown as remaining/max. */
+  setTurnManager(tm: TurnManager): void {
+    this.turnManager = tm;
   }
 
   /**
@@ -99,7 +110,6 @@ export class DetailPanel {
 
     this.renderHex(tile, city);
     this.renderUnit(focusedUnit);
-    this.renderSquad(units, focusedUnit);
     // Leave enemy + combat sections as-is (hover-driven)
   }
 
@@ -109,10 +119,18 @@ export class DetailPanel {
    */
   showEnemy(unit: UnitData | null): void {
     if (!unit) {
+      this.enemyDesc.textContent = '';
       this.enemyBody.innerHTML = '<span class="empty-msg">No enemy in range</span>';
+      this.enemyHexBody.innerHTML = '';
       return;
     }
+    const tile = this.world.tiles[unit.tileIndex];
+    if (tile) {
+      const city = this.world.cities.find((c) => c.tileIndex === unit.tileIndex);
+      this.enemyDesc.textContent = '— ' + this.buildTerrainDesc(tile, city);
+    }
     this.renderUnitCard(this.enemyBody, unit);
+    this.renderEnemyHex(unit);
   }
 
   /**
@@ -127,13 +145,14 @@ export class DetailPanel {
     this.renderCombatPreview(preview);
   }
 
-  /** Clear all five sections. */
+  /** Clear all sections. */
   clear(): void {
-    this.hexDesc.textContent  = '— select a hex';
-    this.unitBody.innerHTML   = '<span class="empty-msg">No unit selected</span>';
-    this.squadBody.innerHTML  = '<span class="empty-msg">No squad mates</span>';
-    this.enemyBody.innerHTML  = '<span class="empty-msg">No enemy in range</span>';
-    this.combatBody.innerHTML = '<span class="empty-msg">Hover an enemy to preview</span>';
+    this.hexDesc.textContent      = '';
+    this.enemyDesc.textContent    = '';
+    this.unitBody.innerHTML       = '<span class="empty-msg">No unit selected</span>';
+    this.enemyBody.innerHTML      = '<span class="empty-msg">No enemy in range</span>';
+    this.enemyHexBody.innerHTML   = '';
+    this.combatBody.innerHTML     = '<span class="empty-msg">Hover an enemy to preview</span>';
   }
 
   // ─── Private renderers ────────────────────────────────────────────────────
@@ -142,18 +161,23 @@ export class DetailPanel {
     tile: TileData,
     city?: { id: string; label: string; isPlayerHome?: boolean; neighbourCityIds: string[] },
   ): void {
-    // Build a short descriptive sentence, e.g. "Forested, Rolling Grassland (Player City: Haven)"
+    this.hexDesc.textContent = '— ' + this.buildTerrainDesc(tile, city);
+  }
+
+  private buildTerrainDesc(
+    tile: TileData,
+    city?: { id: string; label: string; isPlayerHome?: boolean; neighbourCityIds: string[] },
+  ): string {
     const parts: string[] = [];
     if (tile.f) parts.push('Forested');
     const elev = capitalize(tile.elevType);
     const terrain = capitalize(tile.terrain);
-    // Combine elevation + terrain into one phrase, avoiding redundancy
     parts.push(elev === 'Flat' ? terrain : `${elev} ${terrain}`);
     if (city) {
       const owner = city.isPlayerHome ? 'Player' : 'Enemy';
       parts.push(`${owner} City: ${city.label}`);
     }
-    this.hexDesc.textContent = '— ' + parts.join(', ');
+    return parts.join(', ');
   }
 
   private renderUnit(unit: UnitData | undefined): void {
@@ -164,37 +188,32 @@ export class DetailPanel {
     this.renderUnitCard(this.unitBody, unit);
   }
 
-  private renderSquad(allUnits: UnitData[], focused: UnitData | undefined): void {
-    // Squad = same-faction units on the hex that are NOT the focused unit
-    const focusedFaction = focused?.ownerId;
-    const mates = allUnits.filter(
-      (u) => u.id !== focused?.id && u.ownerId === focusedFaction,
+  /** Render compact summary rows for all other units sharing the enemy's hex (splash context). */
+  private renderEnemyHex(primary: UnitData): void {
+    const hexMates = (this.world.units ?? []).filter(
+      (u) => u.tileIndex === primary.tileIndex && u.id !== primary.id && u.currentHealth > 0,
     );
 
-    if (mates.length === 0) {
-      this.squadBody.innerHTML = '<span class="empty-msg">No squad mates</span>';
+    if (hexMates.length === 0) {
+      this.enemyHexBody.innerHTML = '';
       return;
     }
 
-    let html = '';
-    for (const unit of mates) {
+    let html = `<div class="dp-enemy-hex-header">💥 Also on hex (${hexMates.length})</div>`;
+    for (const unit of hexMates) {
       const color = factionColor(this.world, unit.ownerId);
-      const name  = readableUnitName(unit);
       const attrs = unit.attributes;
       const maxHp = (attrs.maxHealth ?? 1) * 10;
-      const mov   = attrs.wheeledMovement ?? attrs.limbMovement ?? attrs.flightMovement ?? 0;
-      const att   = attrs.kinetic ?? 0;
-      const rng   = attrs.rangeAttack ?? 0;
       const arm   = attrs.armour ?? 0;
-
+      const ew    = attrs.defence ?? 0;
       const idSuffix = unit.id.replace(/^unit_/, '');
       html += `<div class="dp-other-unit">`;
-      html += `<span class="dp-other-name" style="color:${color};">${esc(name)} <span style="color:#666;font-size:0.8em;">#${esc(idSuffix)}</span></span>`;
-      html += `<span class="dp-other-stats">HP ${unit.currentHealth}/${maxHp} · Mov ${mov} · Kin ${att} · Rng ${rng} · Arm ${arm}</span>`;
+      html += `<span class="dp-other-name" style="color:${color};">#${esc(idSuffix)} ${esc(unit.label)}</span>`;
+      html += `<span class="dp-other-stats">HP ${unit.currentHealth}/${maxHp} · Arm ${arm} · EW ${ew}</span>`;
       html += `</div>`;
     }
 
-    this.squadBody.innerHTML = html;
+    this.enemyHexBody.innerHTML = html;
   }
 
   /** Render a full unit card (name + HP bar + attribute table) into a target element. */
@@ -222,7 +241,17 @@ export class DetailPanel {
     for (const row of ATTR_ROWS) {
       const val = attrs[row.key];
       if (val === undefined || val === 0) continue;
-      html += `<tr><td class="dp-key">${row.label}</td><td class="dp-val">${val}</td></tr>`;
+      // Movement rows: show remaining/max when TurnManager is available
+      const isMovementRow = row.key === 'wheeledMovement' || row.key === 'limbMovement' || row.key === 'flightMovement';
+      let displayVal: string;
+      if (isMovementRow && this.turnManager) {
+        const max = getMaxMovement(attrs);
+        const remaining = this.turnManager.getMovementPoints(unit.id);
+        displayVal = `${remaining}/${max}`;
+      } else {
+        displayVal = String(val);
+      }
+      html += `<tr><td class="dp-key">${row.label}</td><td class="dp-val">${displayVal}</td></tr>`;
     }
     html += `</table>`;
 
@@ -275,6 +304,15 @@ export class DetailPanel {
     const defRaw = b.defArmour + b.defEW + b.defFormation + b.defTerrain;
     html += `<tr><td class="dp-combat-total" colspan="2">Defence power&nbsp;&nbsp;<span class="dp-combat-total-val">${defRaw.toFixed(2)}</span></td></tr>`;
 
+    // ── Elevation modifier (only shown when it has an effect) ────────────
+    if (b.elevationMultiplier !== 1.0) {
+      const elevPct = Math.round((b.elevationMultiplier - 1) * 100);
+      const sign = elevPct > 0 ? '+' : '';
+      const elevCol = elevPct > 0 ? '#4f8' : '#f88';
+      html += `<tr><td colspan="2" class="dp-combat-section">Elevation</td></tr>`;
+      html += cpRow('⛰ Elevation modifier', `<span style="color:${elevCol};">${sign}${elevPct}% (×${b.elevationMultiplier.toFixed(2)})</span>`);
+    }
+
     // ── Summary (Damage + HP Remaining + Target Destroyed) ─────────────
     const targetUnit = this.world.units.find((u) => u.id === c.targetId);
     const targetMaxHp = targetUnit ? (targetUnit.attributes.maxHealth ?? 1) * 10 : '?';
@@ -292,49 +330,8 @@ export class DetailPanel {
     }
     html += `</td></tr>`;
 
-    // ── How the two totals become damage ─────────────────────────────────
-    if (b.inRange) {
-      html += this.buildDamageExplanation(b);
-    }
-
     html += `</table>`;
     this.combatBody.innerHTML = html;
-  }
-
-  /**
-   * Build the worked "how damage is calculated" footnote.
-   *
-   * Shows how Attack total and Defence power feed the damage formula,
-   * including the ×0.75 effective-defence constant.
-   */
-  private buildDamageExplanation(b: NonNullable<ExplainedCombat['breakdown']>): string {
-    const ap = b.attackTotal;
-    const defRaw = b.defArmour + b.defEW + b.defFormation + b.defTerrain;
-    const ed = defRaw * 0.75;
-    const ceiling = Math.min(30, 6 * ap);
-    const apSq = ap * ap;
-    const edSq = ed * ed;
-    const share = apSq + edSq > 0 ? apSq / (apSq + edSq) : 1;
-    // Raw formula damage, before any drone-evasion reduction (droneEvasion = raw − net).
-    const formulaDamage = b.netDamage + b.droneEvasion;
-
-    let html = `<tr><td colspan="2" class="dp-combat-section">How damage is calculated</td></tr>`;
-    html += cpNote(
-      `Damage is a ratio of Attack total to Defence power, not a subtraction. ` +
-      `A bigger gap lands a bigger share of the damage ceiling.`,
-    );
-    html += cpCalc(`Effective defence = Defence power × 0.75 = ${defRaw.toFixed(2)} × 0.75 = ${ed.toFixed(2)}`);
-    html += cpCalc(`Ceiling = min(30, 6 × ${ap.toFixed(2)}) = ${ceiling.toFixed(1)}`);
-    html += cpCalc(
-      `Share landed = AP² / (AP² + ED²) = ${apSq.toFixed(2)} / (${apSq.toFixed(2)} + ${edSq.toFixed(2)}) = ${(share * 100).toFixed(0)}%`,
-    );
-    html += cpCalc(
-      `Damage = 1 + (${ceiling.toFixed(1)} − 1) × ${(share * 100).toFixed(0)}% ≈ ${formulaDamage}`,
-    );
-    if (b.droneEvasion > 0) {
-      html += cpCalc(`Drone evasion: ${formulaDamage} × ${b.droneEvasion > 0 ? (b.netDamage / formulaDamage).toFixed(2) : '1.00'} = ${b.netDamage}`);
-    }
-    return html;
   }
 }
 

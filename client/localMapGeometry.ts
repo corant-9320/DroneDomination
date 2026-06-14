@@ -7,65 +7,17 @@
  */
 
 import { TileData } from './worldData.js';
-import { UnitData } from './worldData.js';
 import { FlatTileRef } from './mapInput.js';
 import {
-  getMovementMode,
-  segmentCost as sharedSegmentCost,
-  pivotStepCost,
-} from '../shared/movementConstants.js';
-
-// ─── BFS pathfinding ──────────────────────────────────────────────────────────
-
-/**
- * BFS pathfinding on the client tile graph.
- * Returns an array of tile indices from `from` to `to` (inclusive),
- * or null if unreachable. Ocean tiles are treated as impassable.
- */
-export function findPathBFS(
-  from: number,
-  to: number,
-  tiles: TileData[],
-): number[] | null {
-  if (from === to) return [from];
-
-  const cameFrom = new Map<number, number>();
-  const queue: number[] = [from];
-  cameFrom.set(from, -1);
-  let head = 0;
-
-  while (head < queue.length) {
-    const current = queue[head++];
-    if (current === to) {
-      // Reconstruct path
-      const path: number[] = [];
-      let step = to;
-      while (step !== -1) {
-        path.unshift(step);
-        step = cameFrom.get(step)!;
-      }
-      return path;
-    }
-
-    for (const neighbour of tiles[current].n) {
-      if (cameFrom.has(neighbour)) continue;
-      // Skip ocean (impassable)
-      if (tiles[neighbour].terrain === 'ocean') continue;
-      cameFrom.set(neighbour, current);
-      queue.push(neighbour);
-    }
-  }
-
-  return null;
-}
+  screenAngleBetweenTiles,
+  screenAngleToSpriteFacing,
+} from './facing.js';
 
 // ─── Facing helpers ───────────────────────────────────────────────────────────
 
 /**
- * Compute the facing angle (radians, canvas convention: 0=right, π/2=down)
- * for movement from one tile to another, using their tangent-plane positions
- * from the flat tile list. Falls back to 3D world positions if either tile
- * is not in the current flat view.
+ * @deprecated Use `screenAngleBetweenTiles` from `facing.ts`.
+ * Thin wrapper kept so existing callers (debugState, localMap) keep working.
  */
 export function computeFacingAngle(
   fromTileIndex: number,
@@ -73,48 +25,16 @@ export function computeFacingAngle(
   flatTiles: FlatTileRef[],
   tiles: TileData[],
 ): number {
-  let fromX = 0, fromY = 0, toX = 0, toY = 0;
-  let foundFrom = false, foundTo = false;
-
-  for (const ft of flatTiles) {
-    if (ft.tileIndex === fromTileIndex) {
-      fromX = ft.cx; fromY = ft.cy;
-      foundFrom = true;
-    }
-    if (ft.tileIndex === toTileIndex) {
-      toX = ft.cx; toY = ft.cy;
-      foundTo = true;
-    }
-    if (foundFrom && foundTo) break;
-  }
-
-  if (foundFrom && foundTo) {
-    const dx = toX - fromX;
-    const dy = toY - fromY;
-    // In worldToScreen, Y is flipped (wy → -sy), so screen-up = +dy in world.
-    // Canvas angle: atan2(screen_dy, screen_dx), where screen_dy = -dy (flipped)
-    return Math.atan2(-dy, dx);
-  }
-
-  // Fallback: use 3D positions from world data
-  const fromPos = tiles[fromTileIndex].pos;
-  const toPos = tiles[toTileIndex].pos;
-  const dx = toPos[0] - fromPos[0];
-  const dz = toPos[2] - fromPos[2];
-  return Math.atan2(-dz, dx);
+  return screenAngleBetweenTiles(fromTileIndex, toTileIndex, flatTiles, tiles);
 }
 
 /**
- * Convert a radian angle to the nearest facing index (0–5).
- * Segment 0 faces up (−π/2); each step rotates 60° clockwise.
+ * @deprecated Use `screenAngleToSpriteFacing` from `facing.ts`.
+ * Thin wrapper kept for back-compat. Note the result is a SpriteFacing
+ * (fixed screen mapping), NOT a NeighbourFacing — do not store it in unit.facing.
  */
 export function angleToFacing(angle: number): 0 | 1 | 2 | 3 | 4 | 5 {
-  // segmentAngle(i) = -π/2 + i * π/3
-  // Invert: i = (angle + π/2) / (π/3)
-  let idx = (angle + Math.PI / 2) / (Math.PI / 3);
-  // Normalise to [0, 6)
-  idx = ((idx % 6) + 6) % 6;
-  return (Math.round(idx) % 6) as 0 | 1 | 2 | 3 | 4 | 5;
+  return screenAngleToSpriteFacing(angle);
 }
 
 // ─── Segment helpers ──────────────────────────────────────────────────────────
@@ -191,99 +111,4 @@ export function pointInTriangle(
   const u = (dot11 * dot02 - dot01 * dot12) * invDenom;
   const v = (dot00 * dot12 - dot01 * dot02) * invDenom;
   return u >= 0 && v >= 0 && u + v <= 1;
-}
-
-// ─── Movement cost helpers ────────────────────────────────────────────────────
-
-/**
- * Calculate how many BFS hops along a path a unit can afford.
- *
- * Accounts for segment-based movement costs: the cost of each step
- * depends on the destination tile's terrain and the unit's movement mode.
- * Intra-hex traversal (departure segment pivot) also costs per step.
- *
- * @param path            Array of tile indices (output of findPathBFS).
- * @param unit            The moving unit (used for movement mode).
- * @param remainingMP     Movement points remaining this turn.
- * @param hexesAlreadyMoved  Unused (legacy param, kept for API compat).
- * @param tiles           Full tile array.
- * @returns Number of hops (tiles entered) affordable within remainingMP.
- */
-export function affordableHops(
-  path: number[],
-  unit: UnitData,
-  remainingMP: number,
-  _hexesAlreadyMoved: number,
-  tiles: TileData[],
-): number {
-  const mode = getMovementMode(unit.attributes);
-  let spent = 0;
-  let hops = 0;
-  let currentSegment = unit.segment;
-
-  for (let i = 1; i < path.length; i++) {
-    // Cost to traverse from current segment to departure segment in current hex
-    const departureSeg = tiles[path[i - 1]].n.indexOf(path[i]);
-    const departure = departureSeg >= 0 ? departureSeg : 0;
-
-    // Intra-hex pivot steps — cost per step is chassis-dependent.
-    const diff = Math.abs(currentSegment - departure);
-    const pivotSteps = Math.min(diff, 6 - diff);
-    spent += pivotSteps * pivotStepCost(mode);
-    if (spent > remainingMP) break;
-
-    // Cross border: cost = segmentCost of destination tile
-    const crossCost = sharedSegmentCost(tiles[path[i]], mode);
-    if (crossCost === Infinity) break;
-    spent += crossCost;
-    if (spent > remainingMP) break;
-
-    // Arrival segment in the new hex
-    const arrivalSeg = tiles[path[i]].n.indexOf(path[i - 1]);
-    currentSegment = arrivalSeg >= 0 ? arrivalSeg : 0;
-    hops++;
-  }
-  return hops;
-}
-
-/**
- * Calculate the actual MP spent for a given number of hops along a path.
- *
- * Accounts for segment-based movement costs at each hop.
- *
- * @param path            Array of tile indices (output of findPathBFS).
- * @param unit            The moving unit (used for movement mode).
- * @param hops            Number of steps to take along the path.
- * @param hexesAlreadyMoved  Unused (legacy param, kept for API compat).
- * @param tiles           Full tile array.
- * @returns Total MP cost for the given number of hops.
- */
-export function mpSpentForHops(
-  path: number[],
-  unit: UnitData,
-  hops: number,
-  _hexesAlreadyMoved: number,
-  tiles: TileData[],
-): number {
-  const mode = getMovementMode(unit.attributes);
-  let spent = 0;
-  let currentSegment = unit.segment;
-
-  for (let i = 1; i <= hops && i < path.length; i++) {
-    // Cost to traverse from current segment to departure segment in current hex
-    const departureSeg = tiles[path[i - 1]].n.indexOf(path[i]);
-    const departure = departureSeg >= 0 ? departureSeg : 0;
-
-    const diff = Math.abs(currentSegment - departure);
-    const pivotSteps = Math.min(diff, 6 - diff);
-    spent += pivotSteps * pivotStepCost(mode);
-
-    // Cross border
-    spent += sharedSegmentCost(tiles[path[i]], mode);
-
-    // Arrival segment in the new hex
-    const arrivalSeg = tiles[path[i]].n.indexOf(path[i - 1]);
-    currentSegment = arrivalSeg >= 0 ? arrivalSeg : 0;
-  }
-  return spent;
 }
