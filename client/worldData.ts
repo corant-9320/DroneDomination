@@ -20,6 +20,7 @@
  *     elevationType    → elevType
  *     height           → h
  *     forested         → f        (omitted when false)
+ *     riverTo          → rv       (downstream tile index; omitted when no river)
  *     cityId           → city
  *
  *   Unit (src/world/units.ts)      → UnitData (here) / CompactUnit (compact.ts)
@@ -42,6 +43,10 @@ export interface TileData {
   h?: number;
   /** Whether this tile has forest cover. */
   f?: boolean;
+  /** Downstream neighbour tile index a river flows toward (toward the sea). */
+  rv?: number;
+  /** Runtime flag: a player engineer has built a bridge on this river hex. */
+  bridge?: boolean;
   city?: string;
 }
 
@@ -94,6 +99,8 @@ export interface CompactSave {
   units: UnitData[];
   playerColor?: string;
   battleCentreTile?: number;
+  /** Tile indices where the player has built bridges (re-applied after regen). */
+  bridges?: number[];
 }
 
 /**
@@ -137,6 +144,15 @@ async function expandCompactSave(data: CompactSave): Promise<WorldData> {
     }
   }
 
+  // Re-apply player-built bridges (tiles are regenerated from seed, so the
+  // bridge flag must be restored from the save).
+  if (data.bridges) {
+    for (const idx of data.bridges) {
+      const tile = regen.tiles[idx];
+      if (tile) tile.bridge = true;
+    }
+  }
+
   return {
     seed: data.seed,
     tileCount: regen.tileCount,
@@ -164,6 +180,10 @@ export function getWorld(): WorldData | null {
  */
 export function getCompactSave(): CompactSave | null {
   if (!cachedWorld) return null;
+  const bridges: number[] = [];
+  for (const tile of cachedWorld.tiles) {
+    if (tile.bridge) bridges.push(tile.idx);
+  }
   return {
     format: 'compact',
     seed: cachedWorld.seed,
@@ -171,6 +191,7 @@ export function getCompactSave(): CompactSave | null {
     units: cachedWorld.units,
     playerColor: cachedWorld.playerColor,
     battleCentreTile: cachedWorld.battleCentreTile,
+    bridges: bridges.length > 0 ? bridges : undefined,
   };
 }
 

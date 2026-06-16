@@ -21,7 +21,6 @@ export class GlobeView {
   private tileMesh: THREE.Mesh;
   private cliffMesh: THREE.Mesh;
   private edgeMesh: THREE.LineSegments;
-  private cityMarkers: THREE.Points;
   private world: WorldData;
   private canvas: HTMLCanvasElement;
   private overlayCanvas: HTMLCanvasElement;
@@ -89,9 +88,7 @@ export class GlobeView {
     this.scene.add(this.cliffMesh);
     this.scene.add(this.edgeMesh);
 
-    // City markers
-    this.cityMarkers = this.buildCityMarkers();
-    this.scene.add(this.cityMarkers);
+    // City tiles are already faction-coloured in the mesh; no extra marker needed.
     dbg.globe.log('Globe initialized:', {
       tiles: world.tileCount,
       cities: world.cities.length,
@@ -127,18 +124,42 @@ export class GlobeView {
   }
 
   /**
-   * Radial scale factor per elevation type.
-   * Tiles are pushed outward from the unit sphere by this amount,
-   * giving a subtle raised appearance proportional to terrain height.
-   * 
-   * Cliff height = 50% larger (mountain creates the biggest visual step).
+   * Maximum radial push (at the highest terrain level) above the unit sphere.
+   * Per-tile push is driven by the discrete `height` (0–11), not the 4-way
+   * elevation band, so peaks and saddles within a mountain range read as
+   * distinct heights instead of one flat-topped plateau.
+   *
+   * The curve is quadratic in normalized height: lowlands stay nearly flat
+   * (few cliffs, calm plains) while the top levels spread out dramatically,
+   * giving mountains pointy relief.
    */
-  private static readonly ELEVATION_SCALE: Record<string, number> = {
-    flat:     1.000,
-    rolling:  1.010,
-    hills:    1.022,
-    mountain: 1.045,
-  };
+  private static readonly MAX_PUSH = 0.06;
+
+  /** Cliffs below this radial step are skipped (sub-pixel; avoids busy lowland seams). */
+  private static readonly CLIFF_EPS = 0.0025;
+
+  /** Radial scale for a discrete terrain height 0–11. Ocean handled by caller. */
+  private static heightScale(h: number): number {
+    const t = Math.max(0, Math.min(11, h)) / 11;
+    return 1 + GlobeView.MAX_PUSH * t * t;
+  }
+
+  /**
+   * Mountain colour by discrete height (8–11): bare rock at the base grading to
+   * snow-white at the summits. With the unlit flat shading the globe uses, a
+   * single white fill reads as a flat-topped plateau; a height-driven gradient
+   * makes peaks (white) stand out from their lower rocky shoulders (grey) so
+   * the range looks peaky.
+   */
+  private static mountainColorRGB(h: number): [number, number, number] {
+    const t = Math.max(0, Math.min(1, (h - 8) / 3)); // h8→rock, h11→snow
+    const rock = [120, 112, 104];
+    return [
+      (rock[0] + (255 - rock[0]) * t) / 255,
+      (rock[1] + (255 - rock[1]) * t) / 255,
+      (rock[2] + (255 - rock[2]) * t) / 255,
+    ];
+  }
 
   /** Darken an RGB triple — scales toward black while preserving hue. */
   private static darken(r: number, g: number, b: number, factor: number): [number, number, number] {
@@ -154,12 +175,16 @@ export class GlobeView {
     const tileRGB: Array<[number, number, number]> = new Array(tileCount);
     for (let ti = 0; ti < tileCount; ti++) {
       const tile = tiles[ti];
-      elevScales[ti] = tile.terrain === 'ocean'
+      // Real ocean stays at sea level; river hexes (rv set) keep their carved
+      // height so they sit in a valley instead of dropping to the sphere base.
+      elevScales[ti] = (tile.terrain === 'ocean' && tile.rv === undefined)
         ? 1.0
-        : (GlobeView.ELEVATION_SCALE[tile.elevType] ?? 1.0);
+        : GlobeView.heightScale(tile.h ?? 0);
       tileRGB[ti] = tile.city
         ? factionColorRGB(this.world, tile.city)
-        : tileColorRGB(tile);
+        : (tile.terrain !== 'ocean' && tile.elevType === 'mountain')
+          ? GlobeView.mountainColorRGB(tile.h ?? 8)
+          : tileColorRGB(tile);
     }
 
     // Count total triangles needed: each N-sided tile = N-2 triangles (fan)
@@ -174,7 +199,7 @@ export class GlobeView {
     for (let ti = 0; ti < tileCount; ti++) {
       for (const nj of tiles[ti].n) {
         if (nj <= ti) continue;
-        if (elevScales[ti] !== elevScales[nj]) cliffTriangles += 2;
+        if (Math.abs(elevScales[ti] - elevScales[nj]) > GlobeView.CLIFF_EPS) cliffTriangles += 2;
       }
     }
 
@@ -248,7 +273,7 @@ export class GlobeView {
 
         const scaleA = elevScales[ti];
         const scaleB = elevScales[nj];
-        if (scaleA === scaleB) continue;
+        if (Math.abs(scaleA - scaleB) <= GlobeView.CLIFF_EPS) continue;
 
         const hiIdx   = scaleA > scaleB ? ti : nj;
         const loIdx   = scaleA > scaleB ? nj : ti;
@@ -326,37 +351,31 @@ export class GlobeView {
     return { mesh, cliffMesh, edgeLines, faceToTile };
   }
 
-  private buildCityMarkers(): THREE.Points {
-    const count = this.world.cities.length;
-    const positions = new Float32Array(count * 3);
-    const colors = new Float32Array(count * 3);
+  /**
+   * Build blue polylines for rivers. Each river tile has `rv` = the downstream
+   * tile index it flows toward; we draw a segment from the tile centre to its
+   * downstream tile centre, slightly above the surface so it reads on top of
+   * the terrain. The chain of segments forms a continuous river to the coast.
+   */
+  private buildRiverLines(): THREE.LineSegments {
+    const tiles = this.world.tiles;
+    const RIVER_PUSH = 1.012;
 
-    for (let i = 0; i < count; i++) {
-      const city = this.world.cities[i];
-      const tile = this.world.tiles[city.tileIndex];
-      // Above the sphere
-      const push = 1.03;
-      positions[i * 3] = tile.pos[0] * push;
-      positions[i * 3 + 1] = tile.pos[1] * push;
-      positions[i * 3 + 2] = tile.pos[2] * push;
-
-      const [r, g, b] = factionColorRGB(this.world, city.id);
-      colors[i * 3] = r;
-      colors[i * 3 + 1] = g;
-      colors[i * 3 + 2] = b;
+    const segs: number[] = [];
+    for (const tile of tiles) {
+      if (tile.rv === undefined) continue;
+      const down = tiles[tile.rv];
+      if (!down) continue;
+      segs.push(
+        tile.pos[0] * RIVER_PUSH, tile.pos[1] * RIVER_PUSH, tile.pos[2] * RIVER_PUSH,
+        down.pos[0] * RIVER_PUSH, down.pos[1] * RIVER_PUSH, down.pos[2] * RIVER_PUSH,
+      );
     }
 
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-    const material = new THREE.PointsMaterial({
-      size: 0.04,
-      vertexColors: true,
-      sizeAttenuation: true,
-    });
-
-    return new THREE.Points(geometry, material);
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segs), 3));
+    const material = new THREE.LineBasicMaterial({ color: 0x3aa0ff, transparent: true, opacity: 0.9 });
+    return new THREE.LineSegments(geometry, material);
   }
 
   private onClick(event: MouseEvent) {

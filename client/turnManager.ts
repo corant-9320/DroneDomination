@@ -127,6 +127,12 @@ export class TurnManager {
     this.recordMove(unitId, 1);
   }
 
+  /** Record that a unit has built a bridge (its once-per-turn action). Costs 1 MP. */
+  recordBuildBridge(unitId: string): void {
+    this.actedUnits.add(unitId);
+    this.recordMove(unitId, 1);
+  }
+
   // ─── Sleep helpers ──────────────────────────────────────────────────────
 
   /** Put a unit to sleep (it won't trigger the "are you sure?" check). */

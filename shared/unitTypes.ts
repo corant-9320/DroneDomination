@@ -50,4 +50,9 @@ export interface UnitAttributes {
   repair?: number;
   /** Anti-air attack power — can only target drones (0–5). */
   antiAir?: number;
+  /**
+   * Engineering capability (0–5). An engineer with ≥1 can build a bridge over an
+   * adjacent river hex, making it passable to ground units. Non-combat.
+   */
+  engineer?: number;
 }

@@ -5,7 +5,7 @@
 
 import { World, Tile, City } from './types.js';
 import { graphDistance } from './pathfinding.js';
-import { CITY_COUNT } from './cities.js';
+import { CITY_COUNT } from './generate.js';
 
 export interface ValidationResult {
   passed: boolean;

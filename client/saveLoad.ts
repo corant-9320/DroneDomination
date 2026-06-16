@@ -30,11 +30,6 @@ const BUNDLED_SAVES: BundledSave[] = [
     label: 'Battle (20v20)',
     description: '20 player vs 20 enemy — randomized 27-point units, 5 hexes wide formation',
   },
-  {
-    filename: 'orientation-scenario.json',
-    label: 'Orientation Test',
-    description: '1 player vs 30 enemies — 6 hexes at range 3, all enemies facing away from centre',
-  },
 ];
 
 /** Save the current world to localStorage in compact format (no tiles). */

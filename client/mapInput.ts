@@ -554,7 +554,7 @@ export class MapInputHandler {
     );
     if (!unit) return;
 
-    if (v.isImpassableTerrain(targetTileData.terrain) && v.getMovementMode(unit) !== 'flight') {
+    if (v.isImpassableTerrain(targetTileData.terrain) && !targetTileData.bridge && v.getMovementMode(unit) !== 'flight') {
       return;
     }
 

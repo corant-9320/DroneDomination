@@ -65,7 +65,7 @@ export class LocalMapView implements MapViewInterface {
   world: WorldData;
   flatTiles: FlatTile[] = [];
   centreTileIndex: number = -1;
-  radius: number = 10;
+  radius: number = 12; // BFS hop radius; hex count ≈ 1+3r(r+1). r10→331, r12→469 (~+50% hexes shown)
   /** Callback when a tile is selected (exposed as onTileSelectCb for MapViewInterface). */
   private onTileSelect: (tileIndex: number, segment?: number) => void;
   hoveredTile: number = -1;
@@ -130,7 +130,7 @@ export class LocalMapView implements MapViewInterface {
   // View transform
   offsetX: number = 0;
   offsetY: number = 0;
-  scale: number = 0.5;
+  scale: number = 1;
   dragging: boolean = false;
   mouseDownPos: { x: number; y: number } | null = null;
   lastMouse: { x: number; y: number } = { x: 0, y: 0 };
@@ -203,7 +203,7 @@ export class LocalMapView implements MapViewInterface {
     dbg.localMap.log('flatTiles count:', this.flatTiles.length);
     this.offsetX = 0;
     this.offsetY = 0;
-    if (resetZoom) this.scale = 0.5;
+    if (resetZoom) this.scale = 1;
     this.isProgrammaticCentre = true;
     this.render();
   }

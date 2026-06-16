@@ -21,7 +21,7 @@ interface SpawnTemplate {
 const INITIAL_TEMPLATES: SpawnTemplate[] = [
   { attrs: { maxHealth: 1, kinetic: 1, splashAttack: 1, wheeledMovement: 1 } },
   { attrs: { maxHealth: 1, kinetic: 1, splashAttack: 1, wheeledMovement: 1 } },
-  { attrs: { maxHealth: 1, kinetic: 1, splashAttack: 1, limbMovement: 1 } },
+  { attrs: { maxHealth: 1, kinetic: 1, splashAttack: 1, limbMovement: 1, engineer: 1 } },
   { attrs: { maxHealth: 1, kinetic: 1, rangeAttack: 1, wheeledMovement: 1 } },
   { attrs: { maxHealth: 1, kinetic: 1, rangeAttack: 1, wheeledMovement: 1 } },
   { attrs: { maxHealth: 1, kinetic: 1, rangeAttack: 1, limbMovement: 1 } },

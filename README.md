@@ -70,7 +70,7 @@ Quick guide to "I want to change X — where do I go?"
 |---|---|
 | Tweak combat balance (damage, armour) | `COMBAT_RULES.md` (spec), then `src/world/combatMath.ts` + `src/world/combat.ts` |
 | Add a new unit attribute | `shared/unitTypes.ts`, then update `src/world/units.ts`, `client/unitIcons.ts`, `client/unitDesigner.ts` |
-| Change terrain generation | `src/world/terrain.ts` |
+| Change terrain generation | `src/world/generate.ts` |
 | Adjust movement costs | `shared/movementConstants.ts` |
 | Modify the HUD / panels | `client/` — see `detailPanel.ts`, `combatPanel.ts`, `main.ts` |
 | Change world size | `src/world/generate.ts` (`FREQUENCY` constant) |

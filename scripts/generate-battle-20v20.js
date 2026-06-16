@@ -254,8 +254,9 @@ const ATTR_NAMES  = {
   rangeAttack:  { 1: 'Melee',        2: 'Short',         3: 'Medium',      4: 'Long',       5: 'Distance' },
   repair:       { 1: 'Tinkerer',     2: 'Mechanic',      3: 'Engineer',    4: 'Restorer',   5: 'Fabricator' },
   antiAir:      { 1: 'Spotter',      2: 'Tracker',       3: 'Interceptor', 4: 'Skyhunter',  5: 'Annihilator' },
+  engineer:     { 1: 'Sapper',       2: 'Pontoneer',     3: 'Bridger',     4: 'Pioneer',    5: 'Combat Engineer' },
 };
-const NAMING_ATTRS = ['kinetic', 'armour', 'defence', 'splashAttack', 'rangeAttack', 'repair', 'antiAir'];
+const NAMING_ATTRS = ['kinetic', 'armour', 'defence', 'splashAttack', 'rangeAttack', 'repair', 'antiAir', 'engineer'];
 const MOV_ATTRS    = ['wheeledMovement', 'limbMovement', 'flightMovement'];
 
 function generateUnitName(attrs) {
@@ -282,8 +283,9 @@ function generateUnitName(attrs) {
   const arm = attrs.armour ?? 0;
   const ew  = attrs.defence ?? 0;
   const rep = attrs.repair ?? 0;
+  const eng = attrs.engineer ?? 0;
 
-  return `${parts.join(' ')} (Mov ${mov}, Kin ${att}, Rng ${rng}, Spl ${spl}, AA ${aa}, Arm ${arm}, EW ${ew}, Rep ${rep})`;
+  return `${parts.join(' ')} (Mov ${mov}, Kin ${att}, Rng ${rng}, Spl ${spl}, AA ${aa}, Arm ${arm}, EW ${ew}, Rep ${rep}, Eng ${eng})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -381,6 +383,15 @@ function buildArmy() {
   const units = [];
   for (const movAttr of UNIT_CLASSES) {
     units.push({ movAttr, attrs: makeRandomUnit(movAttr, 27) });
+  }
+  // Designate the first two non-drone units as engineers so each side can
+  // bridge rivers. Drones can already fly over water, so engineers are ground.
+  let engineersAssigned = 0;
+  for (const u of units) {
+    if (engineersAssigned >= 2) break;
+    if (u.movAttr === 'flightMovement') continue;
+    u.attrs.engineer = 2;
+    engineersAssigned++;
   }
   return units;
 }

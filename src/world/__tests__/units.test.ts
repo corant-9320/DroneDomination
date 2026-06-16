@@ -180,8 +180,8 @@ describe('units', () => {
       expect(keys).toContain('repair');
     });
 
-    it('ATTRIBUTE_RANGES has 11 total attribute keys', () => {
-      expect(Object.keys(ATTRIBUTE_RANGES)).toHaveLength(11);
+    it('ATTRIBUTE_RANGES has 12 total attribute keys', () => {
+      expect(Object.keys(ATTRIBUTE_RANGES)).toHaveLength(12);
     });
   });
 

@@ -27,6 +27,8 @@ export interface CompactTile {
   h?: number;
   /** Whether this tile has forest cover. */
   f?: boolean;
+  /** Downstream neighbour tile index a river flows toward (toward the sea). */
+  rv?: number;
   city?: string;
 }
 
@@ -74,6 +76,7 @@ export function toCompactTile(t: Tile): CompactTile {
     elevType: t.elevationType,
     h: t.height,
     f: t.forested || undefined,
+    rv: t.riverTo,
     city: t.cityId || undefined,
   };
 }

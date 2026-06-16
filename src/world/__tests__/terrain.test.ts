@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mulberry32, generateTerrain } from '../terrain.js';
+import { mulberry32, generateTerrain } from '../generate.js';
 import type { Vec3, TerrainType } from '../types.js';
 
 describe('terrain', () => {

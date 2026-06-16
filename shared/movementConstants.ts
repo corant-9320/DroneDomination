@@ -82,6 +82,10 @@ export interface MovementTile {
   height?: number;
   /** Discrete terrain height 0–11 as used in the compact/client wire format. */
   h?: number;
+  /** Runtime flag: a bridge has been built on this (river/ocean) tile. */
+  bridge?: boolean;
+  /** Bridge flag as used in the compact/client wire format. */
+  br?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,7 +136,7 @@ export function tileHeight(tile: MovementTile): number {
  * steeper than this is forbidden. Tanks are limited to gentle grades; spiders
  * can scale almost any slope; drones (flight) are unaffected.
  */
-export const MAX_CLIMB_WHEELED = 4;
+export const MAX_CLIMB_WHEELED = 3;
 export const MAX_CLIMB_LIMB = 8;
 
 /** Whether a tile is ocean. */
@@ -144,6 +148,11 @@ function isOcean(tile: MovementTile): boolean {
 /** Whether a tile has forest cover. */
 function isForested(tile: MovementTile): boolean {
   return (tile.forested ?? tile.f) === true;
+}
+
+/** Whether a bridge has been built on this tile (makes water passable). */
+function isBridged(tile: MovementTile): boolean {
+  return (tile.bridge ?? tile.br) === true;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,13 +247,18 @@ export function segmentCost(
     return COST_DRONE;
   }
 
-  // Ground units cannot enter ocean. Mountains are no longer impassable by
-  // height alone — only the steepness gate below can block a high tile.
-  if (isOcean(tile)) return Infinity;
+  const bridged = isBridged(tile);
+
+  // Ground units cannot enter ocean (rivers are ocean too) — unless a bridge
+  // has been built across it. Mountains are no longer impassable by height
+  // alone — only the steepness gate below can block a high tile.
+  if (isOcean(tile) && !bridged) return Infinity;
 
   // Steepness gate: a border step taller than the chassis climb limit is
-  // impassable, regardless of the absolute elevation involved.
-  if (fromTile) {
+  // impassable. A bridge spans the gap, so stepping onto or off a bridge tile
+  // ignores the steepness gate (a river sits at sea level but its banks may be
+  // high ground).
+  if (fromTile && !bridged && !isBridged(fromTile)) {
     const delta = Math.abs(tileHeight(tile) - tileHeight(fromTile));
     const limit = mode === 'limb' ? MAX_CLIMB_LIMB : MAX_CLIMB_WHEELED;
     if (delta > limit) return Infinity;
@@ -255,11 +269,11 @@ export function segmentCost(
     return COST_SPIDER;
   }
 
-  // Tank (wheeled): forbidden from forest
-  if (isForested(tile)) return Infinity;
+  // Tank (wheeled): forbidden from forest (a bridge deck is clear)
+  if (!bridged && isForested(tile)) return Infinity;
 
-  // Tank: hills
-  if (isHill(tile)) {
+  // Tank: hills (a bridge deck is flat)
+  if (!bridged && isHill(tile)) {
     return COST_TANK_HILLS;
   }
 

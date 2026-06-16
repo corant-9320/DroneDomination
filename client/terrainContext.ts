@@ -48,6 +48,8 @@ export class TerrainContext {
 
   /** Whether a tile should be treated as open water for rendering. */
   isWaterTile(tile: TileData): boolean {
+    if (tile.bridge) return false;          // a bridge deck is dry crossing
+    if (tile.rv !== undefined) return true; // river hexes are whole-hex water
     const terrain = String(tile.terrain ?? '').toLowerCase();
     const elev = String(tile.elevType ?? '').toLowerCase();
     return (
@@ -71,7 +73,10 @@ export class TerrainContext {
 
   /** Convert terrain/elevation labels into a small continuous height scale. */
   elevationHeight(tile: TileData): number {
-    if (this.isWaterTile(tile)) return -0.25;
+    // Open ocean/lake sit at the fixed sea-level relief. River hexes are water
+    // too, but they descend the valley toward the sea — honour their per-tile
+    // height so they don't all flatten to sea level.
+    if (this.isWaterTile(tile) && tile.rv === undefined) return -0.25;
     // Map the 0–11 discrete height onto the legacy 0→1 relief scale.
     return this.height12(tile) / (HEIGHT_LEVELS - 1);
   }

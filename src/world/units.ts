@@ -47,6 +47,7 @@ export const ATTRIBUTE_RANGES: Record<keyof UnitAttributes, [min: number, max: n
   flightMovement: [0, 5],
   repair: [0, 5],
   antiAir: [0, 5],
+  engineer: [0, 5],
 };
 
 export { MOVEMENT_ATTRIBUTES } from '../../shared/movementConstants.js';

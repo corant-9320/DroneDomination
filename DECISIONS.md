@@ -13,6 +13,334 @@ Format: `## YYYY-MM-DD — <short title>` then **Decision / Why / Impact**.
 
 ---
 
+## 2026-06-15 — First-person view shows a 3D missile/explosion on attacks
+
+**Decision:** `FirstPersonView.playAttackAnimation(...)` now renders a 3D combat
+animation — a glowing faction-coloured missile that arcs (parabolic lob, height
+scales with distance) from attacker to target with an additive contrail, then an
+expanding white-hot core + faction-tinted fireball at the target and each splash
+victim. Timings (`MISSILE_DURATION` 520ms, `EXPLOSION_DURATION` 680ms) and the
+`scale = min(2.8, 0.6 + damage/18)` blast sizing are copied from
+`combatAnimations.ts` so map and first-person attacks feel identical. `main.ts`
+fires it in parallel with `localMap.playAttackAnimation` (player + AI paths)
+whenever `firstPerson.isActive`.
+**Why:** The 2D map's combat animation is a Canvas-2D particle system drawn on the
+map canvas, which the WebGL first-person overlay hides — so FP attacks had no
+visual feedback. The 2D particle code can't be drawn into a THREE scene, so FP
+needs its own equivalent.
+**Impact:** Effects are ticked from the FP render loop via an `ActiveEffect` list
+and self-dispose (geometry+material) on finish/close, so no leaks across turns.
+Faction-colour ground rings (also added this session) sit under every unit; the
+missile aims at unit mid-body via `unitWorldPos`. Drone muzzles/impacts use the
+same `DRONE_AIR_HEIGHT` hover as the models.
+
+---
+
+## 2026-06-15 — Mountain ranges are continuous ridges; rivers are single-hex
+
+**Decision:** Reworked `growMountainRanges` in `src/world/generate.ts` to build one
+meandering **centreline** per range (~60 hexes long via `SPINE_LEN_MIN/MAX`), widened
+into a band a few hexes across (`BAND_HALF_MAX`, smoothly-varying half-width), with a
+few short **lateral** spurs (`SPUR_COUNT/LEN`). Rivers no longer widen near the coast —
+the estuary-widening pass was removed so every river is exactly one hex wide.
+**Why:** The old generator picked a continent-spanning spine (190–340 steps) plus 6–13
+long radiating spurs, producing a round white blob with spider-leg fingers instead of a
+ridge. The user wants a continuous range that builds up from foothills, with spurs
+forking to the *sides*, and single-hex rivers arcing to the sea.
+**How (key changes):**
+- `traceSpine` now walks a fixed `targetLen` along a tectonic axis with a travelling-sine
+  wobble (no continent-far target), normalising scores by local hop size so it stays
+  scale-independent and never doubles back.
+- `widenBand` does a multi-source BFS from the centreline, including tiles within the
+  nearest centreline tile's half-width plus a sparse ragged fringe.
+- `growSpur` heads perpendicular to the ridge (off to one side), short (7–16 hexes).
+- Gradual buildup still comes from the existing `APRON` height ramp (mountain → hills →
+  rolling) around the mountain set.
+- `ESTUARY_REACH` is now `@deprecated` (kept as an `export *` barrel symbol).
+**Impact:** Verified on the live world (seed 817587): the three largest ranges are 63/66/60
+hexes long and ~5 wide, as continuous single components; ~2.1k mountain + ~2.1k hills tiles.
+Rivers (940 tiles) are single-hex chains from a mountain source to the sea. Mountain/river
+*counts* shift per seed, so any test asserting exact terrain counts may need updating.
+
+
+## 2026-06-15 — River levelling no longer flattens whole rivers to sea level
+
+**Decision:** Rivers now keep a descending elevation from source to mouth, in both
+the generated data and the rendered terrain.
+**Why (two root causes):**
+1. *Generation* — the consistency pass in `generateRivers` (`src/world/generate.ts`)
+   took the min height over *all* neighbours, including the connected channel. The
+   mouth is 0 (touches ocean), so each pass propagated 0 one hop upstream, flattening
+   the lowest ~10 hexes of every river. Fixed by levelling against bank (non-river)
+   neighbours only.
+2. *Rendering (the visible cause)* — river hexes share `terrainType === 'ocean'`
+   (with `rv` set). `terrainContext.elevationHeight`, `firstPersonView.elevationWorldHeight`,
+   and `detailPanel` all clamped any ocean/water tile to fixed sea level, ignoring
+   `tile.h`. So even correct river heights rendered flat. Fixed by treating only
+   *open ocean* (`terrain === 'ocean' && rv === undefined`) as sea level; river tiles
+   now use their own `tileHeight`.
+**Impact:** Rivers descend with the valley (verified: river-tile heights span 0–6, not
+all 0). Open ocean still renders at the fixed sea-level floor. Estuary/mouth tiles sit
+near 0, blending into the sea.
+
+## 2026-06-15 — First-person view can command units (move/attack/repair)
+
+**Decision:** First-person view is no longer read-only. With a command context wired
+(`FirstPersonView.setCommandContext`, set in `main.ts`), left-click selects an own-faction
+unit and shows its movement range as 3D hex fills, hover previews the route line, and
+right-click issues move / attack / repair — mirroring the 2D map's `mapInput.onRightClick`
+priority (attack → repair → move).
+**Why:** The strategic map is for the player faction; first-person is for tactical battles —
+so battles need to be playable there, not just viewable.
+**How (reuse, not duplication):** All pathing is the existing pure logic
+(`computeMovementRange`, `computeMovementRouteForDestination`, `extractMovePlan`,
+`isInWeaponRange`) from `localMapMovement.ts`. Both views share the same `TurnManager`
+(MP/acted state) and the same `onAttack`/`onRepair` handlers (extracted to named
+`handlePlayerAttack`/`handlePlayerRepair` in `main.ts`). 3D picking raycasts the terrain
+top meshes, inverts the tangent-plane projection to flat coords, then point-in-poly +
+barycentric segment test. After an async attack/repair resolves, `main` calls
+`firstPerson.refresh()` to rebuild models/overlays.
+**Gotcha:** `firstPerson.world` is private and the live world reference; it's restored on
+every open via `setWorld` before `open`. Overlay geometries/materials are tracked and
+disposed on rebuild (not deferred to close) to avoid leaks across repeated commands.
+**Impact:** `firstPersonView.ts` header comment updated (was "purely visual, read-only").
+Deferred for now: rotation, sleep, refit, and the right-click context menu.
+
+## 2026-06-15 — First-person: rotation + context menu (rotate/sleep/refit)
+
+**Decision:** Completed the deferred first-person commands. Arrow keys ←/→ rotate the
+selected unit's facing (charging the once-per-turn `ROTATION_FEE` via the shared
+TurnManager), Shift+←/→ shifts it to the adjacent hex segment (free). Right-clicking the
+selected unit's own segment opens the shared `UnitContextMenu` (Rotate L/R, Refit, Sleep);
+the "View" item is suppressed since we're already in first-person.
+**Why:** Full command parity with the 2D map so a battle can be played entirely from the
+first-person view.
+**How (reuse):** Sleep/refit reuse the same `main.ts` handlers as the map, extracted to
+named `handlePlayerSleep`/`handlePlayerRefit` and passed to first-person via
+`FpCommandContext.onSleep`/`onRefit`. The context menu is the existing `UnitContextMenu`
+driven through a thin host adapter. `chargeRotation` mirrors `MapInputHandler.chargeRotation`.
+**Gotcha:** Esc must close an open context menu without exiting the view — `onKeyDown`
+guards on `contextMenuOpen` so the menu's own Esc handler wins. Refit is gated on full MP
+(`currentMP >= maxMovement`), so it greys out once a unit has moved/rotated — same rule as
+the map.
+**Impact:** Header comment updated again; nothing left deferred from the original plan.
+
+---
+
+## 2026-06-15 — World-gen consolidated into a single file
+
+**Decision:** Merged `goldberg.ts`, `terrain.ts`, `rivers.ts`, and `cities.ts`
+into `src/world/generate.ts` (now sectioned: PRNG → Goldberg → Terrain → Rivers
+→ Cities → `generateWorld`). The four source files were deleted.
+**Why:** Requested all generation logic in one place. `mulberry32` (shared by
+terrain/rivers/cities) now lives once at the top instead of being cross-imported.
+**Impact:** Public API unchanged — every prior export (`generateWorld`,
+`FREQUENCY`, `generateTerrain`, `mulberry32`, `generateGeodesicSphere`,
+`computeDual`, `DualTile`, `TileTerrainData`, `generateRivers`, `RIVER_DENSITY`,
+`SOURCE_HEIGHT`, `ESTUARY_REACH`, `MAX_RIVER_LEN`, `placeCities`, `CITY_COUNT`)
+is re-exported from `generate.ts`. Importers updated: `index.ts` barrel,
+`validate.ts`, `server/generateApi.ts`, and `__tests__/terrain.test.ts`.
+tsc clean, 643 tests pass. ARCHITECTURE.md module map may reference the old
+file names.
+
+---
+
+## 2026-06-15 — Strategic map shows ~50% more hexes
+
+**Decision:** Bumped the strategic map BFS hop radius (`LocalMap.radius`) from 10 to 12.
+**Why:** Requested a 50% increase in hexes shown. Visible hex count is area-based
+(`1 + 3r(r+1)`), not linear in radius — r10→331 hexes, r12→469 (≈+42%, the closest
+integer to a true +50%; r13 would be +65%).
+**Impact:** Wider strategic view; slightly more tiles to project/render per recenter.
+
+---
+
+## 2026-06-15 — Single sweeping mountain range; flat deserts; peaky relief
+
+**Decision:** Reworked mountain generation and globe rendering.
+
+`src/world/terrain.ts`:
+- **One thin sweeping range on the largest continent.** `growMountainRanges`
+  computes connected land components, seeds the range on the biggest one, and
+  grows it by extending from its *tips* (weight `1/(mc⁴+1)` strongly favours
+  tiles with few mountain neighbours → elongated band, not a blob). Coverage is
+  a fraction of the host continent (`MOUNTAIN_COVERAGE = 0.035`), so the range
+  fills ~10% of the continent once the hills/rolling foothill buffers are added,
+  instead of a fixed tile count that swallowed the whole landmass.
+- **Mountain height 8–11 from high-frequency `peakNoise`** (freq 28·noiseScale)
+  so summits and saddles differ within the range.
+- **Flat deserts.** Desert elevation is always `flat` and wins the elevation
+  priority chain (no desert:hills/rolling/mountain).
+
+`client/globe.ts` — the globe is **unlit flat-shaded**, so the previous
+`ELEVATION_SCALE` (one radial push per 4-way band) made every mountain a
+flat-topped white plateau. Now:
+- Radial push is driven by discrete `height` (0–11), quadratic curve, `MAX_PUSH
+  = 0.06` → calm lowlands, dramatic peaks. Cliffs render between any height step
+  above `CLIFF_EPS`.
+- Mountain colour is a **rock→snow gradient by height** (`mountainColorRGB`):
+  grey shoulders (h=8) grading to white summits (h=11). Without lighting, the
+  colour gradient is what makes peaks read as peaks.
+
+**Why:** Requested — a single range sweeping across the continent (~10%) with
+real snowy peaks, not a flat-topped white mass; deserts flat.
+
+**Gotcha for future agents:** The globe top faces use `MeshBasicMaterial`
+(unlit). Height/elevation differences alone are *invisible* without either a
+colour gradient or cliff walls — don't expect bare extrusion to look 3D.
+
+**Impact:** Regenerated `data/world.json` (mountains ≈1830 tiles, all on one
+continent). Verified via headless snapshot + globe inspection. All 643 tests
+pass.
+
+
+
+## 2026-06-15 — First-person view is now a free-fly camera
+
+**Decision:** Replaced the orbit-style controls in `client/firstPersonView.ts`
+with a free-flying camera (state = `camPos` + `yaw`/`pitch`, no anchor/boom):
+- **Drag** pans the eye across the battlefield in its own screen plane
+  (grab-the-world; pan speed scales with altitude via `PAN_FACTOR`).
+- **Ctrl+drag** looks around in place (yaw/pitch only, no movement).
+- **Wheel** dollies forward/back along the view direction (`BOOM_STEP`/notch).
+- The eye is clamped to the field borders (`±FIELD_EXTENT`, y ∈ [0.5, `BOOM_MAX`])
+  via `clampPos()`.
+
+**Why:** Requested — a free-fly camera is more useful for inspecting the
+battlefield than the previous anchored look-around.
+
+**Impact:** `getDiagnostics()` no longer returns `boom` (returns x/y/z/yaw/pitch).
+Removed `BOOM_LIFT`; added `WORLD_UP` and `PAN_FACTOR`. Camera starts pulled back
+behind/above the selected unit so it's in frame.
+
+---
+
+## 2026-06-15 — Steep-border outline marks impassable-to-ground borders
+
+**Decision:** The local map draws a solid dark-brown line
+(`TerrainRelief.drawSteepBorderLines` / `drawSteepBorderLine`) along the hex
+boundary on the *high* side of any border whose raw 0–11 height step is too
+steep for ground chassis, on top of the existing continuous relief shading. Two
+tiers, keyed to the movement climb limits and conveyed by line weight: thin line
+for `drop > MAX_CLIMB_WHEELED` (4+, tanks blocked), thick line for
+`drop > MAX_CLIMB_LIMB` (9+, tanks+spiders blocked, drones only).
+
+**Why:** Proportional shading is continuous, so you couldn't read the gameplay
+breakpoints (a 3 vs a 4, an 8 vs a 9). The outline is an explicit cue at exactly
+those thresholds. (Earlier tried cliff hatching/ticks — looked like ladder
+rungs — replaced with the boundary line.)
+
+**Impact:** Pure client render addition in `client/terrainRelief.ts`, drawn as
+the last pass in `drawContourRelief`. The line is clipped to the high tile and
+nudged inward by half its width so it hugs the boundary on the high side. Each
+steep edge is drawn once (from the higher tile only). No data/format changes.
+Refresh browser to see it.
+
+## 2026-06-15 — First-person units conform to the tilted terrain surface
+
+**Decision:** In `client/firstPersonView.ts`, units are now placed on the
+*actual* rendered surface, not the flat plateau height. The terrain top is drawn
+as a triangle fan whose boundary vertices are lifted to a shared,
+neighbour-averaged height (so adjacent hexes tilt to meet). Unit placement now
+samples that same surface at the unit's footprint (`sampleSurface`) for both
+**height** (barycentric-interpolated) and **upward normal**, then orients the
+model with `orientToSurface` so its +Y aligns with the slope normal and -Z to
+its facing. The camera anchor and selection ring use the sampled height too.
+
+**Why:** Units were positioned at `elevationWorldHeight(tile)` (the discrete
+plateau height) and rotated by yaw only, so on any slope they floated above or
+sank into the surface and stood bolt-upright instead of lying flush.
+
+**Impact:**
+- The neighbour-averaged vertex-height map was extracted from `buildEnvironment`
+  into `buildVertexHeight()` so both the terrain mesh and unit placement share
+  one source of truth — they must stay in sync or units will float again.
+- Ground units tilt to the surface normal; **drones stay level** (up = world up)
+  and hover `DRONE_AIR_HEIGHT` above the sampled ground.
+- `groundLift` is applied along the surface normal so a tilted unit's base
+  doesn't dig a corner into the slope.
+
+---
+
+## 2026-06-14 — Rivers impassable + engineer attribute builds bridges
+
+**Decision:** Rivers are now the **same terrain type as ocean** (`terrainType =
+'ocean'`, `elev flat`, `height 0`), so they are impassable to ground units;
+drones fly over. The `riverTo`/`rv` marker is preserved so they still render as
+river-blue. Added a new `engineer` unit attribute (0–5) to `UnitAttributes`. An
+engineer (≥1) with an available action builds a **bridge** over an adjacent
+river hex (keyboard **B**), making that hex passable.
+
+- Bridges are a runtime per-tile flag (`TileData.bridge`); `segmentCost` treats a
+  bridged tile as passable flat land and **bypasses the steepness gate** when
+  stepping onto/off a bridge (a river sits at sea level but its banks may be
+  high). See `shared/movementConstants.ts`.
+- Persistence: bridges are stored in the compact save as `bridges: number[]`
+  (tile indices) and re-applied after tiles regenerate from seed
+  (`client/worldData.ts` getCompactSave / expandCompactSave). Combat returns
+  units only and never replaces tiles, so the runtime flag survives combat.
+- Building costs the unit's once-per-turn action + 1 MP (`recordBuildBridge`,
+  mirrors repair). Bridge renders as a brown deck (`BRIDGE_COLOR`); the detail
+  panel shows "Bridge (river crossing)" and an Engineer attribute row.
+
+**Why:** The previous river entry was visual-only; the user wanted rivers to
+actually block movement and an engineer mechanic to cross them.
+
+**Impact:** `ATTRIBUTE_RANGES` now has 12 keys (test updated). Every city-spawn
+gets one engineer (`spawn.ts`); the 20v20 scenario gives each side 2 engineers.
+Refit can allocate engineer points. Supersedes the "visual only" note in the
+earlier rivers entry. Engineers/bridges are not yet used by the AI.
+
+---
+
+## 2026-06-14 — Rivers (mountain→sea) + height readout in detail panel
+
+**Decision:** Added rivers as a generated per-tile attribute. `src/world/rivers.ts`
+(`generateRivers`) seeds on mountain-height tiles (`height ≥ SOURCE_HEIGHT`) and
+routes to the coast by **distance-to-nearest-ocean** (multi-source BFS), stepping
+to the closest-to-sea neighbour (tie-broken by lowest height). This *guarantees*
+every river reaches the sea — steepest-descent alone could dead-end in a basin.
+Rivers are **whole hexes of water**: a river tile is marked by `Tile.riverTo` (wire
+field `rv`) and renders as water (`RIVER_COLOR`, `isWaterTile` true) on both the
+globe (`tileColorRGB`) and local map (`baseTerrainColor` + water passes). When a
+river meets another it stops (they join); near the coast (`oceanDist ≤
+ESTUARY_REACH`) the channel is widened by one hex so mouths form ~2-hex estuaries.
+The detail panel shows `Height n/11` for the selected tile and a `River` tag.
+
+**Why:** Earth-like worlds want rivers that actually reach the sea and read as
+real waterways, not thin lines; height was invisible in the UI.
+
+**Impact:** Deterministic from seed (rivers regenerate with tiles via
+`/api/world-tiles`, so they appear in bundled scenarios too). ~500 river tiles on
+the current world. Tunables live in `rivers.ts` (`RIVER_DENSITY`, `SOURCE_HEIGHT`,
+`ESTUARY_REACH`, `MAX_RIVER_LEN`). Rivers don't yet affect movement or combat —
+visual only (they render as water, so movement code that keys off `terrain`/`elev`
+still sees the underlying land type).
+
+---
+
+## 2026-06-14 — Earth-like land/ocean balance (continents on a mostly-ocean globe)
+
+**Decision:** Reworked Step 1 of `src/world/terrain.ts` so the globe forms like
+Earth: a low-frequency continental noise field ranks tiles, and the highest
+`LAND_FRACTION = 0.30` become land while the rest become ocean (~70%). Mountains
+and deserts now only seed/grow on land tiles (`isLandMap` passed into
+`growMountainRanges` / `growDesertPatches` and their hills/rolling buffers), and
+desert noise gets a subtropical latitude boost (peak at |y|≈0.5, ~±30°) so
+deserts cluster where Earth's great deserts sit.
+
+**Why:** The old generator made the globe ~96% land with tiny seas (ocean target
+≈3.9%) — the inverse of Earth. Land is now gathered into a few large continents
+with natural coastlines.
+
+**Impact:** Regenerated `data/world.json` (G100) is now ~69% ocean (68,756 /
+100,002 tiles), land ~31%. All 12 cities still place (city placement already
+searches for nearest non-ocean tile) and world validation passes. Rank-based
+land selection guarantees the exact land fraction even on tiny test meshes, so
+polar-cap/ocean-buffer tests are unaffected. Tune `LAND_FRACTION` to taste.
+
+---
+
 ## 2026-06-14 — Bigger globe (G100) + scale-aware terrain + tiny first-person units
 
 **Decision:** Three coordinated changes to push back on the "asteroid-scale"
@@ -63,7 +391,7 @@ noise: band base + a 0–2 within-band offset from normalised noise
 Movement is no longer blocked by absolute elevation. Mountains are passable.
 Instead `segmentCost(toTile, mode, fromTile?)` applies a **steepness gate**: a
 border step whose `|height delta|` exceeds the chassis climb limit is `Infinity`.
-Limits: wheeled `MAX_CLIMB_WHEELED = 4`, limb `MAX_CLIMB_LIMB = 8`, flight
+Limits: wheeled `MAX_CLIMB_WHEELED = 3`, limb `MAX_CLIMB_LIMB = 8`, flight
 ignores steepness. Ocean still blocks ground units per-cell. This is why every
 cost call now threads the origin tile.
 

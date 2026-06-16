@@ -11,6 +11,7 @@ import { TileData } from './worldData.js';
 import { FlatTile } from './localMapProjection.js';
 import { TerrainContext } from './terrainContext.js';
 import { mixHexColors } from './terrainColor.js';
+import { MAX_CLIMB_WHEELED, MAX_CLIMB_LIMB } from '../shared/movementConstants.js';
 
 export class TerrainRelief {
   constructor(private c: TerrainContext) {}
@@ -308,6 +309,88 @@ export class TerrainRelief {
       this.drawSingleHexRelief(ft, tile);
     }
 
+    // Third pass: a solid dark-brown line along the high side of every border
+    // too steep for ground chassis. Drawn last so it reads on top of the
+    // continuous relief shading.
+    this.drawSteepBorderLines(ftByTile);
+
+    ctx.restore();
+  }
+
+  /**
+   * Outline the borders whose raw height step is impassable to ground units.
+   * The continuous relief shading already conveys "how tall" a cliff is; this
+   * pass adds an explicit, readable cue at the two gameplay breakpoints by
+   * stroking a solid dark-brown line along the hex boundary on the *high* side:
+   *
+   *   • step > MAX_CLIMB_WHEELED (4+)  — blocks tanks        → thin line
+   *   • step > MAX_CLIMB_LIMB    (9+)  — blocks tanks+spiders → thick line
+   */
+  private drawSteepBorderLines(ftByTile: Map<number, FlatTile>): void {
+    const ctx = this.c.ctx;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    for (const ft of ftByTile.values()) {
+      const tile = this.c.world.tiles[ft.tileIndex];
+      if (tile.s !== 6 || ft.poly.length < 6) continue;
+
+      const ownHeight = this.c.height12(tile);
+
+      for (let seg = 0; seg < ft.poly.length; seg++) {
+        const neighbour = this.c.neighbourAcrossSegment(tile, ft, seg, ftByTile);
+        if (!neighbour) continue;
+
+        // Draw each steep border exactly once — from the higher tile only.
+        const drop = ownHeight - this.c.height12(neighbour);
+        if (drop <= MAX_CLIMB_WHEELED) continue;
+
+        const heavy = drop > MAX_CLIMB_LIMB;
+        this.drawSteepBorderLine(ft, seg, heavy);
+      }
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Stroke a solid line along one tile edge, nudged slightly inward onto the
+   * high tile and clipped to it so the line hugs the boundary on the high side.
+   * Tier is conveyed by line weight: the impassable-to-all tier is thicker.
+   */
+  private drawSteepBorderLine(ft: FlatTile, segment: number, heavy: boolean): void {
+    const ctx = this.c.ctx;
+
+    const v0 = ft.poly[segment % ft.poly.length];
+    const v1 = ft.poly[(segment + 1) % ft.poly.length];
+    const [ax, ay] = this.c.worldToScreen(v0.x, v0.y);
+    const [bx, by] = this.c.worldToScreen(v1.x, v1.y);
+    const [csx, csy] = this.c.worldToScreen(ft.cx, ft.cy);
+
+    const midX = (ax + bx) / 2;
+    const midY = (ay + by) / 2;
+    let outX = midX - csx;
+    let outY = midY - csy;
+    const outLen = Math.sqrt(outX * outX + outY * outY);
+    if (outLen < 1e-6) return;
+    outX /= outLen;                 // outward normal (high centre → lower tile)
+    outY /= outLen;
+
+    const radius = this.c.screenHexRadius(ft);
+    const lineWidth = Math.max(2.4, radius * (heavy ? 0.1125 : 0.06));
+    // Nudge the stroke inward by half its width so it sits fully inside the
+    // high tile, hugging the boundary rather than straddling it.
+    const inset = lineWidth * 0.5;
+
+    ctx.save();
+    this.c.clipToTile(ft);
+    ctx.strokeStyle = `rgba(38,24,14,${heavy ? 0.9 : 0.5})`;
+    ctx.lineWidth = lineWidth;
+    ctx.beginPath();
+    ctx.moveTo(ax - outX * inset, ay - outY * inset);
+    ctx.lineTo(bx - outX * inset, by - outY * inset);
+    ctx.stroke();
     ctx.restore();
   }
 

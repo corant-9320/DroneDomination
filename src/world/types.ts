@@ -55,6 +55,13 @@ export interface Tile {
    * Always false for ocean, tundra, and desert.
    */
   forested: boolean;
+  /**
+   * Downstream neighbour tile index a river on this tile flows toward (toward
+   * the sea). Undefined when no river crosses this tile. Set by
+   * `generateRivers`; the presence of this field marks a river tile. The final
+   * land tile of a river points at the ocean tile it empties into.
+   */
+  riverTo?: number;
   ownerId?: string;
   cityId?: string;
   buildingIds?: string[];

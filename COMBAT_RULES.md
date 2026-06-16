@@ -861,7 +861,7 @@ A ground unit is blocked from crossing a border whose **height step**
 
 | Mode | Max climbable step |
 |------|--------------------|
-| **Tank** (wheeled) | `MAX_CLIMB_WHEELED = 4` |
+| **Tank** (wheeled) | `MAX_CLIMB_WHEELED = 3` |
 | **Spider** (limb) | `MAX_CLIMB_LIMB = 8` |
 | **Drone** (flight) | unlimited (ignores steepness) |
 
@@ -1034,7 +1034,7 @@ Neither attacker gets priority — both fire at full health.
 | `COST_TANK_FLAT` | 0.25 | MP per segment step for a tank (wheeled) on flat/clear terrain. |
 | `COST_TANK_HILLS` | 0.75 | MP per segment step for a tank (wheeled) on hills. |
 | `HEIGHT_LEVELS` | 12 | Number of discrete terrain heights (0–11). `elevationType` is a band over this. |
-| `MAX_CLIMB_WHEELED` | 4 | Max border height step a tank can cross; steeper = impassable. |
+| `MAX_CLIMB_WHEELED` | 3 | Max border height step a tank can cross; steeper = impassable. |
 | `MAX_CLIMB_LIMB` | 8 | Max border height step a spider can cross; steeper = impassable. |
 | `PIVOT_COST_PER_SEGMENT_STEP` | 0.25 | MP per segment step when repositioning to a different segment within a hex (this is movement, not rotation). |
 | `ROTATION_FEE` | 0.25 | Flat MP to change facing, charged once per unit per turn. After it is paid, all further facing changes that turn are free. Terrain-independent. |

@@ -43,6 +43,12 @@ export function tileIdentity(tile: Pick<TileData, 'terrain' | 'elevType' | 'f'>)
   return tile.f ? `${base}:forested` : base;
 }
 
+/** River water colour — distinct from the deeper ocean blue. */
+export const RIVER_COLOR = '#2f8fd8';
+
+/** Bridge deck colour — a wooden crossing over a river hex. */
+export const BRIDGE_COLOR = '#8a5a2b';
+
 // ---------------------------------------------------------------------------
 // Terrain colors
 // ---------------------------------------------------------------------------
@@ -73,8 +79,11 @@ export const TILE_COLORS: Record<string, string> = {
   'desert':    '#d4a843',
   'tundra':    '#b8c9d4',
 
-  // --- mountain-adjacent hills: dark grey rocky foothills ---
-  'plains:hills': '#6b6b6b',
+  // --- rolling plains: greenish milk-chocolate brown ---
+  'plains:rolling': '#7a6a42',
+
+  // --- plains hills: light brown foothills ---
+  'plains:hills': '#b3895a',
 
   // --- forested variants (grassland only — plains never forested) ---
   'grassland:flat:forested':    '#3a7a1a',
@@ -113,7 +122,11 @@ function brightenHex(hex: string, factor: number): string {
  *
  * Ocean and tundra always use their terrain color — elevation does not override them.
  */
-export function tileColor(tile: Pick<TileData, 'terrain' | 'elevType' | 'f'>): string {
+export function tileColor(tile: Pick<TileData, 'terrain' | 'elevType' | 'f' | 'rv' | 'bridge'>): string {
+  // A bridged river hex is a wooden crossing — render as the bridge deck.
+  if (tile.bridge) return BRIDGE_COLOR;
+  // River hexes render as water regardless of their underlying land terrain.
+  if (tile.rv !== undefined) return RIVER_COLOR;
   const identity = tileIdentity(tile);
   if (TILE_COLORS[identity]) return TILE_COLORS[identity];
 
@@ -134,7 +147,7 @@ export function tileColor(tile: Pick<TileData, 'terrain' | 'elevType' | 'f'>): s
   return brightenHex(base, tintFactor);
 }
 
-export function tileColorRGB(tile: Pick<TileData, 'terrain' | 'elevType' | 'f'>): [number, number, number] {
+export function tileColorRGB(tile: Pick<TileData, 'terrain' | 'elevType' | 'f' | 'rv' | 'bridge'>): [number, number, number] {
   return hexToRGB(tileColor(tile));
 }
 
@@ -146,7 +159,11 @@ export function tileColorRGB(tile: Pick<TileData, 'terrain' | 'elevType' | 'f'>)
  * Return the base terrain color without any elevation tint.
  * Use this for the local map's base fill; elevation is shown via triangle shading.
  */
-export function baseTerrainColor(tile: Pick<TileData, 'terrain' | 'elevType' | 'f'>): string {
+export function baseTerrainColor(tile: Pick<TileData, 'terrain' | 'elevType' | 'f' | 'rv' | 'bridge'>): string {
+  // A bridged river hex is a wooden crossing — render as the bridge deck.
+  if (tile.bridge) return BRIDGE_COLOR;
+  // River hexes render as water regardless of their underlying land terrain.
+  if (tile.rv !== undefined) return RIVER_COLOR;
   // Check for specific identity (forested variants)
   const identity = tileIdentity(tile);
   if (TILE_COLORS[identity]) return TILE_COLORS[identity];

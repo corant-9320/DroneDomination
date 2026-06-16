@@ -48,6 +48,7 @@ const UPGRADE_ATTRS: (keyof UnitAttributes)[] = [
   'armour',
   'defence',
   'repair',
+  'engineer',
 ];
 
 /** Sum of current upgrade attribute values = the refit points budget. */
@@ -85,6 +86,7 @@ export function showRefitModal(unit: { label: string; attributes: UnitAttributes
       armour:          unit.attributes.armour          ?? 0,
       defence:         unit.attributes.defence         ?? 0,
       repair:          unit.attributes.repair          ?? 0,
+      engineer:        unit.attributes.engineer        ?? 0,
       wheeledMovement: unit.attributes.wheeledMovement ?? 0,
       limbMovement:    unit.attributes.limbMovement    ?? 0,
       flightMovement:  unit.attributes.flightMovement  ?? 0,

@@ -66,10 +66,10 @@ src/              → Server/CLI-only core logic (NOT client-importable)
   world/            World module (barrel: index.ts)
     types.ts          Tile, City, World, Vec3, TerrainType
     units.ts          Unit, HexSegment, validation helpers
-    generate.ts       generateWorld(seed) → World
-    goldberg.ts       generateGeodesicSphere(freq), computeDual(mesh)
-    terrain.ts        generateTerrain(positions, seed) → TerrainData[]
-    cities.ts         placeCities(tiles, seed) → City[]
+    generate.ts       Full world-gen pipeline in one file:
+                        generateWorld(seed) → World, plus generateGeodesicSphere/
+                        computeDual (Goldberg), generateTerrain, generateRivers,
+                        placeCities, and mulberry32
     spawn.ts          spawnInitialUnits(tiles, cities) → Unit[]
     compact.ts        toCompactWorld/toCompactTile/toCompactUnit (wire format)
     combat.ts         resolveCombat() — deterministic combat on the hex grid
@@ -149,7 +149,7 @@ Each tile is divided into 6 triangular segments (0–5, clockwise from neighbour
 
 ## Constants
 
-`CITY_COUNT = 12` (src/world/cities.ts), `MIN_SPACING = 20`, `MAX_SPACING = 45`, `FREQUENCY = 24`
+`CITY_COUNT = 12` (src/world/generate.ts), `MIN_SPACING = 20`, `MAX_SPACING = 45`, `FREQUENCY = 24`
 
 ## Debugging Without Screenshots
 

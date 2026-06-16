@@ -55,6 +55,7 @@ Combat highlights: red attacker ring, cyan target ring, dashed arrow.
 |---|---|
 | Home | Centre on home city |
 | Space | End Turn |
+| B | Engineer builds a bridge over an adjacent river hex |
 | V | First-person view of selected unit (toggle; Esc exits) |
 | Ctrl+S | Save game |
 | Ctrl+L | Load game |

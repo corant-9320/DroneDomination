@@ -251,7 +251,13 @@ async function main() {
         ) {
           // Skip-to-end: resolve instantly so the round jumps to its final state.
           if (aiPlayback.isSkipping()) return;
-          await localMap.playAttackAnimation(attackerId, targetId, factionColorHex, damage, targetDestroyed, splashVictims);
+          const anims: Array<Promise<void>> = [
+            localMap.playAttackAnimation(attackerId, targetId, factionColorHex, damage, targetDestroyed, splashVictims),
+          ];
+          if (firstPerson.isActive) {
+            anims.push(firstPerson.playAttackAnimation(attackerId, targetId, factionColorHex, damage, targetDestroyed, splashVictims));
+          }
+          await Promise.all(anims);
         },
       };
 
@@ -538,8 +544,9 @@ async function main() {
       globe.panToTile(tileIndex);
     });
 
-    // Attack handler: right-click enemy triggers combat via server
-    localMap.setOnAttack(async (attackerId, targetId) => {
+    // Attack handler: right-click enemy triggers combat via server.
+    // Named (not inline) so first-person can reuse the exact same resolution path.
+    async function handlePlayerAttack(attackerId: string, targetId: string) {
       if (!isPlayerTurn()) {
         dbg.input.log('Attack blocked — not player turn');
         return;
@@ -573,13 +580,21 @@ async function main() {
           }));
 
         // Play missile → explosion (all victims in parallel) → smoke animation before syncing state
-        await localMap.playAttackAnimation(attackerId, targetId, attackerColor, damage, targetDestroyed, splashVictims);
+        const attackAnims: Array<Promise<void>> = [
+          localMap.playAttackAnimation(attackerId, targetId, attackerColor, damage, targetDestroyed, splashVictims),
+        ];
+        if (firstPerson.isActive) {
+          attackAnims.push(firstPerson.playAttackAnimation(attackerId, targetId, attackerColor, damage, targetDestroyed, splashVictims));
+        }
+        await Promise.all(attackAnims);
 
         // Sync updated unit state back into the world
         world.units = units;
         localMap.render();
+        if (firstPerson.isActive) firstPerson.refresh();
       }
-    });
+    }
+    localMap.setOnAttack(handlePlayerAttack);
 
     // Hover-over-enemy attack preview
     localMap.setOnHoverEnemy((attacker, target) => {
@@ -590,8 +605,8 @@ async function main() {
       combatPanel.showPreview(attacker, target);
     });
 
-    // Repair handler: right-click friendly unit in same hex triggers repair via server
-    localMap.setOnRepair(async (repairerId, targetId) => {
+    // Repair handler: right-click friendly unit in same hex triggers repair via server.
+    async function handlePlayerRepair(repairerId: string, targetId: string) {
       if (!isPlayerTurn()) {
         dbg.input.log('Repair blocked — not player turn');
         return;
@@ -603,18 +618,33 @@ async function main() {
         // Sync updated unit state back into the world
         world.units = updatedUnits;
         localMap.render();
+        if (firstPerson.isActive) firstPerson.refresh();
       }
+    }
+    localMap.setOnRepair(handlePlayerRepair);
+
+    // First-person command wiring: lets the 3D view select/move/attack/repair
+    // and rotate/sleep/refit using the same handlers + shared TurnManager as the 2D map.
+    firstPerson.setCommandContext({
+      turnManager,
+      getActiveFaction: () => turnManager.getActiveFaction(),
+      onAttack: (attackerId, targetId) => { void handlePlayerAttack(attackerId, targetId); },
+      onRepair: (repairerId, targetId) => { void handlePlayerRepair(repairerId, targetId); },
+      onSleep: (unitId) => { handlePlayerSleep(unitId); },
+      onRefit: (unitId) => { void handlePlayerRefit(unitId); },
+      onCommit: () => { localMap.render(); },
     });
 
     // Sleep handler: right-click own unit offers Sleep via context menu
-    localMap.setOnSleepUnit((unitId) => {
+    function handlePlayerSleep(unitId: string) {
       dbg.input.log('Unit put to sleep:', unitId);
       emitDebugEvent('sleep', { unitId }, turnManager.turnNumber);
       turnManager.sleepUnit(unitId);
-    });
+    }
+    localMap.setOnSleepUnit(handlePlayerSleep);
 
     // Refit handler: right-click own unit with full MP → open designer modal
-    localMap.setOnRefit(async (unitId) => {
+    async function handlePlayerRefit(unitId: string) {
       if (!isPlayerTurn()) {
         dbg.input.log('Refit blocked — not player turn');
         return;
@@ -649,7 +679,9 @@ async function main() {
       localMap.computeMovementRange();
       localMap.render();
       detailPanel.showTile(localMap.selectedTile, localMap.selectedSegment >= 0 ? localMap.selectedSegment : undefined);
-    });
+      if (firstPerson.isActive) firstPerson.refresh();
+    }
+    localMap.setOnRefit(handlePlayerRefit);
 
     // Start centred on the battle gap tile (if present) or the player's home city
     const homeCity = world.cities.find((c) => c.isPlayerHome);
@@ -673,6 +705,60 @@ async function main() {
         localMap.goHome();
         if (homeCity) globe.panToTile(homeCity.tileIndex);
       }
+    });
+
+    // B key: an engineer builds a bridge over an adjacent river hex.
+    window.addEventListener('keydown', (event) => {
+      if (event.key !== 'b' && event.key !== 'B') return;
+      if ((event.target as HTMLElement).tagName === 'INPUT') return;
+      event.preventDefault();
+      if (!isPlayerTurn()) {
+        dbg.input.log('Build bridge blocked — not player turn');
+        return;
+      }
+
+      const selected = localMap.getSelectedUnits();
+      const playerFaction = turnManager.getPlayerFaction();
+      const engineer = world.units.find(
+        (u) =>
+          selected.has(u.id) &&
+          u.ownerId === playerFaction &&
+          (u.attributes.engineer ?? 0) >= 1 &&
+          turnManager.canAct(u.id),
+      );
+      if (!engineer) {
+        dbg.input.log('Build bridge: no selected engineer with an action available');
+        return;
+      }
+
+      const tile = world.tiles[engineer.tileIndex];
+      const isBridgeable = (idx: number | undefined): boolean => {
+        if (idx === undefined) return false;
+        const t = world.tiles[idx];
+        return !!t && t.rv !== undefined && !t.bridge;
+      };
+
+      // Prefer the river hex the engineer is facing; otherwise the first adjacent river.
+      let target = -1;
+      const faced = tile.n[engineer.facing];
+      if (isBridgeable(faced)) target = faced;
+      if (target < 0) {
+        const found = tile.n.find(isBridgeable);
+        if (found !== undefined) target = found;
+      }
+      if (target < 0) {
+        dbg.input.log('Build bridge: no adjacent river hex to bridge');
+        return;
+      }
+
+      world.tiles[target].bridge = true;
+      turnManager.recordBuildBridge(engineer.id);
+      emitDebugEvent('build-bridge', { unitId: engineer.id, tile: target }, turnManager.turnNumber);
+      dbg.input.log('Bridge built by', engineer.label, 'on tile', target);
+
+      localMap.computeMovementRange();
+      localMap.render();
+      detailPanel.showTile(localMap.selectedTile, localMap.selectedSegment >= 0 ? localMap.selectedSegment : undefined);
     });
 
     // New World button

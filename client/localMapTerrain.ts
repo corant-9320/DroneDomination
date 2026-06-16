@@ -97,7 +97,8 @@ export class TerrainRenderer {
       let color = baseTerrainColor(tile);
       // Mountains are deliberately light grey rather than white so the
       // leading-edge contour highlights remain visible against them.
-      if (!tile.city && (tile.elevType === 'mountain' || tile.terrain === 'mountain')) {
+      // River hexes keep their water colour even on high ground.
+      if (!tile.city && tile.rv === undefined && (tile.elevType === 'mountain' || tile.terrain === 'mountain')) {
         color = '#cfcfcf';
       }
       if (tile.city) {

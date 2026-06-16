@@ -11,7 +11,7 @@ import { validateWorld } from '../src/world/validate.js';
 import { World, City } from '../src/world/types.js';
 import { graphDistance } from '../src/world/pathfinding.js';
 import { spawnInitialUnits } from '../src/world/spawn.js';
-import { CITY_COUNT } from '../src/world/cities.js';
+import { CITY_COUNT } from '../src/world/generate.js';
 
 export interface GenerateConfig {
   /** Number of enemy cities (1 to MAX_CITIES - 1). */

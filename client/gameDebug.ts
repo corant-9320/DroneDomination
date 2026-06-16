@@ -53,7 +53,7 @@ export const DEBUG_ACTIVE = isDebugMode();
 export interface DebugEvent {
   ts: number;
   turn: number;
-  type: 'move' | 'attack' | 'repair' | 'turn-end' | 'ai-turn-start' | 'ai-turn-end' | 'refit' | 'sleep' | 'selection';
+  type: 'move' | 'attack' | 'repair' | 'turn-end' | 'ai-turn-start' | 'ai-turn-end' | 'refit' | 'sleep' | 'selection' | 'build-bridge';
   detail: Record<string, unknown>;
 }
 

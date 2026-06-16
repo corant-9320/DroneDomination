@@ -1,10 +1,19 @@
 /**
- * First-Person View — a purely visual, read-only 3D "look around" mode.
+ * First-Person View — a 3D battlefield view you can also command units from.
  *
- * The player selects a unit and enters a ground-level perspective camera sitting
- * at that unit's position. They can freely look around (mouse drag = yaw/pitch)
- * to see the surrounding hex environment and nearby units rendered as full 3D
- * models. No game mechanics run here — it is a camera, nothing else.
+ * The player selects a unit and enters a free-flying camera starting at that
+ * unit's position. Drag pans the camera, Ctrl+drag looks around, the wheel
+ * zooms (dollies). When a command context is wired (setCommandContext), the
+ * view also supports the same unit commands the 2D map has: left-click selects
+ * an own-faction unit (showing its movement range as translucent hex fills),
+ * hovering previews the route line, right-click issues move / attack / repair
+ * (or opens the unit's context menu when clicking the selected unit itself),
+ * the ←/→ arrows rotate facing (Shift+←/→ shifts segment), and the context
+ * menu offers rotate / refit / sleep — all using the SAME pure pathing logic
+ * (computeMovementRange, computeMovementRouteForDestination, extractMovePlan),
+ * the SAME shared TurnManager, and the SAME command handlers as the 2D map, so
+ * MP and unit state stay consistent across views. Without a command context it
+ * degrades to a read-only look-around camera.
  *
  * ── Design notes ──────────────────────────────────────────────────────────────
  *  - Geometry reuses the SAME tangent-plane projection as the 2D local map
@@ -27,13 +36,55 @@
 
 import * as THREE from 'three';
 import type { WorldData, UnitData, TileData } from './worldData.js';
-import { buildFlatView, FlatTile } from './localMapProjection.js';
-import { tileHeight, HEIGHT_LEVELS } from '../shared/movementConstants.js';
+import { buildFlatView, FlatTile, pointInPoly } from './localMapProjection.js';
+import {
+  tileHeight,
+  HEIGHT_LEVELS,
+  getMovementMode,
+  isImpassableTerrain,
+  getMaxMovement,
+  ROTATION_FEE,
+} from '../shared/movementConstants.js';
+import { findPreferredSegment } from './localMapGeometry.js';
+import { rotateHexIndex } from './facing.js';
+import { UnitContextMenu } from './unitContextMenu.js';
+import {
+  computeMovementRange,
+  computeMovementRouteForDestination,
+  computeContextualAttackRoute,
+  extractMovePlan,
+  isInWeaponRange,
+  weaponRangeInTileHops,
+  type MovementRangeResult,
+  type MovementCostRoute,
+} from './localMapMovement.js';
+import type { TurnManager } from './turnManager.js';
 import { buildUnitModel } from './unitModel.js';
 import { unitDataToModelAttrs } from './unitRenderer.js';
 import { tileColorRGB, factionColor } from './colors.js';
 import { TerrainTextures } from './terrainTextures.js';
 import { dbg } from './debug.js';
+
+/**
+ * Command wiring injected by main.ts so first-person can issue the same
+ * move/attack/repair commands the 2D map does, against the shared TurnManager.
+ * When this is null the view stays read-only (look-around only).
+ */
+export interface FpCommandContext {
+  turnManager: TurnManager;
+  /** Current ownerId allowed to command units (the active faction). */
+  getActiveFaction: () => string;
+  /** Resolve an attack (server round-trip) — same handler the 2D map uses. */
+  onAttack: (attackerId: string, targetId: string) => void;
+  /** Resolve a repair — same handler the 2D map uses. */
+  onRepair: (repairerId: string, targetId: string) => void;
+  /** Put a unit to sleep (suppresses end-turn warning) — same handler the map uses. */
+  onSleep: (unitId: string) => void;
+  /** Open the refit/designer modal for a unit — same handler the map uses. */
+  onRefit: (unitId: string) => void;
+  /** Notify main that world/turn state changed so the 2D map + panels refresh. */
+  onCommit: () => void;
+}
 
 import oceanUrl from '../artifacts/ocean.webp';
 import grassUrl from '../artifacts/grass.webp';
@@ -86,17 +137,20 @@ const MAX_PITCH = (85 * Math.PI) / 180;
 const FIELD_EXTENT = HEX_WORLD_RADIUS * VIEW_RADIUS;
 
 /**
- * Max camera pull-back distance (world units). At full zoom-out the eye lifts
- * well above and behind the unit so the entire battlefield — and plenty of
- * space behind the selected unit — is in frame.
+ * Max camera altitude / pull-back distance (world units). Lets the eye lift well
+ * above the field for a full battlefield overview.
  */
 const BOOM_MAX = FIELD_EXTENT * 3.0;
 
-/** Fraction of pull-back distance added as altitude — zooming out rises for an overview. */
-const BOOM_LIFT = 0.6;
+/** Forward/back travel per wheel notch (world units) when zooming. */
+const BOOM_STEP = BOOM_MAX / 90;
 
-/** Pull-back distance change per wheel notch. */
-const BOOM_STEP = BOOM_MAX / 30;
+/**
+ * Pan distance per pixel of drag, per world unit of altitude. Scaling by height
+ * keeps panning slow and precise at ground level yet fast enough to cross the
+ * field when zoomed out for an overview.
+ */
+const PAN_FACTOR = 0.0016;
 
 /** Hover altitude (world units) for drone models — they float above the terrain. */
 const DRONE_AIR_HEIGHT = HEX_WORLD_RADIUS * 0.5;
@@ -112,6 +166,18 @@ const UNIT_HEX_FRACTION = 0.055;
 /** Radius (world units) of the selection ring under the player's own unit.
  *  Decoupled from unit size so the (now small) selected unit stays findable. */
 const SELECT_RING_RADIUS = HEX_WORLD_RADIUS * 0.4;
+
+/** Radius (world units) of the faction-colour ring drawn on the ground under
+ *  every unit, so the (tiny) models are easy to spot and tell apart by side.
+ *  Slightly smaller than the white selection ring so both stay distinct. */
+const FACTION_RING_RADIUS = HEX_WORLD_RADIUS * 0.075;
+
+/** Combat animation timings (ms) — kept in lockstep with the 2D map
+ *  (combatAnimations.ts) so first-person and map attacks feel identical. */
+const MISSILE_DURATION = 520;
+const EXPLOSION_DURATION = 680;
+/** How many recent missile positions to keep for the glowing contrail. */
+const MISSILE_TRAIL_POINTS = 16;
 
 export class FirstPersonView {
   private world: WorldData;
@@ -130,27 +196,81 @@ export class FirstPersonView {
   private rafId = 0;
   private active = false;
 
-  // Look state
+  // Free-fly camera state.
+  /** Where the camera eye sits (world units). Driven by pan + zoom; clamped to the field. */
+  private camPos = new THREE.Vector3();
+  /** View direction (radians). yaw 0 = looking toward -Z; pitch +up / -down. */
   private yaw = 0;
   private pitch = 0;
   private dragging = false;
   private lastX = 0;
   private lastY = 0;
 
-  /** Anchor point the camera looks out from / orbits — the selected unit's eye position. */
-  private anchor = new THREE.Vector3();
-  /** Camera pull-back distance (0 = first person at the unit). Controlled by the wheel. */
-  private boom = 0;
-
   // Disposables to release on close
   private disposables: Array<{ dispose: () => void }> = [];
+
+  // ─── Command / interaction state ───────────────────────────────────────────
+  /** Injected command wiring (null = read-only look-around mode). */
+  private cmd: FpCommandContext | null = null;
+
+  // Projection state captured on open() so picking + overlays can reuse it.
+  private flatTiles: FlatTile[] = [];
+  private tileById = new Map<number, FlatTile>();
+  private projScale = 1;
+  private toWorld: (px: number, py: number) => [number, number, number] = (px, py) => [px, 0, -py];
+  private heightOf: (p: { x: number; y: number }) => number = () => 0;
+
+  /** Terrain top meshes — raycast targets for click picking. */
+  private pickMeshes: THREE.Mesh[] = [];
+  /** Group holding all unit models + selection ring (rebuilt after a command). */
+  private unitsGroup: THREE.Group | null = null;
+  /** Geometries owned by the units group (disposed on rebuild/close). */
+  private unitGeoms: THREE.BufferGeometry[] = [];
+  /** Unique materials owned by the units group (selection rings) — disposed on rebuild/close. */
+  private unitMats: THREE.Material[] = [];
+  /** Movement-range fill overlay (rebuilt on selection change). */
+  private rangeGroup: THREE.Group | null = null;
+  /** Hover route line overlay (rebuilt on hover). */
+  private routeGroup: THREE.Group | null = null;
+
+  /** Active combat effects (missiles / explosions) updated each render frame. */
+  private effects: ActiveEffect[] = [];
+
+  /** Currently selected commandable unit (own faction). */
+  private selectedUnitId: string | null = null;
+  private rangeResult: MovementRangeResult | null = null;
+  /** Right-click context menu for the selected unit (rotate/refit/sleep). */
+  private contextMenu = new UnitContextMenu();
+  private contextMenuOpen = false;
+
+  // Left-drag vs click discrimination.
+  private downX = 0;
+  private downY = 0;
+  private moved = false;
+  /** rAF throttle flag for hover route recompute. */
+  private hoverPending = false;
+  private hoverX = 0;
+  private hoverY = 0;
+  private readonly raycaster = new THREE.Raycaster();
 
   // Bound handlers (stable refs for add/removeEventListener)
   private onResize = () => this.resize();
   private onKeyDown = (e: KeyboardEvent) => {
+    // Don't steal keys from inputs (e.g. refit modal fields).
+    if ((e.target as HTMLElement | null)?.tagName === 'INPUT') return;
+
     if (e.key === 'Escape') {
+      // If the context menu is open, let it close first; keep the view open.
+      if (this.contextMenuOpen) return;
       e.preventDefault();
       this.close();
+      return;
+    }
+
+    // Rotation / re-positioning of the selected unit (mirrors the 2D map).
+    if (this.contextMenuOpen) return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+      if (this.handleRotateKey(e)) e.preventDefault();
     }
   };
 
@@ -166,15 +286,214 @@ export class FirstPersonView {
    * Read-only camera diagnostics for headless tests/debugging.
    * Returns null when the view is not open.
    */
-  getDiagnostics(): { x: number; y: number; z: number; boom: number; yaw: number; pitch: number } | null {
+  getDiagnostics(): { x: number; y: number; z: number; yaw: number; pitch: number } | null {
     if (!this.active || !this.camera) return null;
     const p = this.camera.position;
-    return { x: p.x, y: p.y, z: p.z, boom: this.boom, yaw: this.yaw, pitch: this.pitch };
+    return { x: p.x, y: p.y, z: p.z, yaw: this.yaw, pitch: this.pitch };
   }
 
   /** Keep a fresh reference to the world (units may have changed between turns). */
   setWorld(world: WorldData): void {
     this.world = world;
+  }
+
+  /**
+   * Inject command wiring so the view can select/move/attack/repair units using
+   * the same pure pathing logic and shared TurnManager as the 2D map. Pass once
+   * after construction; safe to call again to update callbacks.
+   */
+  setCommandContext(ctx: FpCommandContext): void {
+    this.cmd = ctx;
+  }
+
+  /**
+   * Rebuild unit models + overlays from the current world/turn state. Called by
+   * main after an async attack/repair resolves (units may have died/moved).
+   */
+  refresh(): void {
+    if (!this.active) return;
+    this.rebuildUnits();
+    this.rebuildRangeOverlay();
+    this.clearRouteOverlay();
+  }
+
+  /**
+   * Play the 3D equivalent of the 2D map's attack animation: a glowing missile
+   * arcs from the attacker to the target, then an explosion blooms at the
+   * target (plus any splash victims), mirroring `localMap.playAttackAnimation`
+   * timing so first-person and map combat feel identical. Resolves when the
+   * sequence finishes. No-op (resolves immediately) when the view is closed.
+   */
+  async playAttackAnimation(
+    attackerId: string,
+    targetId: string,
+    factionColorHex: string,
+    damage: number,
+    _targetDestroyed: boolean,
+    splashVictims: Array<{ unitId: string; damage: number; destroyed: boolean }> = [],
+  ): Promise<void> {
+    if (!this.active || !this.scene) return;
+    const from = this.unitWorldPos(attackerId);
+    const to = this.unitWorldPos(targetId);
+    if (!from || !to) return;
+
+    const color = new THREE.Color(factionColorHex);
+    await this.playMissile3D(from, to, color);
+
+    const blasts: Array<Promise<void>> = [this.playExplosion3D(to, damage, color)];
+    for (const v of splashVictims) {
+      if (v.unitId === targetId) continue;
+      const p = this.unitWorldPos(v.unitId);
+      if (p) blasts.push(this.playExplosion3D(p, v.damage, color));
+    }
+    await Promise.all(blasts);
+  }
+
+  /**
+   * World-space position near a unit's body centre, used as a missile muzzle /
+   * impact point. Mirrors the placement maths in rebuildUnits (segment centroid
+   * → tilted surface sample → drone air hover) and lifts to roughly mid-body.
+   */
+  private unitWorldPos(unitId: string): THREE.Vector3 | null {
+    const unit = this.world.units.find((u) => u.id === unitId);
+    if (!unit) return null;
+    const ft = this.tileById.get(unit.tileIndex);
+    if (!ft) return null;
+    const cen = segmentCentroid(ft, unit.segment);
+    const [wx, , wz] = this.toWorld(cen.x, cen.y);
+    const fallbackTop = elevationWorldHeight(this.world.tiles[unit.tileIndex]);
+    const { height: groundY } = sampleSurface(ft, cen.x, cen.y, this.toWorld, this.heightOf, fallbackTop);
+    const air = isDrone(unit) ? DRONE_AIR_HEIGHT : 0;
+    // Aim at roughly the unit's mid-body so missiles fly between models, not feet.
+    const bodyLift = HEX_WORLD_RADIUS * UNIT_HEX_FRACTION * 0.5 + HEX_WORLD_RADIUS * 0.12;
+    return new THREE.Vector3(wx, groundY + air + bodyLift, wz);
+  }
+
+  /**
+   * Animate a glowing missile arcing from `from` to `to` with a fading contrail.
+   * Resolves when it reaches the target.
+   */
+  private playMissile3D(from: THREE.Vector3, to: THREE.Vector3, color: THREE.Color): Promise<void> {
+    const scene = this.scene;
+    if (!scene) return Promise.resolve();
+
+    // Lob height scales with distance so short shots stay flat, long shots arc.
+    const dist = from.distanceTo(to);
+    const arc = Math.min(HEX_WORLD_RADIUS * 1.5, dist * 0.18);
+
+    const headGeo = new THREE.SphereGeometry(HEX_WORLD_RADIUS * 0.06, 10, 10);
+    const headMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const head = new THREE.Mesh(headGeo, headMat);
+    scene.add(head);
+
+    // Glow shell around the head for a hot, bloomy look (additive).
+    const glowGeo = new THREE.SphereGeometry(HEX_WORLD_RADIUS * 0.12, 10, 10);
+    const glowMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false });
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    scene.add(glow);
+
+    // Contrail as an additive line we rebuild from recent positions each frame.
+    const trailGeo = new THREE.BufferGeometry();
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MISSILE_TRAIL_POINTS * 3), 3));
+    const trailMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false });
+    const trail = new THREE.Line(trailGeo, trailMat);
+    trail.frustumCulled = false;
+    scene.add(trail);
+
+    const tmp = new THREE.Vector3();
+    const posAt = (t: number, out: THREE.Vector3): THREE.Vector3 => {
+      out.lerpVectors(from, to, t);
+      out.y += Math.sin(Math.PI * t) * arc; // parabolic lob
+      return out;
+    };
+
+    const start = performance.now();
+    const recent: THREE.Vector3[] = [];
+
+    return new Promise<void>((resolve) => {
+      const effect: ActiveEffect = {
+        update: (now: number): boolean => {
+          const raw = Math.min(1, (now - start) / MISSILE_DURATION);
+          const t = easeInOutCubic(raw);
+          const p = posAt(t, tmp);
+          head.position.copy(p);
+          glow.position.copy(p);
+
+          recent.push(p.clone());
+          if (recent.length > MISSILE_TRAIL_POINTS) recent.shift();
+          const arr = trailGeo.attributes.position.array as Float32Array;
+          for (let i = 0; i < MISSILE_TRAIL_POINTS; i++) {
+            const src = recent[Math.min(i, recent.length - 1)] ?? p;
+            arr[i * 3] = src.x; arr[i * 3 + 1] = src.y; arr[i * 3 + 2] = src.z;
+          }
+          trailGeo.attributes.position.needsUpdate = true;
+          trailGeo.setDrawRange(0, recent.length);
+
+          if (raw >= 1) { resolve(); return false; }
+          return true;
+        },
+        dispose: () => {
+          scene.remove(head, glow, trail);
+          headGeo.dispose(); headMat.dispose();
+          glowGeo.dispose(); glowMat.dispose();
+          trailGeo.dispose(); trailMat.dispose();
+        },
+      };
+      this.effects.push(effect);
+    });
+  }
+
+  /**
+   * Bloom an explosion at `centre`: a white-hot flash that expands and fades,
+   * wrapped in a faction-tinted fireball. Size scales with damage to match the
+   * 2D map. Resolves when it finishes.
+   */
+  private playExplosion3D(centre: THREE.Vector3, damage: number, color: THREE.Color): Promise<void> {
+    const scene = this.scene;
+    if (!scene) return Promise.resolve();
+
+    const scale = Math.min(2.8, 0.6 + damage / 18);
+    const maxR = HEX_WORLD_RADIUS * 0.5 * scale;
+
+    const coreGeo = new THREE.SphereGeometry(1, 16, 16);
+    const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false });
+    const core = new THREE.Mesh(coreGeo, coreMat);
+    core.position.copy(centre);
+    scene.add(core);
+
+    const fireGeo = new THREE.SphereGeometry(1, 16, 16);
+    const fireMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false });
+    const fire = new THREE.Mesh(fireGeo, fireMat);
+    fire.position.copy(centre);
+    scene.add(fire);
+
+    const start = performance.now();
+    return new Promise<void>((resolve) => {
+      const effect: ActiveEffect = {
+        update: (now: number): boolean => {
+          const t = Math.min(1, (now - start) / EXPLOSION_DURATION);
+          const ease = 1 - Math.pow(1 - t, 3); // easeOutCubic
+
+          // White core flashes fast then vanishes.
+          const coreR = maxR * (0.35 + ease * 0.55);
+          core.scale.setScalar(coreR);
+          coreMat.opacity = Math.max(0, 1 - t * 3.2);
+
+          // Fireball expands fully and fades over the whole duration.
+          fire.scale.setScalar(maxR * (0.5 + ease));
+          fireMat.opacity = Math.max(0, 0.8 * (1 - ease));
+
+          if (t >= 1) { resolve(); return false; }
+          return true;
+        },
+        dispose: () => {
+          scene.remove(core, fire);
+          coreGeo.dispose(); coreMat.dispose();
+          fireGeo.dispose(); fireMat.dispose();
+        },
+      };
+      this.effects.push(effect);
+    });
   }
 
   /**
@@ -196,23 +515,56 @@ export class FirstPersonView {
     const scale = hexR > 1e-9 ? HEX_WORLD_RADIUS / hexR : 1;
     const toWorld = (px: number, py: number): [number, number, number] => [px * scale, 0, -py * scale];
 
+    // Shared, neighbour-averaged height for every boundary vertex — defines the
+    // single continuous tilted surface that both the terrain mesh and the units
+    // sit on. Built once and reused so units conform to exactly what's drawn.
+    const heightOf = this.buildVertexHeight(flatTiles);
+
+    // Capture projection state for picking + overlays.
+    this.flatTiles = flatTiles;
+    this.tileById = new Map(flatTiles.map((ft) => [ft.tileIndex, ft]));
+    this.projScale = scale;
+    this.toWorld = toWorld;
+    this.heightOf = heightOf;
+    this.selectedUnitId = null;
+    this.rangeResult = null;
+
     this.buildOverlay();
     this.buildScene();
-    this.buildEnvironment(flatTiles, toWorld);
-    this.placeUnits(flatTiles, toWorld, unit.id);
+    this.buildEnvironment(flatTiles, toWorld, heightOf);
 
-    // Camera anchor = the selected unit's segment centroid, eye-height above ground.
+    // Groups for units + command overlays, rebuilt independently as state changes.
+    this.unitsGroup = new THREE.Group();
+    this.rangeGroup = new THREE.Group();
+    this.routeGroup = new THREE.Group();
+    this.scene!.add(this.unitsGroup, this.rangeGroup, this.routeGroup);
+    this.rebuildUnits();
+
+    // Auto-select the entry unit if it belongs to the commandable faction.
+    if (this.cmd && unit.ownerId === this.cmd.getActiveFaction()) {
+      this.selectUnit(unit.id);
+    }
+
+    // Initial camera: sit at the selected unit's eye, looking along its facing,
+    // then pull back and lift a little so the unit (and its ring) is in frame —
+    // a gentle starting pose for the free-fly camera.
     const eye = segmentCentroid(centre, unit.segment);
     const [ex, , ez] = toWorld(eye.x, eye.y);
-    const centreTop = elevationWorldHeight(this.world.tiles[unit.tileIndex]);
+    const centreGround = sampleSurface(centre, eye.x, eye.y, toWorld, heightOf,
+      elevationWorldHeight(this.world.tiles[unit.tileIndex])).height;
     const centreAir = isDrone(unit) ? DRONE_AIR_HEIGHT : 0;
-    this.anchor.set(ex, centreTop + centreAir + EYE_HEIGHT, ez);
-    this.boom = 0;
 
-    // Initial look direction = the unit's facing direction in the flat view.
     const dir = facingDirection(centre, unit.facing);
     this.yaw = Math.atan2(dir.x, -dir.z);
-    this.pitch = 0;
+    this.pitch = -0.12;
+
+    const eyeY = centreGround + centreAir + EYE_HEIGHT;
+    const back = HEX_WORLD_RADIUS * 6;
+    const forward = this.forwardVec();
+    this.camPos.set(ex, eyeY, ez)
+      .addScaledVector(forward, -back)
+      .add(new THREE.Vector3(0, back * 0.35, 0));
+    this.clampPos();
 
     this.active = true;
     this.resize();
@@ -233,6 +585,35 @@ export class FirstPersonView {
     cancelAnimationFrame(this.rafId);
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('keydown', this.onKeyDown);
+    window.removeEventListener('mouseup', this.onMouseUp);
+    this.contextMenu.close();
+    this.contextMenuOpen = false;
+
+    // Dispose any in-flight combat effects (missiles / explosions).
+    for (const fx of this.effects) {
+      try { fx.dispose(); } catch { /* best-effort */ }
+    }
+    this.effects = [];
+
+    // Dispose command-overlay + unit geometries (materials are shared singletons).
+    for (const g of this.unitGeoms) {
+      try { g.dispose(); } catch { /* best-effort */ }
+    }
+    this.unitGeoms = [];
+    for (const m of this.unitMats) {
+      try { m.dispose(); } catch { /* best-effort */ }
+    }
+    this.unitMats = [];
+    this.clearGroup(this.rangeGroup);
+    this.clearGroup(this.routeGroup);
+    this.unitsGroup = null;
+    this.rangeGroup = null;
+    this.routeGroup = null;
+    this.pickMeshes = [];
+    this.flatTiles = [];
+    this.tileById.clear();
+    this.selectedUnitId = null;
+    this.rangeResult = null;
 
     for (const d of this.disposables) {
       try {
@@ -312,27 +693,15 @@ export class FirstPersonView {
     return map;
   }
 
-  /** Build the ground hexes (raised to terrain elevation) and a far horizon disc. */
-  private buildEnvironment(flatTiles: FlatTile[], toWorld: (px: number, py: number) => [number, number, number]): void {
-    const scene = this.scene!;
-    const textures = this.getTerrainTextures();
-
-    // Determine the lowest terrain top so cliff skirts can drop to a common
-    // floor below everything — this closes the vertical gaps that open up
-    // between hexes at different elevations.
-    let minTop = Infinity;
-    for (const ft of flatTiles) {
-      minTop = Math.min(minTop, elevationWorldHeight(this.world.tiles[ft.tileIndex]));
-    }
-    if (!isFinite(minTop)) minTop = 0;
-    const floorY = minTop - HEX_WORLD_RADIUS * 1.5;
-
-    // Continuous surface: average each shared boundary vertex's height across
-    // every tile that touches it. Because adjacent hexes share the same
-    // projected vertices, they resolve to identical heights — so the plateau
-    // tops tilt to meet their neighbours and the terrain reads as one smooth,
-    // sloping landform rather than stepped plateaus. Steeper neighbours produce
-    // steeper tilts. (Skirts below still close the outer rim and any coastline.)
+  /**
+   * Build the shared "continuous surface" height lookup: average each boundary
+   * vertex's plateau height across every tile that touches it. Because adjacent
+   * hexes share the same projected vertices, they resolve to identical heights —
+   * so the plateau tops tilt to meet their neighbours and the terrain reads as
+   * one smooth, sloping landform rather than stepped plateaus. The unit-placement
+   * pass samples this exact surface so models conform to what's drawn.
+   */
+  private buildVertexHeight(flatTiles: FlatTile[]): (p: { x: number; y: number }) => number {
     const vKey = (p: { x: number; y: number }): string =>
       `${Math.round(p.x * 1e4)}:${Math.round(p.y * 1e4)}`;
     const vAccum = new Map<string, { sum: number; count: number }>();
@@ -345,10 +714,30 @@ export class FirstPersonView {
         else vAccum.set(k, { sum: tTop, count: 1 });
       }
     }
-    const vertexHeight = (p: { x: number; y: number }): number => {
+    return (p: { x: number; y: number }): number => {
       const acc = vAccum.get(vKey(p));
       return acc ? acc.sum / acc.count : 0;
     };
+  }
+
+  /** Build the ground hexes (raised to terrain elevation) and a far horizon disc. */
+  private buildEnvironment(
+    flatTiles: FlatTile[],
+    toWorld: (px: number, py: number) => [number, number, number],
+    vertexHeight: (p: { x: number; y: number }) => number,
+  ): void {
+    const scene = this.scene!;
+    const textures = this.getTerrainTextures();
+
+    // Determine the lowest terrain top so cliff skirts can drop to a common
+    // floor below everything — this closes the vertical gaps that open up
+    // between hexes at different elevations.
+    let minTop = Infinity;
+    for (const ft of flatTiles) {
+      minTop = Math.min(minTop, elevationWorldHeight(this.world.tiles[ft.tileIndex]));
+    }
+    if (!isFinite(minTop)) minTop = 0;
+    const floorY = minTop - HEX_WORLD_RADIUS * 1.5;
 
     // Far horizon ground so there's no void beyond the rendered hexes.
     const horizonGeo = new THREE.CircleGeometry(FIELD_EXTENT * 5, 48);
@@ -443,6 +832,7 @@ export class FirstPersonView {
     }
 
     // One textured mesh per terrain key for the plateau tops.
+    this.pickMeshes = [];
     for (const [key, grp] of topGroups) {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(grp.positions), 3));
@@ -456,7 +846,9 @@ export class FirstPersonView {
         metalness: 0.0,
         side: THREE.DoubleSide,
       });
-      scene.add(new THREE.Mesh(geo, mat));
+      const topMesh = new THREE.Mesh(geo, mat);
+      scene.add(topMesh);
+      this.pickMeshes.push(topMesh);
       this.disposables.push(geo, mat);
     }
 
@@ -476,15 +868,28 @@ export class FirstPersonView {
     this.disposables.push(edgeGeo, edgeMat);
   }
 
-  /** Build and place a 3D model for every unit within the view radius. */
-  private placeUnits(
-    flatTiles: FlatTile[],
-    toWorld: (px: number, py: number) => [number, number, number],
-    selectedUnitId: string,
-  ): void {
-    const scene = this.scene!;
-    const tileById = new Map<number, FlatTile>();
-    for (const ft of flatTiles) tileById.set(ft.tileIndex, ft);
+  /** (Re)build a 3D model for every unit in view, into the units group. */
+  private rebuildUnits(): void {
+    const scene = this.scene;
+    const group = this.unitsGroup;
+    if (!scene || !group) return;
+
+    // Tear down previous models (dispose geometries; materials are shared).
+    for (const child of [...group.children]) group.remove(child);
+    for (const g of this.unitGeoms) {
+      try { g.dispose(); } catch { /* best-effort */ }
+    }
+    this.unitGeoms = [];
+    for (const m of this.unitMats) {
+      try { m.dispose(); } catch { /* best-effort */ }
+    }
+    this.unitMats = [];
+
+    const flatTiles = this.flatTiles;
+    const toWorld = this.toWorld;
+    const heightOf = this.heightOf;
+    const selectedUnitId = this.selectedUnitId ?? '';
+    const tileById = this.tileById;
 
     for (const unit of this.world.units) {
       const ft = tileById.get(unit.tileIndex);
@@ -507,39 +912,454 @@ export class FirstPersonView {
       const box2 = new THREE.Box3().setFromObject(model);
       const groundLift = -box2.min.y;
 
+      // Sample the real (tilted) terrain surface under the unit's footprint so
+      // it sits on the slope rather than floating at the flat plateau height.
       const cen = segmentCentroid(ft, unit.segment);
       const [wx, , wz] = toWorld(cen.x, cen.y);
-      const top = elevationWorldHeight(this.world.tiles[unit.tileIndex]);
-      const air = isDrone(unit) ? DRONE_AIR_HEIGHT : 0;
-      model.position.set(wx, top + air + groundLift, wz);
+      const fallbackTop = elevationWorldHeight(this.world.tiles[unit.tileIndex]);
+      const { height: groundY, normal } = sampleSurface(ft, cen.x, cen.y, toWorld, heightOf, fallbackTop);
 
-      // Rotate model so its front (-Z) points along the unit's facing direction.
       const dir = facingDirection(ft, unit.facing);
-      model.rotation.y = Math.atan2(-dir.x, -dir.z);
+      const drone = isDrone(unit);
 
-      // Subtle highlight ring under the player's own selected unit. Sized off
-      // the hex (not the unit) so the tiny model is still easy to locate.
+      // Ground units conform to the surface normal; drones hover level above it.
+      const up = drone ? new THREE.Vector3(0, 1, 0) : normal;
+      orientToSurface(model, up, dir);
+
+      // Lift the model's base clear of the surface along the surface normal so a
+      // tilted unit doesn't sink a corner into the slope. Drones add air hover.
+      const air = drone ? DRONE_AIR_HEIGHT : 0;
+      model.position.set(
+        wx + up.x * groundLift,
+        groundY + up.y * groundLift + air,
+        wz + up.z * groundLift,
+      );
+
+      // Faction-colour ring on the ground under every unit so the tiny models
+      // are easy to spot and tell apart by side. Always laid flat at ground
+      // level — for drones this sits on the ground directly beneath the hover.
+      const factionRingGeo = new THREE.RingGeometry(FACTION_RING_RADIUS * 0.75, FACTION_RING_RADIUS, 32);
+      const factionRingMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(fc), transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+      const factionRing = new THREE.Mesh(factionRingGeo, factionRingMat);
+      factionRing.rotation.x = -Math.PI / 2;
+      factionRing.position.set(wx, groundY + 0.02, wz);
+      group.add(factionRing);
+      this.unitGeoms.push(factionRingGeo);
+      this.unitMats.push(factionRingMat);
+
+      // Subtle highlight ring under the selected unit. Sized off the hex (not
+      // the unit) so the tiny model is still easy to locate.
       if (unit.id === selectedUnitId) {
         const ringGeo = new THREE.RingGeometry(SELECT_RING_RADIUS * 0.8, SELECT_RING_RADIUS, 32);
         const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
         const ring = new THREE.Mesh(ringGeo, ringMat);
         ring.rotation.x = -Math.PI / 2;
-        ring.position.set(wx, top + 0.03, wz);
-        scene.add(ring);
-        this.disposables.push(ringGeo, ringMat);
+        ring.position.set(wx, groundY + 0.03, wz);
+        group.add(ring);
+        this.unitGeoms.push(ringGeo);
+        this.unitMats.push(ringMat);
       }
 
-      scene.add(model);
-      this.registerModelDisposables(model);
+      group.add(model);
+      model.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (mesh.geometry) this.unitGeoms.push(mesh.geometry);
+      });
     }
   }
 
-  /** Track per-model geometry so it can be freed on close (materials are shared singletons). */
-  private registerModelDisposables(model: THREE.Object3D): void {
-    model.traverse((obj) => {
-      const mesh = obj as THREE.Mesh;
-      if (mesh.geometry) this.disposables.push(mesh.geometry);
+  // ─── Command interaction (select / move / attack / repair) ──────────────────
+
+  /** Remaining movement points for a unit (0 when no command context wired). */
+  private remainingMP(unitId: string): number {
+    return this.cmd ? (this.cmd.turnManager.movementPoints.get(unitId) ?? 0) : 0;
+  }
+
+  /** Raycast a screen point to a tile + hex segment, or null if it missed terrain. */
+  private pickTileSegment(clientX: number, clientY: number): { tileIndex: number; segment: number } | null {
+    if (!this.camera || !this.canvas || this.pickMeshes.length === 0) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const hits = this.raycaster.intersectObjects(this.pickMeshes, false);
+    if (hits.length === 0) return null;
+
+    // Invert the projection: world (x, _, z) → flat (px, py).
+    const p = hits[0].point;
+    const px = p.x / this.projScale;
+    const py = -p.z / this.projScale;
+
+    for (const ft of this.flatTiles) {
+      if (pointInPoly(px, py, ft.poly)) {
+        return { tileIndex: ft.tileIndex, segment: this.segmentAtFlat(ft, px, py) };
+      }
+    }
+    return null;
+  }
+
+  /** Which hex sub-triangle (segment) of a tile contains a flat-space point. */
+  private segmentAtFlat(ft: FlatTile, px: number, py: number): number {
+    const n = ft.poly.length;
+    const a = { x: ft.cx, y: ft.cy };
+    for (let s = 0; s < n; s++) {
+      const w = baryWeights(px, py, a, ft.poly[s], ft.poly[(s + 1) % n]);
+      if (w && w[0] >= -1e-6 && w[1] >= -1e-6 && w[2] >= -1e-6) return s;
+    }
+    return 0;
+  }
+
+  /** Select an own-faction unit by id: compute its range and refresh overlays. */
+  private selectUnit(unitId: string): void {
+    const unit = this.world.units.find((u) => u.id === unitId);
+    this.selectedUnitId = unit ? unitId : null;
+    this.rangeResult = null;
+    if (unit) {
+      const mp = this.remainingMP(unitId);
+      if (mp > 0) this.rangeResult = computeMovementRange(this.world, unit, mp);
+    }
+    this.rebuildUnits();
+    this.rebuildRangeOverlay();
+    this.clearRouteOverlay();
+  }
+
+  /** Left-click: select the own-faction unit under the cursor, else deselect. */
+  private handleLeftClick(clientX: number, clientY: number): void {
+    if (!this.cmd) return;
+    const pick = this.pickTileSegment(clientX, clientY);
+    if (!pick) return;
+    const faction = this.cmd.getActiveFaction();
+    const unit = this.world.units.find(
+      (u) => u.tileIndex === pick.tileIndex && u.segment === pick.segment && u.ownerId === faction,
+    ) ?? this.world.units.find((u) => u.tileIndex === pick.tileIndex && u.ownerId === faction);
+    if (unit) {
+      this.selectUnit(unit.id);
+    } else {
+      this.selectedUnitId = null;
+      this.rangeResult = null;
+      this.rebuildUnits();
+      this.rebuildRangeOverlay();
+      this.clearRouteOverlay();
+    }
+  }
+
+  /**
+   * Right-click command dispatcher — mirrors the priority order of the 2D map's
+   * onRightClick: attack → repair → move. Uses the shared TurnManager so MP and
+   * acted-unit state stay consistent across both views.
+   */
+  private handleCommand(clientX: number, clientY: number): void {
+    if (!this.cmd || !this.selectedUnitId) return;
+    const unit = this.world.units.find((u) => u.id === this.selectedUnitId);
+    if (!unit) return;
+
+    const pick = this.pickTileSegment(clientX, clientY);
+    if (!pick) return;
+    const { tileIndex: targetTile, segment: targetSegment } = pick;
+
+    // --- Context menu: right-click on the selected unit's own segment ---
+    if (targetTile === unit.tileIndex && targetSegment === unit.segment) {
+      this.showContextMenu(clientX, clientY, unit);
+      return;
+    }
+
+    const targetTileData = this.world.tiles[targetTile];
+    const tm = this.cmd.turnManager;
+    const units = this.world.units;
+    const playerOwner = unit.ownerId;
+
+    // --- Attack ---
+    const enemyTarget =
+      units.find((u) => u.tileIndex === targetTile && u.segment === targetSegment && u.ownerId !== playerOwner) ??
+      units.find((u) => u.tileIndex === targetTile && u.ownerId !== playerOwner);
+
+    if (enemyTarget) {
+      const canAct = (tm.movementPoints.get(unit.id) ?? 0) >= 1 && !tm.actedUnits.has(unit.id);
+      if (!canAct) return;
+      if (!isInWeaponRange(this.world.tiles, unit, enemyTarget)) return;
+      tm.actedUnits.add(unit.id);
+      tm.movementPoints.set(unit.id, Math.max(0, (tm.movementPoints.get(unit.id) ?? 0) - 1));
+      this.cmd.onAttack(unit.id, enemyTarget.id);
+      // MP changed — refresh range; main calls refresh() once the attack resolves.
+      this.selectUnit(unit.id);
+      this.cmd.onCommit();
+      return;
+    }
+
+    // --- Repair (friendly damaged unit in the same hex) ---
+    const repairCapable = (unit.attributes.repair ?? 0) >= 1;
+    if (repairCapable && (tm.movementPoints.get(unit.id) ?? 0) > 0 && !tm.actedUnits.has(unit.id)) {
+      const maxHp = (target: UnitData) => (target.attributes.maxHealth ?? 1) * 10;
+      const friendly =
+        units.find((u) => u.tileIndex === targetTile && u.segment === targetSegment && u.ownerId === playerOwner && u.id !== unit.id && u.currentHealth < maxHp(u)) ??
+        units.find((u) => u.tileIndex === targetTile && u.ownerId === playerOwner && u.id !== unit.id && u.currentHealth < maxHp(u));
+      if (friendly && unit.tileIndex === friendly.tileIndex) {
+        tm.actedUnits.add(unit.id);
+        tm.movementPoints.set(unit.id, Math.max(0, (tm.movementPoints.get(unit.id) ?? 0) - 1));
+        this.cmd.onRepair(unit.id, friendly.id);
+        this.selectUnit(unit.id);
+        this.cmd.onCommit();
+        return;
+      }
+    }
+
+    // --- Move ---
+    this.commitMove(unit, targetTile, targetSegment);
+  }
+
+  /**
+   * Commit a move using the exact pathing the hover preview shows
+   * (computeMovementRouteForDestination + extractMovePlan). Mirrors the 2D map's
+   * move-commit block. Returns true if the unit moved.
+   */
+  private commitMove(unit: UnitData, targetTile: number, targetSegment: number): boolean {
+    if (!this.cmd || !this.rangeResult) return false;
+    const remaining = this.remainingMP(unit.id);
+    if (remaining <= 0) return false;
+
+    const targetTileData = this.world.tiles[targetTile];
+    if (
+      isImpassableTerrain(targetTileData.terrain) &&
+      !targetTileData.bridge &&
+      getMovementMode(unit.attributes) !== 'flight'
+    ) {
+      return false;
+    }
+
+    const preferredSegment = targetSegment >= 0 ? targetSegment : unit.segment;
+    const route = computeMovementRouteForDestination(
+      this.world, unit, targetTile, preferredSegment, remaining, this.rangeResult,
+    );
+    const plan = extractMovePlan(route, this.world.tiles);
+    if (!plan) return false;
+    if (plan.destTile === unit.tileIndex && plan.destSegment === unit.segment) return false;
+
+    const units = this.world.units;
+    const existingAtDest = units.filter((u) => u.tileIndex === plan.destTile && u.id !== unit.id);
+    if (plan.destTile !== unit.tileIndex && existingAtDest.length >= 5) return false;
+
+    const occupied = new Set<number>(existingAtDest.map((u) => u.segment));
+    const free = findPreferredSegment(plan.destSegment, occupied);
+    if (free < 0) return false;
+
+    const travelFacing = (plan.facing ?? unit.facing) as 0 | 1 | 2 | 3 | 4 | 5;
+    unit.tileIndex = plan.destTile;
+    unit.segment = free as 0 | 1 | 2 | 3 | 4 | 5;
+    unit.facing = travelFacing;
+    this.cmd.turnManager.movementPoints.set(unit.id, Math.max(0, remaining - plan.mpCost));
+
+    // Recompute range from the new position + refresh overlays/models.
+    this.selectUnit(unit.id);
+    this.cmd.onCommit();
+    return true;
+  }
+
+  /** Hover preview — recompute and draw the route line to the hovered tile. */
+  private handleHover(clientX: number, clientY: number): void {
+    if (!this.cmd || !this.selectedUnitId || !this.rangeResult) {
+      this.clearRouteOverlay();
+      return;
+    }
+    const unit = this.world.units.find((u) => u.id === this.selectedUnitId);
+    if (!unit) { this.clearRouteOverlay(); return; }
+    const remaining = this.remainingMP(unit.id);
+    if (remaining <= 0) { this.clearRouteOverlay(); return; }
+
+    const pick = this.pickTileSegment(clientX, clientY);
+    if (!pick) { this.clearRouteOverlay(); return; }
+    const seg = pick.segment >= 0 ? pick.segment : 0;
+    if (pick.tileIndex === unit.tileIndex && seg === unit.segment) { this.clearRouteOverlay(); return; }
+
+    const enemy = this.world.units.find(
+      (u) => u.tileIndex === pick.tileIndex && u.segment === seg && u.ownerId !== unit.ownerId,
+    );
+    const route = enemy
+      ? computeContextualAttackRoute(
+          this.world, unit, pick.tileIndex, seg, remaining,
+          weaponRangeInTileHops(unit.attributes), this.rangeResult,
+        )
+      : computeMovementRouteForDestination(
+          this.world, unit, pick.tileIndex, seg, remaining, this.rangeResult,
+        );
+    this.rebuildRouteOverlay(route);
+  }
+
+  /**
+   * Charge the once-per-turn rotation fee for a facing change. Returns true if
+   * the rotation is allowed (already paid this turn, or paid now). Mirrors
+   * MapInputHandler.chargeRotation against the shared TurnManager.
+   */
+  private chargeRotation(unitId: string): boolean {
+    if (!this.cmd) return false;
+    const tm = this.cmd.turnManager;
+    if (tm.rotatedUnits.has(unitId)) return true;
+    const remaining = tm.movementPoints.get(unitId) ?? 0;
+    if (remaining < ROTATION_FEE) return false;
+    tm.movementPoints.set(unitId, remaining - ROTATION_FEE);
+    tm.rotatedUnits.add(unitId);
+    return true;
+  }
+
+  /**
+   * Arrow-key rotation for the selected unit:
+   *  · ←/→        rotate facing one step (charges the once-per-turn fee)
+   *  · Shift+←/→  shift the unit to the adjacent hex segment (free re-position)
+   *  · ↑          reset facing to neighbour index 0 (charges the fee)
+   * Returns true if it handled the key.
+   */
+  private handleRotateKey(e: KeyboardEvent): boolean {
+    if (!this.cmd || !this.selectedUnitId) return false;
+    const unit = this.world.units.find((u) => u.id === this.selectedUnitId);
+    if (!unit) return false;
+
+    if (e.key === 'ArrowUp') {
+      if (unit.facing !== 0 && this.chargeRotation(unit.id)) {
+        unit.facing = 0;
+        this.selectUnit(unit.id);
+      }
+      return true;
+    }
+
+    const direction = e.key === 'ArrowRight' ? 1 : -1;
+    if (e.shiftKey) {
+      // Re-position within the hex (segment change) — free, like the 2D map.
+      unit.segment = rotateHexIndex(unit.segment, direction);
+      this.selectUnit(unit.id);
+    } else if (this.chargeRotation(unit.id)) {
+      unit.facing = rotateHexIndex(unit.facing, direction);
+      this.selectUnit(unit.id);
+    }
+    return true;
+  }
+
+  /**
+   * Right-click context menu for the selected unit (rotate / refit / sleep).
+   * Reuses the shared UnitContextMenu via a thin host adapter. The "View" item
+   * is suppressed (onViewUnit = null) since we are already in first-person.
+   */
+  private showContextMenu(clientX: number, clientY: number, unit: UnitData): void {
+    if (!this.cmd) return;
+    const cmd = this.cmd;
+    this.contextMenu.close();
+    this.contextMenuOpen = true;
+
+    this.contextMenu.show(clientX, clientY, unit, {
+      chargeRotation: (id) => this.chargeRotation(id),
+      closeContextMenu: () => {
+        this.contextMenu.close();
+        this.contextMenuOpen = false;
+      },
+      view: {
+        selectedTile: unit.tileIndex,
+        selectedSegment: unit.segment,
+        // Facing/segment may have changed — rebuild models + range overlay.
+        onTileSelectCb: () => { this.selectUnit(unit.id); },
+        render: () => { /* continuous render loop handles redraw */ },
+        getMaxMovement: (u) => getMaxMovement(u.attributes),
+        movementPoints: cmd.turnManager.movementPoints,
+        onRefit: (id) => cmd.onRefit(id),
+        onSleepUnit: (id) => cmd.onSleep(id),
+        onViewUnit: null,
+      },
     });
+  }
+
+  // ─── 3D command overlays ────────────────────────────────────────────────────
+
+  /** Lift a flat-space point onto the rendered terrain surface (+ epsilon). */
+  private liftFlat(ft: FlatTile, x: number, y: number, eps = 0.12): THREE.Vector3 {
+    const [wx, , wz] = this.toWorld(x, y);
+    const top = elevationWorldHeight(this.world.tiles[ft.tileIndex]);
+    const h = sampleSurface(ft, x, y, this.toWorld, this.heightOf, top).height;
+    return new THREE.Vector3(wx, h + eps, wz);
+  }
+
+  /** Translucent fill of one hex segment triangle (centre, vertex s, vertex s+1). */
+  private addSegmentFill(group: THREE.Group, ft: FlatTile, seg: number, color: number, opacity: number): void {
+    const n = ft.poly.length;
+    const a = this.liftFlat(ft, ft.cx, ft.cy);
+    const b = this.liftFlat(ft, ft.poly[seg % n].x, ft.poly[seg % n].y);
+    const c = this.liftFlat(ft, ft.poly[(seg + 1) % n].x, ft.poly[(seg + 1) % n].y);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(
+      new Float32Array([a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z]), 3));
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false });
+    group.add(new THREE.Mesh(geo, mat));
+  }
+
+  /** Rebuild the movement-range fill overlay from the current range result. */
+  private rebuildRangeOverlay(): void {
+    const group = this.rangeGroup;
+    if (!group) return;
+    this.clearGroup(group);
+    const rr = this.rangeResult;
+    if (!rr) return;
+
+    for (const [key, zone] of rr.reachableSegments) {
+      const ft = this.tileById.get(Math.floor(key / 6));
+      if (!ft) continue;
+      this.addSegmentFill(group, ft, key % 6, zone === 'attackReady' ? 0x33dd66 : 0x4488ff, 0.22);
+    }
+    // Static weapon-range segments (attack without moving) — red, where not already a move tint.
+    for (const key of rr.staticAttackSegments) {
+      if (rr.reachableSegments.has(key)) continue;
+      const ft = this.tileById.get(Math.floor(key / 6));
+      if (!ft) continue;
+      this.addSegmentFill(group, ft, key % 6, 0xff4444, 0.18);
+    }
+  }
+
+  private zoneColor(zone?: string): number {
+    if (zone === 'attackReady') return 0x33dd66;
+    if (zone === 'weaponRange') return 0xff4444;
+    return 0x4488ff; // moveOnly / default
+  }
+
+  /** Centroid of a tile segment lifted onto the terrain surface (route height). */
+  private centroidLift(tileIndex: number, segment: number): THREE.Vector3 | null {
+    const ft = this.tileById.get(tileIndex);
+    if (!ft) return null;
+    const cen = segmentCentroid(ft, segment);
+    return this.liftFlat(ft, cen.x, cen.y, 0.28);
+  }
+
+  /** Rebuild the hover route line, colouring each hop by its zone. */
+  private rebuildRouteOverlay(route: MovementCostRoute | null): void {
+    const group = this.routeGroup;
+    if (!group) return;
+    this.clearGroup(group);
+    if (!route) return;
+
+    let prev = this.centroidLift(route.startTile, route.startSegment);
+    for (const hop of route.hops) {
+      const cur = this.centroidLift(hop.tileIndex, hop.segment);
+      if (prev && cur) {
+        const geo = new THREE.BufferGeometry().setFromPoints([prev, cur]);
+        const mat = new THREE.LineBasicMaterial({ color: this.zoneColor(hop.zone) });
+        group.add(new THREE.Line(geo, mat));
+      }
+      prev = cur ?? prev;
+    }
+  }
+
+  private clearRouteOverlay(): void {
+    this.clearGroup(this.routeGroup);
+  }
+
+  /** Remove all children of an overlay group, disposing their geometry + material. */
+  private clearGroup(group: THREE.Group | null): void {
+    if (!group) return;
+    for (const child of [...group.children]) {
+      const obj = child as THREE.Mesh | THREE.Line;
+      obj.geometry?.dispose();
+      const mat = obj.material as THREE.Material | THREE.Material[] | undefined;
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else mat?.dispose();
+      group.remove(child);
+    }
   }
 
   // ─── DOM overlay ──────────────────────────────────────────────────────────
@@ -560,7 +1380,7 @@ export class FirstPersonView {
     container.appendChild(canvas);
 
     const hint = document.createElement('div');
-    hint.textContent = 'Drag to look around · scroll to zoom out for a battlefield overview · Esc to exit';
+    hint.textContent = 'Click a unit to select · right-click to move/attack (or open its menu) · ←/→ rotate · drag to pan · Ctrl+drag to look · scroll zoom · Esc exit';
     Object.assign(hint.style, {
       position: 'absolute',
       bottom: '16px',
@@ -593,28 +1413,60 @@ export class FirstPersonView {
     exitBtn.addEventListener('click', () => this.close());
     container.appendChild(exitBtn);
 
-    // Look controls — drag to rotate yaw/pitch.
+    // Free-fly controls:
+    //  · left-drag        → pan the camera across the battlefield (screen plane)
+    //  · Ctrl+left-drag   → look around in place (yaw/pitch, no movement)
+    //  · left-click       → select an own-faction unit (shows movement range)
+    //  · right-click      → move / attack / repair with the selected unit
+    //  · wheel            → dolly forward/back along the view direction (zoom)
     canvas.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return; // left button only; right-click is a command
       this.dragging = true;
       this.lastX = e.clientX;
       this.lastY = e.clientY;
-      container.style.cursor = 'grabbing';
+      this.downX = e.clientX;
+      this.downY = e.clientY;
+      this.moved = false;
+      container.style.cursor = e.ctrlKey ? 'grabbing' : 'move';
     });
-    window.addEventListener('mouseup', this.endDrag);
+    window.addEventListener('mouseup', this.onMouseUp);
+    canvas.addEventListener('contextmenu', this.onContextMenu);
     canvas.addEventListener('mousemove', (e) => {
-      if (!this.dragging) return;
+      if (!this.dragging) {
+        this.queueHover(e.clientX, e.clientY);
+        return;
+      }
       const dx = e.clientX - this.lastX;
       const dy = e.clientY - this.lastY;
       this.lastX = e.clientX;
       this.lastY = e.clientY;
-      this.yaw += dx * LOOK_SPEED;
-      this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch + dy * LOOK_SPEED));
+      if (Math.abs(e.clientX - this.downX) > 4 || Math.abs(e.clientY - this.downY) > 4) this.moved = true;
+
+      if (e.ctrlKey) {
+        // Look around in place — "grab the surface and turn it": dragging moves
+        // the world the same way it does when panning. Drag right → world swings
+        // right (camera yaws left); drag down → world tilts down (camera looks up).
+        this.yaw -= dx * LOOK_SPEED;
+        this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch + dy * LOOK_SPEED));
+      } else {
+        // Pan: "grab the surface and drag it" — the point under the cursor follows
+        // the cursor. Drag right → surface slides right (eye moves left); drag down
+        // → surface slides toward you (eye moves forward). Stays on the horizontal
+        // plane (yaw-based axes, pitch ignored) so altitude never changes.
+        const sinY = Math.sin(this.yaw), cosY = Math.cos(this.yaw);
+        const fwdX = sinY, fwdZ = -cosY;   // horizontal forward (yaw only)
+        const rightX = cosY, rightZ = sinY; // horizontal right
+        const panAmt = PAN_FACTOR * Math.max(this.camPos.y, EYE_HEIGHT);
+        this.camPos.x += (dy * fwdX - dx * rightX) * panAmt;
+        this.camPos.z += (dy * fwdZ - dx * rightZ) * panAmt;
+      }
       this.applyLook();
     });
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      // Scroll down/away = zoom out (pull the eye back and up); scroll up = zoom in.
-      this.boom = Math.max(0, Math.min(BOOM_MAX, this.boom + (e.deltaY > 0 ? BOOM_STEP : -BOOM_STEP)));
+      // Scroll up = move forward (zoom in); scroll down = move back (zoom out).
+      const forward = this.forwardVec();
+      this.camPos.addScaledVector(forward, e.deltaY > 0 ? -BOOM_STEP : BOOM_STEP);
       this.applyLook();
     }, { passive: false });
 
@@ -623,29 +1475,63 @@ export class FirstPersonView {
     this.canvas = canvas;
   }
 
-  private endDrag = () => {
+  private onMouseUp = (e: MouseEvent) => {
+    const wasDragging = this.dragging;
     this.dragging = false;
     if (this.container) this.container.style.cursor = 'grab';
+    // A left press that didn't drag (and isn't a look gesture) is a selection click.
+    if (wasDragging && e.button === 0 && !this.moved && !e.ctrlKey) {
+      this.handleLeftClick(e.clientX, e.clientY);
+    }
   };
+
+  private onContextMenu = (e: MouseEvent) => {
+    e.preventDefault();
+    this.handleCommand(e.clientX, e.clientY);
+  };
+
+  /** Throttle hover-route recomputation to once per animation frame. */
+  private queueHover(x: number, y: number): void {
+    if (!this.cmd || !this.selectedUnitId) return;
+    this.hoverX = x;
+    this.hoverY = y;
+    if (this.hoverPending) return;
+    this.hoverPending = true;
+    requestAnimationFrame(() => {
+      this.hoverPending = false;
+      if (this.active) this.handleHover(this.hoverX, this.hoverY);
+    });
+  }
 
   // ─── Per-frame ────────────────────────────────────────────────────────────
 
-  private applyLook(): void {
-    if (!this.camera) return;
+  /** Unit view-direction vector from the current yaw/pitch. */
+  private forwardVec(): THREE.Vector3 {
     const cp = Math.cos(this.pitch);
-    const forward = new THREE.Vector3(
+    return new THREE.Vector3(
       Math.sin(this.yaw) * cp,
       Math.sin(this.pitch),
       -Math.cos(this.yaw) * cp,
     );
-    // Eye pulls back along -forward and gains altitude as the boom grows, so
-    // zooming out rises into an overview while still looking along `forward`.
-    const pos = this.anchor.clone()
-      .addScaledVector(forward, -this.boom)
-      .add(new THREE.Vector3(0, BOOM_LIFT * this.boom, 0));
-    pos.y = Math.max(pos.y, 0.5); // keep the eye above the ground
-    this.camera.position.copy(pos);
-    this.camera.lookAt(pos.x + forward.x, pos.y + forward.y, pos.z + forward.z);
+  }
+
+  /** Keep the free-fly eye inside the battlefield borders and above the ground. */
+  private clampPos(): void {
+    this.camPos.x = Math.max(-FIELD_EXTENT, Math.min(FIELD_EXTENT, this.camPos.x));
+    this.camPos.z = Math.max(-FIELD_EXTENT, Math.min(FIELD_EXTENT, this.camPos.z));
+    this.camPos.y = Math.max(0.5, Math.min(BOOM_MAX, this.camPos.y));
+  }
+
+  private applyLook(): void {
+    if (!this.camera) return;
+    this.clampPos();
+    const forward = this.forwardVec();
+    this.camera.position.copy(this.camPos);
+    this.camera.lookAt(
+      this.camPos.x + forward.x,
+      this.camPos.y + forward.y,
+      this.camPos.z + forward.z,
+    );
   }
 
   private resize(): void {
@@ -660,13 +1546,37 @@ export class FirstPersonView {
   private loop(): void {
     if (!this.active) return;
     this.rafId = requestAnimationFrame(() => this.loop());
+    if (this.effects.length > 0) this.updateEffects();
     if (this.renderer && this.scene && this.camera) {
       this.renderer.render(this.scene, this.camera);
+    }
+  }
+
+  /** Advance all active combat effects, disposing any that have finished. */
+  private updateEffects(): void {
+    const now = performance.now();
+    for (let i = this.effects.length - 1; i >= 0; i--) {
+      if (!this.effects[i].update(now)) {
+        this.effects[i].dispose();
+        this.effects.splice(i, 1);
+      }
     }
   }
 }
 
 // ─── Pure geometry helpers (flat-view projected coords) ───────────────────────
+
+/** A combat effect (missile / explosion) ticked each render frame.
+ *  `update` returns false once finished, signalling the loop to dispose it. */
+interface ActiveEffect {
+  update(nowMs: number): boolean;
+  dispose(): void;
+}
+
+/** Smooth ease used by the missile arc (mirrors combatAnimations.ts). */
+function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
 
 /** A drone is any unit with at least one point of flight movement. */
 function isDrone(unit: UnitData): boolean {
@@ -679,7 +1589,11 @@ function isDrone(unit: UnitData): boolean {
  * ELEV_WORLD_SCALE. Ocean sits slightly below the flat floor.
  */
 function elevationWorldHeight(tile: TileData): number {
-  if (tile.terrain === 'ocean' || tile.elevType === 'ocean') return -0.25 * ELEV_WORLD_SCALE;
+  // True open ocean sits just below the flat floor. River hexes share the
+  // ocean terrain type but descend the valley toward the sea — use their own
+  // height so they don't render flattened at sea level.
+  const isOpenOcean = (tile.terrain === 'ocean' || tile.elevType === 'ocean') && tile.rv === undefined;
+  if (isOpenOcean) return -0.25 * ELEV_WORLD_SCALE;
   return (tileHeight(tile) / (HEIGHT_LEVELS - 1)) * ELEV_WORLD_SCALE;
 }
 
@@ -712,4 +1626,79 @@ function facingDirection(ft: FlatTile, facing: number): { x: number; z: number }
   const ey = (v0.y + v1.y) / 2 - ft.cy;
   const len = Math.sqrt(ex * ex + ey * ey) || 1;
   return { x: ex / len, z: -ey / len };
+}
+
+/**
+ * Barycentric weights of point (px,py) within triangle a-b-c (flat coords).
+ * Returns [wa, wb, wc] or null for a degenerate triangle. Weights are invariant
+ * under the uniform scale + y-flip of `toWorld`, so they're computed in flat
+ * space and reused to interpolate world-space heights.
+ */
+function baryWeights(
+  px: number, py: number,
+  a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number },
+): [number, number, number] | null {
+  const v0x = b.x - a.x, v0y = b.y - a.y;
+  const v1x = c.x - a.x, v1y = c.y - a.y;
+  const v2x = px - a.x, v2y = py - a.y;
+  const den = v0x * v1y - v1x * v0y;
+  if (Math.abs(den) < 1e-12) return null;
+  const wb = (v2x * v1y - v1x * v2y) / den;
+  const wc = (v0x * v2y - v2x * v0y) / den;
+  return [1 - wb - wc, wb, wc];
+}
+
+/**
+ * Sample the rendered hex-top surface at a flat-view point. The top is drawn as
+ * a triangle fan from poly[0] using the shared (neighbour-averaged) vertex
+ * heights, so this finds the fan triangle containing (px,py), returns the
+ * barycentric-interpolated world height, and the triangle's upward normal (so
+ * units can be tilted to match the slope they're standing on). Falls back to the
+ * tile's flat plateau height with a straight-up normal if no triangle matches.
+ */
+function sampleSurface(
+  ft: FlatTile,
+  px: number, py: number,
+  toWorld: (px: number, py: number) => [number, number, number],
+  heightOf: (p: { x: number; y: number }) => number,
+  fallback: number,
+): { height: number; normal: THREE.Vector3 } {
+  const n = ft.poly.length;
+  const lift = (p: { x: number; y: number }): THREE.Vector3 => {
+    const [wx, , wz] = toWorld(p.x, p.y);
+    return new THREE.Vector3(wx, heightOf(p), wz);
+  };
+  for (let i = 1; i < n - 1; i++) {
+    const a = ft.poly[0], b = ft.poly[i], c = ft.poly[i + 1];
+    const bary = baryWeights(px, py, a, b, c);
+    if (!bary) continue;
+    const [wa, wb, wc] = bary;
+    if (wa < -1e-6 || wb < -1e-6 || wc < -1e-6) continue;
+    const height = wa * heightOf(a) + wb * heightOf(b) + wc * heightOf(c);
+    const pa = lift(a), pb = lift(b), pc = lift(c);
+    const normal = new THREE.Vector3()
+      .subVectors(pb, pa)
+      .cross(new THREE.Vector3().subVectors(pc, pa))
+      .normalize();
+    if (normal.y < 0) normal.negate();
+    return { height, normal };
+  }
+  return { height: fallback, normal: new THREE.Vector3(0, 1, 0) };
+}
+
+/**
+ * Orient `model` so its up axis (+Y) aligns with the surface normal `up` and its
+ * front (-Z) points along the horizontal facing direction `dir`, projected onto
+ * the surface's tangent plane. On flat ground this reduces to a plain yaw; on a
+ * slope it tilts the model to lie flush with the terrain.
+ */
+function orientToSurface(model: THREE.Object3D, up: THREE.Vector3, dir: { x: number; z: number }): void {
+  const y = up.clone().normalize();
+  // Local +Z = backward; tangent it onto the surface so the model lies flush.
+  const z = new THREE.Vector3(-dir.x, 0, -dir.z);
+  z.addScaledVector(y, -z.dot(y));
+  if (z.lengthSq() < 1e-9) z.set(0, 0, 1); // facing parallel to normal — pick any tangent
+  z.normalize();
+  const x = new THREE.Vector3().crossVectors(y, z).normalize();
+  model.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
 }

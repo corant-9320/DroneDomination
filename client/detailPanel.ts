@@ -18,6 +18,7 @@ import { readableUnitName } from './unitNames.js';
 import { esc, capitalize, toneColor } from './htmlUtils.js';
 import type { ExplainedCombat } from '../shared/combatTypes.js';
 import { getMaxMovement } from '../shared/movementConstants.js';
+import { tileHeight, HEIGHT_LEVELS } from '../shared/movementConstants.js';
 import type { TurnManager } from './turnManager.js';
 
 // ---------------------------------------------------------------------------
@@ -40,6 +41,7 @@ const ATTR_ROWS: AttrRow[] = [
   { label: 'Range Att', key: 'rangeAttack' },
   { label: 'Anti-Air',  key: 'antiAir' },
   { label: 'Repair',    key: 'repair' },
+  { label: 'Engineer',  key: 'engineer' },
   { label: 'Movement',  key: 'wheeledMovement' },
   { label: 'Movement',  key: 'limbMovement' },
   { label: 'Movement',  key: 'flightMovement' },
@@ -172,7 +174,21 @@ export class DetailPanel {
     if (tile.f) parts.push('Forested');
     const elev = capitalize(tile.elevType);
     const terrain = capitalize(tile.terrain);
-    parts.push(elev === 'Flat' ? terrain : `${elev} ${terrain}`);
+    // River hexes are ocean terrain under the hood — label them as rivers.
+    if (tile.bridge) {
+      parts.push('Bridge (river crossing)');
+    } else if (tile.rv !== undefined) {
+      parts.push('River');
+    } else {
+      parts.push(elev === 'Flat' ? terrain : `${elev} ${terrain}`);
+    }
+    // Discrete terrain height (0–11). Open ocean sits at sea level; rivers
+    // descend the valley so they report their own height.
+    if (tile.terrain === 'ocean' && tile.rv === undefined) {
+      parts.push('Height 0/' + (HEIGHT_LEVELS - 1) + ' (sea level)');
+    } else {
+      parts.push(`Height ${tileHeight(tile)}/${HEIGHT_LEVELS - 1}`);
+    }
     if (city) {
       const owner = city.isPlayerHome ? 'Player' : 'Enemy';
       parts.push(`${owner} City: ${city.label}`);
