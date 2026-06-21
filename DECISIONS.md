@@ -4,6 +4,34 @@ Append-only record of design decisions, gotchas, and known issues. The game's
 rules are invented as we go — this log is how that intent survives across
 sessions so agents stop re-discovering (or re-breaking) the same things.
 
+## 2026-06-21 — Combat formula consolidated into combatFormula.ts
+
+**Decision:** Damage calculation now lives in a single self-contained file,
+`src/world/combatFormula.ts`. It is pure — no imports of `Unit`/`Tile` — and
+exposes one entry point, `computeDamage(input: DamageInput): DamageBreakdown`,
+plus all tuning constants (curve, scales, chassis modifiers, drone multipliers,
+EW effectiveness, elevation). `combatMath.ts` was removed.
+
+`combat.ts` is now the gathering/adapter layer: it reads world state (EW,
+terrain, elevation, bearing, distance), packs a clean `DamageInput`, and calls
+`computeDamage`. The old `Unit`/`Tile`-taking helpers (`getChassisAttackModifier`,
+`calculateModifiedAttackPower`, `calculateElevationMultiplier`,
+`applyDroneIncomingDamageModifier`, `getSegmentRangeThreshold`, `getElevationLevel`,
+`isDrone`) remain as thin adapters in `combat.ts` for backward compatibility, so
+`combatExplainer.ts` and all tests are unchanged.
+
+**Why:** Backbone for the upcoming combat-rules changes (elevation→range, EW
+radius/anti-drone, drone range-1, Size ceiling). Each of those alters the
+formula's inputs; a clean pure-formula / state-gathering split makes them
+isolated, testable edits. To tune balance or change the formula, edit
+`combatFormula.ts` only.
+
+**Impact:** Behavior-preserving — `tsc --noEmit` clean, all 347 tests pass.
+`WeaponMode` is intentionally NOT exported from `combatFormula.ts` (it stays the
+single export from `combat.ts`) to avoid a barrel type-collision in `index.ts`.
+Checkpoint before this work: `683ac44`. `combatMath.ts` references updated in
+`ARCHITECTURE.md`, `README.md`, `shared/rangeCheck.ts`.
+
 ## 2026-06-21 — Defensive formation bonus deprecated
 
 **Decision:** Removed the *defensive formation* term from DefencePower. Adjacent

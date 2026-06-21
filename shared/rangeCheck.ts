@@ -8,7 +8,7 @@
  * can satisfy it via a thin adapter.
  */
 
-// ─── Constants (must match src/world/combatMath.ts) ───────────────────────────
+// ─── Constants (must match src/world/combatFormula.ts) ───────────────────────────
 
 /** Each point of rangeAttack extends range by this many hex-units of segment distance. */
 export const SEGMENT_RANGE_PER_POINT = 0.5;

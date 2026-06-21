@@ -89,7 +89,7 @@ src/              → Server/CLI-only core logic (NOT client-importable)
     spawn.ts          spawnInitialUnits(tiles, cities) → Unit[]
     compact.ts        toCompactWorld/toCompactTile/toCompactUnit (wire format)
     combat.ts         resolveCombat() — deterministic combat on the hex grid
-    combatMath.ts     Pure, stateless damage formulas
+    combatFormula.ts  Pure, self-contained damage formula (clean param objects)
     combatFacing.ts   Bearing-based orientation bonus geometry
     movement.ts       moveUnit/pivot primitives (unified segment-step cost)
     turnState.ts      Per-unit movement tracking within a turn

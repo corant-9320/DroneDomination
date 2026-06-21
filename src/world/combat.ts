@@ -14,16 +14,21 @@
  * - Defence uses a 0.75 scale factor to stay meaningful without being overwhelming
  * - Orientation is additive: front +0, side +1, rear +2
  *
- * Pure math lives in combatMath.ts.
+ * The pure, self-contained damage formula lives in combatFormula.ts.
  * Arc/facing geometry lives in combatFacing.ts.
+ *
+ * This file is the GATHERING/ADAPTER layer: it reads game state (units, tiles,
+ * EW, terrain, elevation, bearing) and packs clean inputs for combatFormula's
+ * computeDamage(). The Unit/Tile-taking helpers below are thin adapters over
+ * the pure formula functions, kept for backward compatibility.
  */
 
-import { Tile } from './types.js';
+import { Tile, ElevationType } from './types.js';
 import { Unit, HexSegment } from './units.js';
 import { effectiveCombatDistance } from './segmentGeometry.js';
 
 // ---------------------------------------------------------------------------
-// Re-export everything from sub-modules so existing importers stay compatible
+// Re-export the pure formula surface so existing importers stay compatible
 // ---------------------------------------------------------------------------
 
 export {
@@ -43,19 +48,20 @@ export {
   DRONE_SPLASH_FIRE_DAMAGE_MULTIPLIER,
   DRONE_ANTI_AIR_DAMAGE_MULTIPLIER,
   ELEVATION_MULTIPLIER_PER_LEVEL,
-  // Functions
-  isDrone,
-  getChassisAttackModifier,
+  EW_EFFECTIVENESS_DIRECT,
+  EW_EFFECTIVENESS_SPLASH,
+  EW_EFFECTIVENESS_ANTIAIR,
+  // Pure functions
   calculateRangeEfficiency,
-  calculateModifiedAttackPower,
-  applyDroneIncomingDamageModifier,
   clamp,
   applyDamage,
   calculateFormulaDamage,
-  getSegmentRangeThreshold,
-  getElevationLevel,
-  calculateElevationMultiplier,
-} from './combatMath.js';
+  computeDamage,
+  // Types
+  type ChassisType,
+  type DamageInput,
+  type DamageBreakdown,
+} from './combatFormula.js';
 
 export {
   // Types
@@ -76,24 +82,25 @@ export {
 } from './combatFacing.js';
 
 // ---------------------------------------------------------------------------
-// Local imports from sub-modules (for use within this file)
+// Local imports (for use within this file)
 // ---------------------------------------------------------------------------
 
 import {
   DEFENCE_SCALE,
-  MAX_DAMAGE,
-  MIN_DAMAGE,
-  SPLASH_SCALE,
-  isDrone,
-  getChassisAttackModifier,
-  calculateModifiedAttackPower,
-  applyDroneIncomingDamageModifier,
+  EW_EFFECTIVENESS_DIRECT,
+  EW_EFFECTIVENESS_SPLASH,
+  EW_EFFECTIVENESS_ANTIAIR,
+  type ChassisType,
+  getChassisModifier,
+  calculateRangeEfficiency,
+  modifiedAttackPower,
+  elevationDamageMultiplier,
+  droneIncomingDamageModifier,
+  segmentRangeThreshold,
   clamp,
   applyDamage,
-  calculateFormulaDamage,
-  getSegmentRangeThreshold,
-  calculateElevationMultiplier,
-} from './combatMath.js';
+  computeDamage,
+} from './combatFormula.js';
 
 import {
   type AttackArc,
@@ -105,6 +112,84 @@ import {
   classifyArcFromAngle,
   getAngularDifference,
 } from './combatFacing.js';
+
+// ---------------------------------------------------------------------------
+// Unit/Tile adapters — gather state from game objects, delegate to combatFormula
+// ---------------------------------------------------------------------------
+
+/** Returns true if the unit has a flight chassis (drone). */
+export function isDrone(unit: Unit): boolean {
+  return (unit.attributes.flightMovement ?? 0) >= 1;
+}
+
+/** Classify a unit's chassis from its movement attributes. */
+export function getChassisType(unit: Unit): ChassisType {
+  if ((unit.attributes.flightMovement ?? 0) > 0) return 'drone';
+  if ((unit.attributes.limbMovement ?? 0) > 0) return 'spider';
+  return 'tank';
+}
+
+/** Outgoing weapon power multiplier for a unit (by chassis). */
+export function getChassisAttackModifier(unit: Unit): number {
+  return getChassisModifier(getChassisType(unit));
+}
+
+/**
+ * Modified attack power for a unit's weapon (adapter over combatFormula).
+ * @param distance graph distance for range falloff (1 = no falloff).
+ */
+export function calculateModifiedAttackPower(
+  unit: Unit,
+  baseWeaponValue: number,
+  orientationBonus: number,
+  distance: number = 1,
+): number {
+  return modifiedAttackPower(
+    getChassisAttackModifier(unit),
+    baseWeaponValue,
+    orientationBonus,
+    calculateRangeEfficiency(distance),
+  );
+}
+
+/** Map elevation type to a numeric level for comparison. */
+export function getElevationLevel(elevationType: ElevationType): number {
+  switch (elevationType) {
+    case 'flat':     return 0;
+    case 'rolling':  return 1;
+    case 'hills':    return 2;
+    case 'mountain': return 3;
+    default:         return 0;
+  }
+}
+
+/** Elevation damage multiplier for two tiles and the combatants (adapter). */
+export function calculateElevationMultiplier(
+  attackerTile: Tile,
+  defenderTile: Tile,
+  attackerUnit: Unit,
+  targetUnit: Unit,
+): number {
+  return elevationDamageMultiplier(
+    getElevationLevel(attackerTile.elevationType),
+    getElevationLevel(defenderTile.elevationType),
+    isDrone(attackerUnit) || isDrone(targetUnit),
+  );
+}
+
+/** Apply the drone incoming damage modifier (adapter — resolves isDrone). */
+export function applyDroneIncomingDamageModifier(
+  weaponMode: 'direct' | 'splash' | 'antiAir',
+  targetUnit: Unit,
+  damage: number,
+): number {
+  return droneIncomingDamageModifier(weaponMode, isDrone(targetUnit), damage);
+}
+
+/** Segment-distance range threshold for a unit (adapter). */
+export function getSegmentRangeThreshold(unit: Unit): number {
+  return segmentRangeThreshold(unit.attributes.rangeAttack ?? 0);
+}
 
 // ---------------------------------------------------------------------------
 // Formation support — DEPRECATED (2026-06-21)
@@ -164,19 +249,9 @@ export function getTerrainDefense(tile: Tile): number {
 // ---------------------------------------------------------------------------
 
 /**
- * EW effectiveness multipliers by weapon mode.
- *
- * Electronic Warfare is less effective against physical projectiles (kinetic)
- * and somewhat effective against area fire (splash), but fully effective
- * against dedicated electronic targeting systems (antiAir / reaction).
- *
- * - direct (kinetic):  50% — bullets/shells bypass most ECM
- * - splash:            75% — area weapons are partially jammed
- * - antiAir / reaction: 100% — AA targeting is fully countered by EW
+ * EW effectiveness multipliers by weapon mode now live in combatFormula.ts
+ * (EW_EFFECTIVENESS_DIRECT/SPLASH/ANTIAIR), imported and re-exported above.
  */
-export const EW_EFFECTIVENESS_DIRECT = 0.50;
-export const EW_EFFECTIVENESS_SPLASH = 0.75;
-export const EW_EFFECTIVENESS_ANTIAIR = 1.00;
 
 /**
  * Calculate the full DefencePower for a target unit.
@@ -241,21 +316,21 @@ export function calculateDirectDamage(
 
   // EW is 50% effective against kinetic (direct) fire
   const defencePower = getDefencePower(target, allUnits, tiles, 'direct');
-  const baseAttack = clamp(attacker.attributes.kinetic ?? 0, 1, 5);
-  const attackPower = calculateModifiedAttackPower(attacker, baseAttack, orientationBonus, distance);
-  const effectiveDefence = defencePower.total * DEFENCE_SCALE;
-
-  let damage = calculateFormulaDamage(attackPower, effectiveDefence);
-
-  // Apply elevation advantage multiplier (before drone modifier)
-  const elevMult = calculateElevationMultiplier(tiles[attacker.tileIndex], tiles[target.tileIndex], attacker, target);
-  damage = clamp(Math.round(damage * elevMult), MIN_DAMAGE, MAX_DAMAGE);
-
-  // Apply drone incoming damage modifier
   const antiDronePenaltyApplied = isDrone(target);
-  damage = applyDroneIncomingDamageModifier('direct', target, damage);
 
-  return { damage, arc, orientationBonus, defencePower, antiDronePenaltyApplied };
+  const { finalDamage } = computeDamage({
+    mode: 'direct',
+    attackerChassis: getChassisType(attacker),
+    baseWeaponValue: attacker.attributes.kinetic ?? 0,
+    orientationBonus,
+    distance,
+    effectiveDefence: defencePower.total * DEFENCE_SCALE,
+    attackerElevationLevel: getElevationLevel(tiles[attacker.tileIndex].elevationType),
+    defenderElevationLevel: getElevationLevel(tiles[target.tileIndex].elevationType),
+    targetIsDrone: antiDronePenaltyApplied,
+  });
+
+  return { damage: finalDamage, arc, orientationBonus, defencePower, antiDronePenaltyApplied };
 }
 
 /**
@@ -282,30 +357,26 @@ export function calculateSplashDamage(
   if (splashPower <= 0) return 0;
 
   // Orientation bonus only for the originally selected target (bearing-based)
-  let orientationBonus = 0;
-  if (victim.id === selectedTarget.id) {
-    orientationBonus = calculateOrientationBonus(tiles, attacker.tileIndex, victim.tileIndex, victim.facing);
-  }
+  const orientationBonus = victim.id === selectedTarget.id
+    ? calculateOrientationBonus(tiles, attacker.tileIndex, victim.tileIndex, victim.facing)
+    : 0;
 
-  const baseSplash = clamp(splashPower, 1, 5);
-  const splashAttackPower = calculateModifiedAttackPower(attacker, baseSplash, orientationBonus, distance);
   // EW is 75% effective against splash fire
   const defPower = getDefencePower(victim, allUnits, tiles, 'splash');
-  const effectiveDefence = defPower.total * DEFENCE_SCALE;
 
-  const fullFormulaDamage = calculateFormulaDamage(splashAttackPower, effectiveDefence);
+  const { finalDamage } = computeDamage({
+    mode: 'splash',
+    attackerChassis: getChassisType(attacker),
+    baseWeaponValue: splashPower,
+    orientationBonus,
+    distance,
+    effectiveDefence: defPower.total * DEFENCE_SCALE,
+    attackerElevationLevel: getElevationLevel(tiles[attacker.tileIndex].elevationType),
+    defenderElevationLevel: getElevationLevel(tiles[victim.tileIndex].elevationType),
+    targetIsDrone: isDrone(victim),
+  });
 
-  // Apply elevation advantage multiplier (before splash scaling and drone modifier)
-  const elevMult = calculateElevationMultiplier(tiles[attacker.tileIndex], tiles[victim.tileIndex], attacker, victim);
-  const elevAdjustedDamage = clamp(Math.round(fullFormulaDamage * elevMult), MIN_DAMAGE, MAX_DAMAGE);
-
-  // Splash scaling applied before drone modifier
-  let result = Math.max(MIN_DAMAGE, Math.round(elevAdjustedDamage * SPLASH_SCALE));
-
-  // Drone incoming damage modifier applied after splash scaling
-  result = applyDroneIncomingDamageModifier('splash', victim, result);
-
-  return result;
+  return finalDamage;
 }
 
 // ---------------------------------------------------------------------------
@@ -430,16 +501,22 @@ export function evaluateWeaponOptions(
 
   // --- Anti-Air Fire ---
   if ((attacker.attributes.antiAir ?? 0) > 0 && isDrone(target)) {
-    const aaLevel = clamp(attacker.attributes.antiAir!, 1, 5);
-    const aaAttackPower = calculateModifiedAttackPower(attacker, aaLevel, orientationBonus, dist);
     const defencePower = getDefencePower(target, allUnits, tiles, 'antiAir');
-    const effectiveDefence = defencePower.total * DEFENCE_SCALE;
-    let antiAirDamage = calculateFormulaDamage(aaAttackPower, effectiveDefence);
-    // Elevation multiplier does not apply to drones (calculateElevationMultiplier returns 1.0)
+    const { finalDamage } = computeDamage({
+      mode: 'antiAir',
+      attackerChassis: getChassisType(attacker),
+      baseWeaponValue: attacker.attributes.antiAir!,
+      orientationBonus,
+      distance: dist,
+      effectiveDefence: defencePower.total * DEFENCE_SCALE,
+      attackerElevationLevel: getElevationLevel(tiles[attacker.tileIndex].elevationType),
+      defenderElevationLevel: getElevationLevel(tiles[target.tileIndex].elevationType),
+      targetIsDrone: true,
+    });
     options.push({
       mode: 'antiAir',
-      score: antiAirDamage,
-      damages: [{ unitId: target.id, damage: antiAirDamage }],
+      score: finalDamage,
+      damages: [{ unitId: target.id, damage: finalDamage }],
     });
   }
 
@@ -606,15 +683,24 @@ export function calculateAntiAirReactionDamage(
   allUnits: Unit[],
   tiles: Tile[],
 ): number {
-  const aaLevel = clamp(reactingUnit.attributes.antiAir ?? 0, 1, 5);
-  const chassisModifier = getChassisAttackModifier(reactingUnit);
-  // No orientation bonus for reaction fire (snap shot)
-  const attackPower = Math.max(0.01, aaLevel * chassisModifier);
-  // Anti-air / reaction fire uses full EW effectiveness (100%)
+  // Anti-air / reaction fire uses full EW effectiveness (100%).
   const defPower = getDefencePower(drone, allUnits, tiles, 'antiAir');
   // Terrain is 0 for airborne drones (formation bonus deprecated — see getDefencePower)
   const airborneDefence = (defPower.armour + defPower.ew) * DEFENCE_SCALE;
-  return calculateFormulaDamage(attackPower, airborneDefence);
+
+  const { finalDamage } = computeDamage({
+    mode: 'antiAir',
+    attackerChassis: getChassisType(reactingUnit),
+    baseWeaponValue: reactingUnit.attributes.antiAir ?? 0,
+    orientationBonus: 0,
+    distance: 1,
+    effectiveDefence: airborneDefence,
+    attackerElevationLevel: 0,
+    defenderElevationLevel: 0,
+    targetIsDrone: true,
+    isReactionFire: true,
+  });
+  return finalDamage;
 }
 
 /**

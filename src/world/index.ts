@@ -9,7 +9,7 @@ export * from './units.js';
 export * from './buildings.js';
 export * from './spawn.js';
 export * from './compact.js';
-export * from './combatMath.js';
+export * from './combatFormula.js';
 export * from './combatFacing.js';
 export * from './combat.js';
 export * from './repair.js';
