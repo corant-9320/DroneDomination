@@ -26,6 +26,7 @@
 import { Tile, ElevationType } from './types.js';
 import { Unit, HexSegment } from './units.js';
 import { effectiveCombatDistance } from './segmentGeometry.js';
+import { elevationRangeMultiplier } from '../../shared/rangeCheck.js';
 
 // ---------------------------------------------------------------------------
 // Re-export the pure formula surface so existing importers stay compatible
@@ -47,7 +48,6 @@ export {
   DRONE_DIRECT_FIRE_DAMAGE_MULTIPLIER,
   DRONE_SPLASH_FIRE_DAMAGE_MULTIPLIER,
   DRONE_ANTI_AIR_DAMAGE_MULTIPLIER,
-  ELEVATION_MULTIPLIER_PER_LEVEL,
   EW_EFFECTIVENESS_DIRECT,
   EW_EFFECTIVENESS_SPLASH,
   EW_EFFECTIVENESS_ANTIAIR,
@@ -94,7 +94,6 @@ import {
   getChassisModifier,
   calculateRangeEfficiency,
   modifiedAttackPower,
-  elevationDamageMultiplier,
   droneIncomingDamageModifier,
   segmentRangeThreshold,
   clamp,
@@ -161,20 +160,6 @@ export function getElevationLevel(elevationType: ElevationType): number {
     case 'mountain': return 3;
     default:         return 0;
   }
-}
-
-/** Elevation damage multiplier for two tiles and the combatants (adapter). */
-export function calculateElevationMultiplier(
-  attackerTile: Tile,
-  defenderTile: Tile,
-  attackerUnit: Unit,
-  targetUnit: Unit,
-): number {
-  return elevationDamageMultiplier(
-    getElevationLevel(attackerTile.elevationType),
-    getElevationLevel(defenderTile.elevationType),
-    isDrone(attackerUnit) || isDrone(targetUnit),
-  );
 }
 
 /** Apply the drone incoming damage modifier (adapter — resolves isDrone). */
@@ -325,8 +310,6 @@ export function calculateDirectDamage(
     orientationBonus,
     distance,
     effectiveDefence: defencePower.total * DEFENCE_SCALE,
-    attackerElevationLevel: getElevationLevel(tiles[attacker.tileIndex].elevationType),
-    defenderElevationLevel: getElevationLevel(tiles[target.tileIndex].elevationType),
     targetIsDrone: antiDronePenaltyApplied,
   });
 
@@ -371,8 +354,6 @@ export function calculateSplashDamage(
     orientationBonus,
     distance,
     effectiveDefence: defPower.total * DEFENCE_SCALE,
-    attackerElevationLevel: getElevationLevel(tiles[attacker.tileIndex].elevationType),
-    defenderElevationLevel: getElevationLevel(tiles[victim.tileIndex].elevationType),
     targetIsDrone: isDrone(victim),
   });
 
@@ -509,8 +490,6 @@ export function evaluateWeaponOptions(
       orientationBonus,
       distance: dist,
       effectiveDefence: defencePower.total * DEFENCE_SCALE,
-      attackerElevationLevel: getElevationLevel(tiles[attacker.tileIndex].elevationType),
-      defenderElevationLevel: getElevationLevel(tiles[target.tileIndex].elevationType),
       targetIsDrone: true,
     });
     options.push({
@@ -559,9 +538,15 @@ export function resolveAttack(
     return invalidResult(attackerId, targetId, 'Anti-Air weapons can only target drones');
   }
 
-  // Range check — segment-based gate (0.25 per segment, continuous)
+  // Range check — segment-based gate, extended by elevation (higher ground
+  // shoots farther; lower ground shorter). No elevation effect for drones.
   const segDist = effectiveCombatDistance(tiles, attacker, target);
-  const rangeThreshold = getSegmentRangeThreshold(attacker);
+  const elevRangeMult = elevationRangeMultiplier(
+    tiles[attacker.tileIndex].elevationType,
+    tiles[target.tileIndex].elevationType,
+    isDrone(attacker) || isDrone(target),
+  );
+  const rangeThreshold = getSegmentRangeThreshold(attacker) * elevRangeMult;
   if (segDist > rangeThreshold) {
     return invalidResult(attackerId, targetId, 'Target out of range');
   }
@@ -695,8 +680,6 @@ export function calculateAntiAirReactionDamage(
     orientationBonus: 0,
     distance: 1,
     effectiveDefence: airborneDefence,
-    attackerElevationLevel: 0,
-    defenderElevationLevel: 0,
     targetIsDrone: true,
     isReactionFire: true,
   });

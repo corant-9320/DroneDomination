@@ -83,9 +83,11 @@ export const EW_EFFECTIVENESS_ANTIAIR = 1.00;
 // ---------------------------------------------------------------------------
 // Elevation
 // ---------------------------------------------------------------------------
-
-/** Elevation advantage multiplier per level difference (+/-10% per level). */
-export const ELEVATION_MULTIPLIER_PER_LEVEL = 0.10;
+//
+// Elevation no longer affects damage. It affects attack RANGE instead — a unit
+// on higher ground shoots farther, lower ground shorter. That logic lives in
+// shared/rangeCheck.ts (elevationRangeMultiplier) so the client and server
+// range gates agree.
 
 /** Weapon mode names used throughout the formula. */
 type WeaponMode = 'direct' | 'splash' | 'antiAir';
@@ -168,21 +170,6 @@ export function calculateFormulaDamage(attackPower: number, effectiveDefence: nu
 }
 
 /**
- * Elevation damage multiplier.
- * multiplier = clamp(1 + (attackerLevel - defenderLevel) × 0.10, 0.70, 1.30).
- * Returns 1.0 (no effect) when either combatant is airborne (a drone).
- */
-export function elevationDamageMultiplier(
-  attackerLevel: number,
-  defenderLevel: number,
-  eitherIsDrone: boolean,
-): number {
-  if (eitherIsDrone) return 1.0;
-  const delta = attackerLevel - defenderLevel;
-  return clamp(1 + delta * ELEVATION_MULTIPLIER_PER_LEVEL, 0.70, 1.30);
-}
-
-/**
  * Apply the drone incoming damage modifier based on weapon mode.
  * Only reduces damage when the target is a drone.
  */
@@ -230,11 +217,7 @@ export interface DamageInput {
   distance: number;
   /** Defender's effective defence (DefencePower × DEFENCE_SCALE), already composed by the caller. */
   effectiveDefence: number;
-  /** Elevation level (0–3) of the attacker's tile. */
-  attackerElevationLevel: number;
-  /** Elevation level (0–3) of the defender's tile. */
-  defenderElevationLevel: number;
-  /** Whether the target is a drone (drives incoming-damage modifier + elevation skip). */
+  /** Whether the target is a drone (drives incoming-damage modifier). */
   targetIsDrone: boolean;
   /** Anti-air reaction fire: no range falloff, no orientation bonus (snap shot). */
   isReactionFire?: boolean;
@@ -247,7 +230,6 @@ export interface DamageBreakdown {
   attackPower: number;
   effectiveDefence: number;
   rawFormulaDamage: number;
-  elevationMultiplier: number;
   finalDamage: number;
 }
 
@@ -257,9 +239,10 @@ export interface DamageBreakdown {
  * Order of operations (matches the documented combat rules):
  *   1. AttackPower = (clamp(base,1,5) × chassisMod × rangeEff) + orientation
  *   2. rawFormulaDamage = ratio curve vs effectiveDefence
- *   3. × elevation multiplier (no-op for airborne combatants)
- *   4. × SPLASH_SCALE (splash mode only)
- *   5. × drone incoming-damage modifier (drone targets only)
+ *   3. × SPLASH_SCALE (splash mode only)
+ *   4. × drone incoming-damage modifier (drone targets only)
+ *
+ * Elevation no longer affects damage (it affects range — see rangeCheck.ts).
  */
 export function computeDamage(input: DamageInput): DamageBreakdown {
   const chassisModifier = getChassisModifier(input.attackerChassis);
@@ -270,14 +253,7 @@ export function computeDamage(input: DamageInput): DamageBreakdown {
 
   const rawFormulaDamage = calculateFormulaDamage(attackPower, input.effectiveDefence);
 
-  const attackerIsDrone = input.attackerChassis === 'drone';
-  const elevationMultiplier = elevationDamageMultiplier(
-    input.attackerElevationLevel,
-    input.defenderElevationLevel,
-    attackerIsDrone || input.targetIsDrone,
-  );
-
-  let damage = clamp(Math.round(rawFormulaDamage * elevationMultiplier), MIN_DAMAGE, MAX_DAMAGE);
+  let damage = rawFormulaDamage;
 
   if (input.mode === 'splash') {
     damage = Math.max(MIN_DAMAGE, Math.round(damage * SPLASH_SCALE));
@@ -291,7 +267,6 @@ export function computeDamage(input: DamageInput): DamageBreakdown {
     attackPower,
     effectiveDefence: input.effectiveDefence,
     rawFormulaDamage,
-    elevationMultiplier,
     finalDamage: damage,
   };
 }

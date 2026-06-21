@@ -82,7 +82,7 @@ export interface CombatBreakdown {
   defFormation: number;
   /** Terrain component of defence. */
   defTerrain: number;
-  /** Elevation damage multiplier (0.70–1.30). 1.0 = same elevation or drone involved. */
+  /** Elevation range multiplier (0.50–1.50). 1.0 = same elevation or drone involved. Higher ground shoots farther. */
   elevationMultiplier: number;
   /** Damage absorbed by drone evasion (0 if target is not a drone, or antiAir mode). */
   droneEvasion: number;

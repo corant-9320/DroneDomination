@@ -5,9 +5,10 @@ import type { UnitAttributes } from '../../shared/unitTypes.js';
 /**
  * Regression guard for KI-2: the server combat endpoint must preserve tile
  * elevation through the wire format. Before the fix, `rebuildTiles` dropped
- * `elevationType`, so the elevation multiplier (COMBAT_RULES §13) was always
- * 1.0 on the server path. The src/world combat tests build full Tile objects
- * directly and so never exercised the wire layer where the drop happened.
+ * `elevationType`, so the elevation modifier was always 1.0 on the server path.
+ * Elevation now drives the attack-RANGE multiplier (COMBAT_RULES §13); this
+ * test confirms the wire layer still carries elevation so the breakdown's
+ * `elevationMultiplier` (now a range multiplier) reflects it.
  */
 
 const ATTRS: UnitAttributes = {
@@ -52,14 +53,14 @@ function previewRequest(elev0: string, elev1: string): CombatRequest {
 }
 
 describe('server combat wire layer — elevation (KI-2)', () => {
-  it('preserves elevation so uphill attackers gain a damage multiplier', () => {
+  it('preserves elevation so uphill attackers gain a range multiplier', () => {
     const res = handleCombat(previewRequest('hills', 'flat'));
     expect(res.success).toBe(true);
-    // Attacker on hills (level 2) firing at flat (level 0): delta +2 → ×1.20.
+    // Attacker on hills (level 2) firing at flat (level 0): delta +2 → ×1.33 range.
     expect(res.combats[0].breakdown?.elevationMultiplier).toBeGreaterThan(1.0);
   });
 
-  it('applies a penalty when the attacker is downhill', () => {
+  it('applies a range penalty when the attacker is downhill', () => {
     const res = handleCombat(previewRequest('flat', 'hills'));
     expect(res.success).toBe(true);
     expect(res.combats[0].breakdown?.elevationMultiplier).toBeLessThan(1.0);

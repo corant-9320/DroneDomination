@@ -83,7 +83,7 @@ The world is a Goldberg polyhedron — mostly hexagons with 12 pentagons.
 |----------|--------|-----------------|
 | `terrainType` | `grassland`, `plains`, `tundra`, `desert`, `ocean` | Determines forest eligibility. |
 | `height` | `0`–`11` | Discrete terrain height. Drives movement steepness and globe cliff shadows. `elevationType` is a band derived from it. |
-| `elevationType` | `flat`, `rolling`, `hills`, `mountain` | Band over `height` (0–2/3–5/6–8/9–11). Elevation advantage multiplier (offensive). **Not impassable** — high ground is reachable; steep borders block movement (see Movement §). |
+| `elevationType` | `flat`, `rolling`, `hills`, `mountain` | Band over `height` (0–2/3–5/6–8/9–11). Elevation **range** multiplier (attack reach). **Not impassable** — high ground is reachable; steep borders block movement (see Movement §). |
 | `forested` | `true` / `false` | +1 terrain defence. Only possible on grassland at non-mountain elevation. |
 | `neighbours` | Array of 5 or 6 adjacent tile indices | Defines adjacency for movement, range, formation. |
 | `sides` | 5 or 6 | Pentagon (5) or hexagon (6). |
@@ -553,16 +553,18 @@ terrainDefence = forested ? 1 : 0
 
 Elevation no longer contributes to terrain defence — it is handled by the elevation advantage multiplier (see below).
 
-### Elevation Advantage (Damage Multiplier)
+### Elevation Advantage (Range Multiplier)
 
-Relative elevation between attacker and defender modifies final damage as a multiplier. Each elevation level of advantage gives +10% damage; each level of disadvantage gives −10% damage.
+Relative elevation between attacker and defender modifies **attack range** (not
+damage). A unit on higher ground shoots farther; on lower ground, shorter. This
+multiplier scales the attack-reach threshold for all weapon modes (direct,
+splash, anti-air alike).
 
 #### Elevation Levels
 
-The advantage multiplier uses the 4-way **band** (`elevationType`), which is
+The multiplier uses the 4-way **band** (`elevationType`), which is
 derived from the tile's `height` (0–11): `flat` 0–2, `rolling` 3–5, `hills` 6–8,
-`mountain` 9–11. Using the band (not the raw height) keeps this multiplier's
-range and balance unchanged by the 12-level model.
+`mountain` 9–11.
 
 | ElevationType | Level |
 |---|---|
@@ -574,34 +576,44 @@ range and balance unchanged by the 12-level model.
 #### Formula
 
 ```
-elevationDelta = attackerElevationLevel − defenderElevationLevel
-elevationMultiplier = clamp(1 + elevationDelta × 0.10, 0.70, 1.30)
+elevationDelta      = attackerElevationLevel − defenderElevationLevel
+rangeMultiplier     = clamp(1 + elevationDelta × (0.5 / 3), 0.50, 1.50)
+effectiveThreshold  = baseRangeThreshold × rangeMultiplier
 ```
 
-The multiplier is applied to formula damage **after** the core damage formula but **before** the drone incoming damage modifier and splash scaling.
+Max delta is 3 (mountain vs flat): attacker +3 → ×1.50 range; −3 → ×0.50 range.
+The gate is `segmentDistance ≤ effectiveThreshold`, checked once in
+`resolveAttack` before weapon selection.
 
 #### Example Values
 
-| Attacker → Defender | Delta | Multiplier | Effect |
-|---|---|---|---|
-| Mountain → Flat | +3 | ×1.30 | +30% damage |
-| Mountain → Rolling | +2 | ×1.20 | +20% damage |
-| Hills → Flat | +2 | ×1.20 | +20% damage |
-| Hills → Rolling | +1 | ×1.10 | +10% damage |
-| Same elevation | 0 | ×1.00 | No change |
-| Flat → Rolling | −1 | ×0.90 | −10% damage |
-| Flat → Hills | −2 | ×0.80 | −20% damage |
-| Flat → Mountain | −3 | ×0.70 | −30% damage |
+| Attacker → Defender | Delta | Range Multiplier |
+|---|---|---|
+| Mountain → Flat | +3 | ×1.50 |
+| Hills → Flat | +2 | ×1.33 |
+| Hills → Rolling | +1 | ×1.17 |
+| Same elevation | 0 | ×1.00 |
+| Flat → Rolling | −1 | ×0.83 |
+| Flat → Hills | −2 | ×0.67 |
+| Flat → Mountain | −3 | ×0.50 |
 
 #### Drone Exception
 
-Elevation advantage does **not** apply when either the attacker or the defender is a drone (airborne units are unaffected by ground elevation). The multiplier is always 1.0 in these cases.
+The elevation range multiplier does **not** apply when either the attacker or
+the defender is a drone (airborne units are unaffected by ground elevation).
+The multiplier is always 1.0 in these cases.
+
+> **Lives in `shared/rangeCheck.ts`** (`elevationRangeMultiplier`) so the client
+> and server range gates agree. NOTE: the client's in-range *highlight* overlay
+> currently uses base range; the authoritative server gate and the attack
+> preview both account for elevation. (Follow-up: thread elevation into the
+> client highlight.)
 
 #### Interaction with Forest Defence
 
-Forest defence (terrain component of DefencePower) and elevation advantage are **independent effects** that stack naturally:
-- A unit on forested hills gets +1 terrain defence AND attackers firing uphill at it take an elevation penalty.
-- A unit on a mountain firing downhill gets +30% damage, regardless of the defender's forest cover.
+Forest defence (terrain component of DefencePower) and the elevation range
+multiplier are **independent effects**: forest cover reduces incoming damage,
+while elevation changes how far a unit can reach.
 
 ### Terrain Type Constraints (World Generation)
 
@@ -1020,7 +1032,7 @@ Neither attacker gets priority — both fire at full health.
 | `EW_CAP` | 5 | Maximum EW contribution from same-hex allies. |
 | `FORMATION_CAP` | 2 | Maximum defensive formation supporter count (each contributes 0.5, so max +1.0 to DefencePower). |
 | `TERRAIN_DEFENCE_CAP` | 1 | Maximum terrain defence value (forest only). |
-| `ELEVATION_MULTIPLIER_PER_LEVEL` | 0.10 | ±10% damage per elevation level difference. Clamped to [0.70, 1.30]. |
+| `ELEVATION_RANGE_PER_LEVEL` | 0.5 / 3 ≈ 0.167 | Range multiplier per elevation level difference. Clamped to [0.50, 1.50]. Affects attack reach, not damage. |
 | `REACTION_FIRE_AIR_ONLY` | true | Reaction Fire only triggers against drone / air units. |
 | `REACTION_FIRE_USES_ANTI_AIR_ONLY` | true | Reaction Fire may only use Anti-Air Fire. |
 | `DRONE_PATHING_IGNORES_ENEMY_OCCUPANCY` | true | Drone pathing ignores enemy-occupied tiles. |
@@ -1106,9 +1118,7 @@ When evaluating combat for a defending unit, these tile/formation properties mat
 
 | Contextual Factor | Contribution | Cap |
 |-------------------|--------------|-----|
-| Terrain (elevation) | hills=1, mountain=3 | — |
-| Terrain (forest) | +1 | — |
-| Terrain total | elevation + forest | 4 |
-| Formation (adj. friendlies) | +1 per friendly | 2 |
+| Terrain (forest) | +1 terrain defence | 1 |
+| Elevation (range) | ×0.50–×1.50 attack reach (per level ≈ ±16.7%) | clamp [0.50, 1.50] |
 | Orientation bonus | front=0, side=+1, rear=+2 | 2 |
 | Chassis modifier (outgoing) | tank=1.00, spider=0.75, drone=0.50 | — |

@@ -16,6 +16,48 @@ export const SEGMENT_RANGE_PER_POINT = 0.5;
 /** Base reach — a unit with rangeAttack=0 can hit adjacent segments within this. */
 export const SEGMENT_RANGE_BASE = 1.0;
 
+// ─── Elevation → range ────────────────────────────────────────────────────────
+//
+// Elevation no longer affects damage; it lengthens/shortens attack RANGE.
+// A unit on higher ground shoots farther; lower ground shorter. The multiplier
+// scales the range threshold and is shared by client and server so they agree.
+
+/**
+ * Range multiplier per level of elevation difference. Max elevation delta is 3
+ * (mountain vs flat): attacker +3 levels → ×1.5 range, −3 → ×0.5 range.
+ */
+export const ELEVATION_RANGE_PER_LEVEL = 0.5 / 3;
+/** Clamp bounds for the elevation range multiplier. */
+export const ELEVATION_RANGE_MIN = 0.5;
+export const ELEVATION_RANGE_MAX = 1.5;
+
+/** Map an elevation type to a numeric level (flat 0 … mountain 3). */
+export function elevationLevel(elevationType: string | undefined): number {
+  switch (elevationType) {
+    case 'rolling':  return 1;
+    case 'hills':    return 2;
+    case 'mountain': return 3;
+    default:         return 0; // 'flat' / unknown
+  }
+}
+
+/**
+ * Elevation range multiplier from the attacker's and defender's elevation types.
+ * multiplier = clamp(1 + (attackerLevel − defenderLevel) × ELEVATION_RANGE_PER_LEVEL,
+ *                    ELEVATION_RANGE_MIN, ELEVATION_RANGE_MAX).
+ * Returns 1.0 when either combatant is airborne (a drone) — pass eitherIsDrone.
+ */
+export function elevationRangeMultiplier(
+  attackerElevationType: string | undefined,
+  defenderElevationType: string | undefined,
+  eitherIsDrone = false,
+): number {
+  if (eitherIsDrone) return 1.0;
+  const delta = elevationLevel(attackerElevationType) - elevationLevel(defenderElevationType);
+  const m = 1 + delta * ELEVATION_RANGE_PER_LEVEL;
+  return Math.max(ELEVATION_RANGE_MIN, Math.min(m, ELEVATION_RANGE_MAX));
+}
+
 // ─── Minimal tile interface ───────────────────────────────────────────────────
 
 export interface RangeTile {
@@ -145,9 +187,10 @@ export function isTargetInRange(
   tiles: RangeTile[],
   attacker: { tileIndex: number; segment: number; rangeAttack: number; hasWeapon: boolean },
   target: { tileIndex: number; segment: number },
+  elevationMultiplier = 1,
 ): boolean {
   if (!attacker.hasWeapon) return false;
-  const threshold = getRangeThreshold(attacker.rangeAttack);
+  const threshold = getRangeThreshold(attacker.rangeAttack) * elevationMultiplier;
   const dist = segmentDistance(tiles, attacker.tileIndex, attacker.segment, target.tileIndex, target.segment);
   return dist <= threshold;
 }

@@ -8,6 +8,7 @@
 import { Tile } from '../src/world/types.js';
 import { Unit } from '../src/world/units.js';
 import { effectiveCombatDistance } from '../src/world/segmentGeometry.js';
+import { elevationRangeMultiplier } from '../shared/rangeCheck.js';
 import {
   getApproachDirection,
   classifyAttackArc,
@@ -27,7 +28,6 @@ import {
   applyDroneIncomingDamageModifier,
   evaluateWeaponOptions,
   chooseWeaponOption,
-  calculateElevationMultiplier,
   EW_EFFECTIVENESS_DIRECT,
   EW_EFFECTIVENESS_SPLASH,
   EW_EFFECTIVENESS_ANTIAIR,
@@ -129,7 +129,14 @@ function buildBreakdown(
   chosenMode: WeaponMode | 'none',
   totalDamage: number,
 ): CombatBreakdown {
-  const inRange = segDist <= rangeThreshold;
+  // Elevation now extends/reduces RANGE (not damage). Higher ground shoots farther.
+  const elevMult = elevationRangeMultiplier(
+    tiles[attacker.tileIndex].elevationType,
+    tiles[target.tileIndex].elevationType,
+    isDrone(attacker) || isDrone(target),
+  );
+  const effectiveThreshold = rangeThreshold * elevMult;
+  const inRange = segDist <= effectiveThreshold;
   const chassisModifier = getChassisAttackModifier(attacker);
   const rangeEfficiency = calculateRangeEfficiency(segDist);
   const targetIsDrone = isDrone(target);
@@ -159,9 +166,6 @@ function buildBreakdown(
   const attackPower = calculateModifiedAttackPower(attacker, baseWeapon, orientationBonus, segDist);
   const rawDamage = calculateFormulaDamage(attackPower, effectiveDefence);
 
-  // Elevation multiplier
-  const elevMult = calculateElevationMultiplier(tiles[attacker.tileIndex], tiles[target.tileIndex], attacker, target);
-
   // Drone evasion: difference between raw and final damage when target is a drone
   let droneEvasion = 0;
   if (targetIsDrone && chosenMode !== 'antiAir') {
@@ -174,7 +178,7 @@ function buildBreakdown(
   return {
     inRange,
     distance: segDist,
-    attackRange: rangeThreshold,
+    attackRange: Math.round(effectiveThreshold * 100) / 100,
     weaponMode,
     baseWeapon,
     chassisLabel: chassisModifier === DRONE_ATTACK_MODIFIER ? 'Drone'
@@ -223,12 +227,23 @@ export function explainAttack(
   const rangeAttack = attacker.attributes.rangeAttack ?? 0;
   const meleeAttack = attacker.attributes.kinetic ?? 0;
   const antiAirAttack = attacker.attributes.antiAir ?? 0;
-  const rangeThreshold = getSegmentRangeThreshold(attacker);
+  const baseRangeThreshold = getSegmentRangeThreshold(attacker);
   const segDist = effectiveCombatDistance(tiles, attacker, target);
+  // Elevation extends/reduces range (higher ground shoots farther). No effect for drones.
+  const rangeElevMult = elevationRangeMultiplier(
+    tiles[attacker.tileIndex].elevationType,
+    tiles[target.tileIndex].elevationType,
+    isDrone(attacker) || isDrone(target),
+  );
+  const rangeThreshold = baseRangeThreshold * rangeElevMult;
+  const elevPct = Math.round((rangeElevMult - 1) * 100);
+  const elevNote = rangeElevMult !== 1
+    ? ` Elevation ${elevPct > 0 ? '+' : ''}${elevPct}% range (${tiles[attacker.tileIndex].elevationType} vs ${tiles[target.tileIndex].elevationType}) → ${rangeThreshold.toFixed(2)}.`
+    : '';
 
   steps.push({
     title: '📏 Range Check',
-    description: `Segment distance from ${attacker.label} to ${target.label} is ${segDist.toFixed(2)} hex-units. Range threshold: ${rangeThreshold.toFixed(2)} (rangeAttack=${rangeAttack} × ${SEGMENT_RANGE_PER_POINT} + ${SEGMENT_RANGE_BASE}).`,
+    description: `Segment distance from ${attacker.label} to ${target.label} is ${segDist.toFixed(2)} hex-units. Base range threshold: ${baseRangeThreshold.toFixed(2)} (rangeAttack=${rangeAttack} × ${SEGMENT_RANGE_PER_POINT} + ${SEGMENT_RANGE_BASE}).${elevNote}`,
     formula: `segDist(${segDist.toFixed(2)}) ≤ threshold(${rangeThreshold.toFixed(2)})`,
     result: segDist <= rangeThreshold ? `✓ In range` : `✗ Out of range`,
     tone: segDist <= rangeThreshold ? 'positive' : 'negative',
@@ -365,19 +380,7 @@ export function explainAttack(
     });
   }
 
-  // Step 6: Elevation advantage (only shown when multiplier ≠ 1.0)
-  const elevMult = calculateElevationMultiplier(tiles[attacker.tileIndex], tiles[target.tileIndex], attacker, target);
-  if (elevMult !== 1.0) {
-    const elevPercent = Math.round((elevMult - 1) * 100);
-    const sign = elevPercent > 0 ? '+' : '';
-    steps.push({
-      title: '⛰ Elevation',
-      description: `Attacker elevation: ${tiles[attacker.tileIndex].elevationType}. Defender elevation: ${tiles[target.tileIndex].elevationType}. Damage multiplier: ×${elevMult.toFixed(2)} (${sign}${elevPercent}%).`,
-      formula: `elevationMultiplier = clamp(1 + delta × 0.10, 0.70, 1.30) = ${elevMult.toFixed(2)}`,
-      result: `${sign}${elevPercent}% damage`,
-      tone: elevPercent > 0 ? 'positive' : 'negative',
-    });
-  }
+  // (Elevation now affects range, shown in the Range Check step above — not damage.)
 
   // Step 7: Health outcome
   // For splash, totalDamage is the aggregate score across all victims.
@@ -412,7 +415,7 @@ export function explainAttack(
     destroyedUnitIds: [],
     breakdown: buildBreakdown(
       attacker, target, allUnits, tiles,
-      segDist, rangeThreshold,
+      segDist, baseRangeThreshold,
       rangeAttack, meleeAttack, antiAirAttack,
       orientationBonus,
       chosenOption.mode === 'direct' ? defPowerDirect

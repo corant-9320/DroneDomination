@@ -4,6 +4,33 @@ Append-only record of design decisions, gotchas, and known issues. The game's
 rules are invented as we go — this log is how that intent survives across
 sessions so agents stop re-discovering (or re-breaking) the same things.
 
+## 2026-06-21 — Elevation moved from damage to range
+
+**Decision:** Relative elevation no longer modifies damage. It now scales the
+attack-RANGE threshold: a unit on higher ground shoots farther, lower ground
+shorter. `rangeMultiplier = clamp(1 + (attackerLevel − defenderLevel) × (0.5/3),
+0.5, 1.5)` — max delta 3 gives ×1.5 (uphill) / ×0.5 (downhill). Applies to the
+unified attack-reach gate (direct/splash/AA). No effect when either combatant is
+a drone (airborne).
+
+**Why:** Height advantage realistically extends weapon reach/line-of-sight more
+than it boosts hit damage, and it pairs better with the upcoming drone/EW rules.
+
+**Impact:**
+- `combatFormula.ts`: removed `elevationDamageMultiplier`, `ELEVATION_MULTIPLIER_PER_LEVEL`,
+  and the elevation step from `computeDamage`; dropped elevation fields from `DamageInput`/`DamageBreakdown`.
+- `shared/rangeCheck.ts`: added `ELEVATION_RANGE_PER_LEVEL`, `elevationLevel`,
+  `elevationRangeMultiplier`; `isTargetInRange` takes an optional `elevationMultiplier` (default 1).
+- `combat.ts` `resolveAttack`: range gate now multiplies the threshold by the elevation range multiplier.
+- `combatExplainer.ts`: Range Check step shows the elevation-adjusted threshold; the elevation
+  *damage* step is removed. `CombatBreakdown.elevationMultiplier` now means the range multiplier.
+- detailPanel relabelled "Elevation (range)".
+- **Known follow-up:** the client in-range *highlight* overlay still uses base range
+  (the shared `isTargetInRange` default). The authoritative server gate and the attack
+  preview both account for elevation, so the player sees the truth on hover.
+- COMBAT_RULES §13 + constants table updated. Checkpoint before this work: `cfb31f1`.
+- tsc clean, 347 tests pass.
+
 ## 2026-06-21 — `maxHealth` renamed to `size`; size is a locked ceiling
 
 **Decision:** The `maxHealth` unit attribute is renamed to `size` (1–5). Size is

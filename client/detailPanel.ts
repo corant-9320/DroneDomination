@@ -319,13 +319,13 @@ export class DetailPanel {
     const defRaw = b.defArmour + b.defEW + b.defTerrain;
     html += `<tr><td class="dp-combat-total" colspan="2">Defence power&nbsp;&nbsp;<span class="dp-combat-total-val">${defRaw.toFixed(2)}</span></td></tr>`;
 
-    // ── Elevation modifier (only shown when it has an effect) ────────────
+    // ── Elevation range modifier (only shown when it has an effect) ──────
     if (b.elevationMultiplier !== 1.0) {
       const elevPct = Math.round((b.elevationMultiplier - 1) * 100);
       const sign = elevPct > 0 ? '+' : '';
       const elevCol = elevPct > 0 ? '#4f8' : '#f88';
-      html += `<tr><td colspan="2" class="dp-combat-section">Elevation</td></tr>`;
-      html += cpRow('⛰ Elevation modifier', `<span style="color:${elevCol};">${sign}${elevPct}% (×${b.elevationMultiplier.toFixed(2)})</span>`);
+      html += `<tr><td colspan="2" class="dp-combat-section">Elevation (range)</td></tr>`;
+      html += cpRow('⛰ Elevation range', `<span style="color:${elevCol};">${sign}${elevPct}% (×${b.elevationMultiplier.toFixed(2)})</span>`);
     }
 
     // ── Summary (Damage + HP Remaining + Target Destroyed) ─────────────
