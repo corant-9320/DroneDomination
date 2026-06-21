@@ -312,12 +312,11 @@ export class DetailPanel {
       ? `EW ${b.defEWRaw} ×${b.defEWMultiplier}`
       : 'EW';
     html += cpRow(ewLabel, b.defEW.toFixed(2));
-    html += cpRow('Formation', b.defFormation);
     html += cpRow('Terrain',   b.defTerrain);
     if (b.droneEvasion > 0) {
       html += cpRow('Drone target evasion −', b.droneEvasion);
     }
-    const defRaw = b.defArmour + b.defEW + b.defFormation + b.defTerrain;
+    const defRaw = b.defArmour + b.defEW + b.defTerrain;
     html += `<tr><td class="dp-combat-total" colspan="2">Defence power&nbsp;&nbsp;<span class="dp-combat-total-val">${defRaw.toFixed(2)}</span></td></tr>`;
 
     // ── Elevation modifier (only shown when it has an effect) ────────────

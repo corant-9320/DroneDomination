@@ -242,15 +242,18 @@ For distance 1 attacks, `rangeEfficiency = 1.00`. For Anti-Air Reaction Fire, `o
 Defence Power is the sum of four components, each individually clamped:
 
 ```
-DefencePower = armour + EW + defensiveFormation + terrain
+DefencePower = armour + EW + terrain
 ```
 
 | Component | Source | Range |
 |-----------|--------|-------|
 | Armour | Target unit's `armour` attribute | 0–5 |
 | EW | Sum of `defence` attributes of all friendly units in same hex (incl. self), capped at 5 | 0–5 |
-| Defensive Formation | Count of adjacent friendly units (same hex different segment, or neighbouring hex), capped at 2, then × 0.5 | 0–1 |
 | Terrain | Based on tile's forest cover (see §13) | 0–1 |
+
+> **Deprecated (2026-06-21):** the *Defensive Formation* term (defence for
+> having adjacent friendly units) has been removed — it is unrealistic in
+> modern missile warfare. See §11.
 
 ### Effective Defence (Scaled)
 
@@ -302,7 +305,6 @@ Before calculation:
 - `kinetic` clamped to [1, 5]
 - `armour` clamped to [0, 5]
 - `ew` clamped to [0, 5]
-- `defensiveFormation` clamped to [0, 2]
 - `terrain` clamped to [0, 1]
 
 ---
@@ -486,22 +488,16 @@ totalDamage = damage from the single selected weapon mode only
 
 ---
 
-## 11. Defensive Formation
+## 11. Defensive Formation — DEPRECATED (2026-06-21)
 
-Adjacent friendly units provide a defence bonus to the target:
+**Removed.** Adjacent friendly units no longer provide any defence bonus.
+Massed formations do not reduce incoming damage in modern missile warfare, and
+the term complicated the defence calculation ahead of the combat-formula
+refactor.
 
-### Who Qualifies as Support
-
-- Must be a **friendly** unit (same `ownerId`).
-- Must NOT be the target itself.
-- Must NOT be destroyed (`currentHealth > 0`).
-- Must be in the **same hex** (different segment) OR an **adjacent hex** (neighbouring tile).
-
-### Bonus
-
-- Count qualifying supporters.
-- **Cap at 2** (even if more friendly units are adjacent).
-- Each support unit adds +0.5 to the DefencePower (max +1.0).
+DefencePower no longer includes a `defensiveFormation` term. The field is
+retained as a constant `0` in the wire/UI breakdown (`defFormation`) for
+backward compatibility and will be removed entirely in a later pass.
 
 ---
 
@@ -692,12 +688,12 @@ Anti-Air Reaction Fire damage is **not** reduced by drone incoming damage modifi
 The drone uses its normal DefencePower:
 
 ```
-DefencePower = armour + EW + defensiveFormation + terrain
+DefencePower = armour + EW + terrain
 ```
 
-- `armour`, `EW`, and `defensiveFormation` apply normally.
+- `armour` and `EW` apply normally.
 - `terrain` is **0** for airborne movement (drones in flight do not benefit from ground terrain cover).
-- If simpler implementation is preferred, use the existing `calculateEffectiveDefence` function unchanged.
+- The deprecated `defensiveFormation` term contributes nothing (see §11).
 
 ### Drone Pathing (Default)
 
@@ -798,7 +794,6 @@ function calculateEffectiveDefenceForAntiAirReaction(drone, gameState):
     defencePower =
         calculateArmour(drone)
         + calculateEW(drone, gameState)
-        + calculateDefensiveFormation(drone, gameState)
     terrain = 0   // airborne — no terrain cover
     defencePower = defencePower + terrain
     return defencePower * DEFENCE_SCALE

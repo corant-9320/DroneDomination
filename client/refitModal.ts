@@ -311,7 +311,7 @@ export function showRefitModal(unit: { label: string; attributes: UnitAttributes
       },
       {
         heading: '  Defence side',
-        text: 'Armour (always), EW / Defence (stacked with same-hex allies, most effective vs anti-air), formation bonus (up to 2 adjacent friendly units), and forest cover.',
+        text: 'Armour (always), EW / Defence (stacked with same-hex allies, most effective vs anti-air), and forest cover.',
       },
       {
         heading: 'Example — even match',

@@ -107,40 +107,14 @@ import {
 } from './combatFacing.js';
 
 // ---------------------------------------------------------------------------
-// Formation support (defensiveFormation)
+// Formation support — DEPRECATED (2026-06-21)
 // ---------------------------------------------------------------------------
-
-/**
- * Count adjacent friendly units that provide formation support.
- * Adjacent = neighbouring hex or same hex (different segment).
- * Destroyed units (currentHealth <= 0) do not provide support.
- * Capped at 2.
- */
-export function getAdjacentFriendlySupport(
-  target: Unit,
-  allUnits: Unit[],
-  tiles: Tile[],
-): number {
-  let support = 0;
-  const targetTile = tiles[target.tileIndex];
-
-  for (const unit of allUnits) {
-    if (unit.id === target.id) continue;
-    if (unit.ownerId !== target.ownerId) continue;
-    if (unit.currentHealth <= 0) continue;
-
-    // Same hex, different segment
-    if (unit.tileIndex === target.tileIndex) {
-      support++;
-    } else if (targetTile.neighbours.includes(unit.tileIndex)) {
-      support++;
-    }
-
-    if (support >= 2) return 2;
-  }
-
-  return support;
-}
+//
+// The defensive-formation bonus (defence for having adjacent friendly units)
+// has been removed. It is not realistic in modern missile warfare and it
+// complicated the defence calculation. DefencePower no longer includes a
+// formation term; the `defensiveFormation` field is retained as a constant 0
+// for wire/UI compatibility and will be removed in the combat-formula refactor.
 
 // ---------------------------------------------------------------------------
 // Electronic Warfare (EW) — sum of defence in same hex, capped at 5
@@ -206,9 +180,10 @@ export const EW_EFFECTIVENESS_ANTIAIR = 1.00;
 
 /**
  * Calculate the full DefencePower for a target unit.
- * DefencePower = armour + (EW × ewMultiplier) + defensiveFormation + terrain
+ * DefencePower = armour + (EW × ewMultiplier) + terrain
  *
  * Each component is clamped to its valid range before summing.
+ * (The defensive-formation term was deprecated 2026-06-21 and is always 0.)
  *
  * @param weaponMode - The attacking weapon mode, which determines EW effectiveness.
  *   'direct'  → EW at 50%
@@ -227,11 +202,11 @@ export function getDefencePower(
     : weaponMode === 'splash' ? EW_EFFECTIVENESS_SPLASH
     : EW_EFFECTIVENESS_ANTIAIR;
   const ew = ewRaw * ewMultiplier;
-  // Formation count capped at 2, but each supporter contributes 0.5 to DefencePower
-  const formationCount = clamp(getAdjacentFriendlySupport(target, allUnits, tiles), 0, 2);
-  const defensiveFormation = formationCount * 0.5;
+  // Defensive formation bonus deprecated (2026-06-21) — adjacency confers no
+  // defence in modern missile warfare. Retained as 0 for wire/UI compatibility.
+  const defensiveFormation = 0;
   const terrain = clamp(getTerrainDefense(tiles[target.tileIndex]), 0, 1);
-  const total = armour + ew + defensiveFormation + terrain;
+  const total = armour + ew + terrain;
 
   return { armour, ew, ewRaw, ewMultiplier, defensiveFormation, terrain, total };
 }
@@ -637,8 +612,8 @@ export function calculateAntiAirReactionDamage(
   const attackPower = Math.max(0.01, aaLevel * chassisModifier);
   // Anti-air / reaction fire uses full EW effectiveness (100%)
   const defPower = getDefencePower(drone, allUnits, tiles, 'antiAir');
-  // Terrain is 0 for airborne drones
-  const airborneDefence = (defPower.armour + defPower.ew + defPower.defensiveFormation) * DEFENCE_SCALE;
+  // Terrain is 0 for airborne drones (formation bonus deprecated — see getDefencePower)
+  const airborneDefence = (defPower.armour + defPower.ew) * DEFENCE_SCALE;
   return calculateFormulaDamage(attackPower, airborneDefence);
 }
 

@@ -4,6 +4,27 @@ Append-only record of design decisions, gotchas, and known issues. The game's
 rules are invented as we go — this log is how that intent survives across
 sessions so agents stop re-discovering (or re-breaking) the same things.
 
+## 2026-06-21 — Defensive formation bonus deprecated
+
+**Decision:** Removed the *defensive formation* term from DefencePower. Adjacent
+friendly units no longer reduce incoming damage. `DefencePower = armour + EW + terrain`.
+
+**Why:** Massing units next to each other granting a defence bonus is unrealistic
+in modern missile warfare, and the term added complexity to the defence
+calculation right before the planned combat-formula refactor (single
+self-contained formula file taking clean parameter objects). Removing it now
+simplifies that next step.
+
+**Impact:**
+- `getAdjacentFriendlySupport` removed from `src/world/combat.ts` (and its tests).
+- `getDefencePower` returns `defensiveFormation: 0` (field kept for wire/UI compat).
+- Wire type `CombatBreakdown.defFormation` retained as `0` and marked
+  `@deprecated`; the client detail panel no longer renders a Formation row.
+- Combat explainer no longer shows a Formation term in its breakdown strings.
+- `COMBAT_RULES.md` §5/§6/§11/§16 updated. Checkpoint commit before this work: `0adf9db`.
+- Damage values are unchanged except that stacked/adjacent defenders lose up to
+  −1.0 effective DefencePower, so they now take slightly more damage.
+
 ## 2026-06-20 — Rivers carved as a sine wave; guaranteed drainage helper
 
 **Decision:** Rivers are now shaped as a **sine wave with a little randomness**

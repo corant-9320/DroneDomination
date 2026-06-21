@@ -3,7 +3,6 @@ import {
   classifyAttackArc,
   getFacingModifier,
   getOrientationBonus,
-  getAdjacentFriendlySupport,
   getEWDefense,
   getTerrainDefense,
   getDefencePower,
@@ -135,21 +134,21 @@ describe('combat', () => {
   // Damage formula — boundary/property tests (not pinned values)
   // =========================================================================
 
-  function ed(armour: number, ew: number, formationCount: number, terrain: number): number {
-    return (clamp(armour, 0, 5) + clamp(ew, 0, 5) + clamp(formationCount, 0, 2) * 0.5 + clamp(terrain, 0, 1)) * DEFENCE_SCALE;
+  function ed(armour: number, ew: number, terrain: number): number {
+    return (clamp(armour, 0, 5) + clamp(ew, 0, 5) + clamp(terrain, 0, 1)) * DEFENCE_SCALE;
   }
 
   describe('calculateFormulaDamage', () => {
     it('damage is always at least 1', () => {
-      expect(calculateFormulaDamage(1, ed(5, 5, 2, 4))).toBeGreaterThanOrEqual(1);
+      expect(calculateFormulaDamage(1, ed(5, 5, 4))).toBeGreaterThanOrEqual(1);
     });
 
     it('damage never exceeds 30', () => {
-      expect(calculateFormulaDamage(7, ed(0, 0, 0, 0))).toBeLessThanOrEqual(30);
+      expect(calculateFormulaDamage(7, ed(0, 0, 0))).toBeLessThanOrEqual(30);
     });
 
     it('more attack power → more damage (monotonic)', () => {
-      const def = ed(2, 2, 1, 1);
+      const def = ed(2, 2, 1);
       const d3 = calculateFormulaDamage(3, def);
       const d5 = calculateFormulaDamage(5, def);
       const d7 = calculateFormulaDamage(7, def);
@@ -158,19 +157,19 @@ describe('combat', () => {
     });
 
     it('more defence → less damage (monotonic)', () => {
-      const d_none = calculateFormulaDamage(4, ed(0, 0, 0, 0));
-      const d_mid = calculateFormulaDamage(4, ed(3, 2, 1, 1));
-      const d_max = calculateFormulaDamage(4, ed(5, 5, 2, 4));
+      const d_none = calculateFormulaDamage(4, ed(0, 0, 0));
+      const d_mid = calculateFormulaDamage(4, ed(3, 2, 1));
+      const d_max = calculateFormulaDamage(4, ed(5, 5, 4));
       expect(d_none).toBeGreaterThan(d_mid);
       expect(d_mid).toBeGreaterThan(d_max);
     });
 
     it('weakest attack vs max defence produces minimal damage', () => {
-      expect(calculateFormulaDamage(1, ed(5, 5, 2, 4))).toBeLessThanOrEqual(2);
+      expect(calculateFormulaDamage(1, ed(5, 5, 4))).toBeLessThanOrEqual(2);
     });
 
     it('max attack vs no defence produces near-max damage', () => {
-      expect(calculateFormulaDamage(7, ed(0, 0, 0, 0))).toBeGreaterThanOrEqual(25);
+      expect(calculateFormulaDamage(7, ed(0, 0, 0))).toBeGreaterThanOrEqual(25);
     });
   });
 
@@ -229,23 +228,6 @@ describe('combat', () => {
       const dead = makeUnit({ id: 'd', ownerId: 'p1', tileIndex: 0, currentHealth: 0 }); dead.attributes.defence = 5;
       const enemy = makeUnit({ id: 'e', ownerId: 'p2', tileIndex: 0 }); enemy.attributes.defence = 5;
       expect(getEWDefense(target, [target, far, dead, enemy])).toBe(0);
-    });
-  });
-
-  describe('getAdjacentFriendlySupport', () => {
-    it('counts adjacent friendlies, capped at 2', () => {
-      const target = makeUnit({ id: 't', ownerId: 'p1', tileIndex: 0 });
-      const a1 = makeUnit({ id: 'a1', ownerId: 'p1', tileIndex: 1 });
-      const a2 = makeUnit({ id: 'a2', ownerId: 'p1', tileIndex: 2 });
-      const a3 = makeUnit({ id: 'a3', ownerId: 'p1', tileIndex: 3 });
-      expect(getAdjacentFriendlySupport(target, [target, a1, a2, a3], tiles)).toBe(2);
-    });
-
-    it('excludes dead units and enemies', () => {
-      const target = makeUnit({ id: 't', ownerId: 'p1', tileIndex: 0 });
-      const dead = makeUnit({ id: 'd', ownerId: 'p1', tileIndex: 1, currentHealth: 0 });
-      const enemy = makeUnit({ id: 'e', ownerId: 'p2', tileIndex: 2 });
-      expect(getAdjacentFriendlySupport(target, [target, dead, enemy], tiles)).toBe(0);
     });
   });
 

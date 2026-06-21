@@ -78,7 +78,7 @@ export interface CombatBreakdown {
   defEWRaw: number;
   /** EW multiplier applied (0.5 kinetic, 0.75 splash, 1.0 AA). */
   defEWMultiplier: number;
-  /** Formation component of defence. */
+  /** @deprecated Formation bonus removed 2026-06-21 — always 0. Retained for wire compatibility. */
   defFormation: number;
   /** Terrain component of defence. */
   defTerrain: number;

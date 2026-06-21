@@ -261,8 +261,8 @@ export function explainAttack(
 
   steps.push({
     title: '🛡 Defence Power',
-    description: `Armour(${defPower.armour}) + EW(${defPower.ewRaw}×${EW_EFFECTIVENESS_DIRECT} kinetic / ×${EW_EFFECTIVENESS_SPLASH} splash / ×${EW_EFFECTIVENESS_ANTIAIR} AA) + Formation(${defPower.defensiveFormation}) + Terrain(${defPower.terrain}).`,
-    formula: `DefencePower(kinetic) = ${defPower.armour} + ${defPower.ew.toFixed(2)} + ${defPower.defensiveFormation} + ${defPower.terrain} = ${defPower.total.toFixed(2)}`,
+    description: `Armour(${defPower.armour}) + EW(${defPower.ewRaw}×${EW_EFFECTIVENESS_DIRECT} kinetic / ×${EW_EFFECTIVENESS_SPLASH} splash / ×${EW_EFFECTIVENESS_ANTIAIR} AA) + Terrain(${defPower.terrain}).`,
+    formula: `DefencePower(kinetic) = ${defPower.armour} + ${defPower.ew.toFixed(2)} + ${defPower.terrain} = ${defPower.total.toFixed(2)}`,
     result: `EffectiveDefence(kinetic) = ${effectiveDefence.toFixed(2)}`,
     tone: defPower.total > 0 ? 'negative' : 'neutral',
   });
@@ -483,8 +483,8 @@ export function explainSplash(
       },
       {
         title: '🛡 Victim Defence',
-        description: `Armour(${defPower.armour}) + EW(${defPower.ewRaw}×${EW_EFFECTIVENESS_SPLASH}) + Formation(${defPower.defensiveFormation}) + Terrain(${defPower.terrain}) = ${defPower.total.toFixed(2)}. EffectiveDefence = ${effectiveDefence.toFixed(2)}.`,
-        formula: `DefencePower = ${defPower.armour} + ${defPower.ew.toFixed(2)} + ${defPower.defensiveFormation} + ${defPower.terrain} = ${defPower.total.toFixed(2)}, ED = ${effectiveDefence.toFixed(2)}`,
+        description: `Armour(${defPower.armour}) + EW(${defPower.ewRaw}×${EW_EFFECTIVENESS_SPLASH}) + Terrain(${defPower.terrain}) = ${defPower.total.toFixed(2)}. EffectiveDefence = ${effectiveDefence.toFixed(2)}.`,
+        formula: `DefencePower = ${defPower.armour} + ${defPower.ew.toFixed(2)} + ${defPower.terrain} = ${defPower.total.toFixed(2)}, ED = ${effectiveDefence.toFixed(2)}`,
         result: `EffectiveDefence = ${effectiveDefence.toFixed(2)}`,
         tone: defPower.total > 0 ? 'negative' : 'neutral',
       },
