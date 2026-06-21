@@ -16,14 +16,14 @@ import {
 describe('units', () => {
   describe('isValidAttribute', () => {
     it('accepts values within range', () => {
-      expect(isValidAttribute('maxHealth', 1)).toBe(true);
-      expect(isValidAttribute('maxHealth', 5)).toBe(true);
+      expect(isValidAttribute('size', 1)).toBe(true);
+      expect(isValidAttribute('size', 5)).toBe(true);
       expect(isValidAttribute('armour', 0)).toBe(true);
       expect(isValidAttribute('armour', 5)).toBe(true);
     });
 
     it('rejects values below minimum', () => {
-      expect(isValidAttribute('maxHealth', 0)).toBe(false);
+      expect(isValidAttribute('size', 0)).toBe(false);
     });
 
     it('rejects values above maximum', () => {
@@ -42,7 +42,7 @@ describe('units', () => {
   describe('validateAttributes', () => {
     it('passes for valid unit with movement', () => {
       const attrs: UnitAttributes = {
-        maxHealth: 3,
+        size: 3,
         limbMovement: 2,
         splashAttack: 1,
       };
@@ -51,7 +51,7 @@ describe('units', () => {
 
     it('fails when no movement attribute is present', () => {
       const attrs: UnitAttributes = {
-        maxHealth: 3,
+        size: 3,
         splashAttack: 2,
       };
       const errors = validateAttributes(attrs);
@@ -61,7 +61,7 @@ describe('units', () => {
 
     it('fails when all movement values are zero', () => {
       const attrs: UnitAttributes = {
-        maxHealth: 2,
+        size: 2,
         wheeledMovement: 0,
         limbMovement: 0,
         flightMovement: 0,
@@ -72,16 +72,16 @@ describe('units', () => {
 
     it('reports out-of-range attribute values', () => {
       const attrs: UnitAttributes = {
-        maxHealth: 10,
+        size: 10,
         limbMovement: 1,
       };
       const errors = validateAttributes(attrs);
-      expect(errors.some((e) => e.includes('maxHealth'))).toBe(true);
+      expect(errors.some((e) => e.includes('size'))).toBe(true);
     });
 
     it('reports multiple errors', () => {
       const attrs: UnitAttributes = {
-        maxHealth: 0,
+        size: 0,
         armour: 7,
         // no movement
       };
@@ -170,7 +170,7 @@ describe('units', () => {
 
     it('ATTRIBUTE_RANGES covers all keys', () => {
       const keys = Object.keys(ATTRIBUTE_RANGES);
-      expect(keys).toContain('maxHealth');
+      expect(keys).toContain('size');
       expect(keys).toContain('armour');
       expect(keys).toContain('defence');
       expect(keys).toContain('splashAttack');
@@ -213,7 +213,7 @@ describe('units', () => {
 
     it('validateAttributes passes with defence in valid range', () => {
       const attrs: UnitAttributes = {
-        maxHealth: 2,
+        size: 3,
         wheeledMovement: 1,
         defence: 3,
       };
@@ -222,7 +222,7 @@ describe('units', () => {
 
     it('validateAttributes reports defence out of range', () => {
       const attrs: UnitAttributes = {
-        maxHealth: 2,
+        size: 2,
         wheeledMovement: 1,
         defence: 7,
       };
@@ -255,7 +255,7 @@ describe('units', () => {
 
     it('validateAttributes passes with splashAttack in valid range', () => {
       const attrs: UnitAttributes = {
-        maxHealth: 1,
+        size: 4,
         limbMovement: 2,
         splashAttack: 4,
       };
@@ -264,7 +264,7 @@ describe('units', () => {
 
     it('validateAttributes reports splashAttack out of range', () => {
       const attrs: UnitAttributes = {
-        maxHealth: 1,
+        size: 1,
         limbMovement: 1,
         splashAttack: 10,
       };

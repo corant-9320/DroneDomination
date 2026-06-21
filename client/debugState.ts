@@ -82,7 +82,7 @@ export function installDebugState(deps: DebugStateDeps): void {
       segment: u.segment,
       facing: u.facing,
       currentHealth: u.currentHealth,
-      maxHealth: u.attributes.maxHealth,
+      maxHealth: u.attributes.size,
       mp: turnManager.getMovementPoints(u.id),
       acted: turnManager.actedUnits.has(u.id),
     }));

@@ -6,7 +6,7 @@
  *  - Points budget is the sum of the unit's current upgrade costs
  *    (all attributes except the movement attribute, which is chassis-fixed).
  *  - On confirm: caller receives the new UnitAttributes; caller is responsible
- *    for zeroing MP and restoring HP to the new maxHealth.
+ *    for zeroing MP and restoring HP to the new size.
  *
  * Returns null if the player cancels.
  */
@@ -36,11 +36,11 @@ function movementKey(chassis: ChassisType): keyof UnitAttributes {
 }
 
 /**
- * Upgrade attributes (everything except the chassis movement attribute).
+ * Upgrade attributes (everything except the chassis movement attribute and
+ * Size). Size and chassis are locked at design time and cannot be refitted.
  * These are the attributes that cost points and can be redistributed.
  */
 const UPGRADE_ATTRS: (keyof UnitAttributes)[] = [
-  'maxHealth',
   'kinetic',
   'rangeAttack',
   'splashAttack',
@@ -50,6 +50,14 @@ const UPGRADE_ATTRS: (keyof UnitAttributes)[] = [
   'repair',
   'engineer',
 ];
+
+/**
+ * Attributes whose maximum is capped by the unit's Size (it's unrealistic to
+ * fit heavy systems on a tiny frame). rangeAttack and engineer are NOT capped.
+ */
+const CAPPED_BY_SIZE: ReadonlySet<keyof UnitAttributes> = new Set<keyof UnitAttributes>([
+  'kinetic', 'splashAttack', 'antiAir', 'armour', 'defence', 'repair',
+]);
 
 /** Sum of current upgrade attribute values = the refit points budget. */
 function computeBudget(attrs: UnitAttributes): number {
@@ -74,11 +82,12 @@ export function showRefitModal(unit: { label: string; attributes: UnitAttributes
     const chassis = chassisOf(unit.attributes);
     const movKey = movementKey(chassis);
     const movValue = (unit.attributes[movKey] as number) ?? 1;
+    const sizeVal = (unit.attributes.size as number) ?? 1;
     const budget = computeBudget(unit.attributes);
 
     // ── Working state (mirrors the designer's currentAttrs) ──────────────
     const current: Record<keyof UnitAttributes, number> = {
-      maxHealth:       unit.attributes.maxHealth       ?? 0,
+      size:            unit.attributes.size            ?? 0,
       kinetic:         unit.attributes.kinetic         ?? 0,
       rangeAttack:     unit.attributes.rangeAttack     ?? 0,
       splashAttack:    unit.attributes.splashAttack    ?? 0,
@@ -187,9 +196,18 @@ export function showRefitModal(unit: { label: string; attributes: UnitAttributes
     `;
     controlsEl.appendChild(chassisRow);
 
+    // Size display (locked — chosen at creation, not refittable)
+    const sizeRow = document.createElement('div');
+    sizeRow.innerHTML = `
+      <div style="font-size:11px;color:#888;margin-bottom:4px;">Size (locked)</div>
+      <div style="padding:6px 10px;background:#333;border-radius:4px;font-size:13px;color:#aaa;">
+        Size ${sizeVal} · ${sizeVal * 10} HP · caps weapons/armour/EW/repair at ${sizeVal}
+      </div>
+    `;
+    controlsEl.appendChild(sizeRow);
+
     // Sliders for each upgrade attribute
     const SLIDER_LABELS: Partial<Record<keyof UnitAttributes, string>> = {
-      maxHealth:    'Health',
       kinetic:      'Kinetic',
       rangeAttack:  'Range Atk',
       splashAttack: 'Splash',
@@ -200,7 +218,6 @@ export function showRefitModal(unit: { label: string; attributes: UnitAttributes
     };
 
     const SLIDER_DESCS: Partial<Record<keyof UnitAttributes, string>> = {
-      maxHealth:    'Max HP = value × 10 (10–50). Larger units survive more punishment. Also scales the 3D model size.',
       kinetic:      'Direct fire attack power. Deals full damage to ground; only 33% vs drones. Drones deal 50% outgoing with kinetic.',
       rangeAttack:  'Extends attack reach. 0 = melee only (~1 hex). Each point adds ~0.5 hex of range. Falloff: −10% damage per hex beyond 1.',
       splashAttack: 'Area-of-effect attack hitting all enemies in the target hex. Each enemy takes 30% of the full formula damage — total output beats single-target kinetic when 4+ enemies are stacked. Drones hit by splash take 50% of that (vs 33% for direct fire), so splash is relatively better against drone clusters.',
@@ -233,7 +250,7 @@ export function showRefitModal(unit: { label: string; attributes: UnitAttributes
       const slider = document.createElement('input');
       slider.type = 'range';
       slider.min = '0';
-      slider.max = '5';
+      slider.max = String(CAPPED_BY_SIZE.has(attr) ? Math.min(5, sizeVal) : 5);
       slider.value = String(current[attr]);
       Object.assign(slider.style, { width: '100%', accentColor: '#2a9d8f' });
 
@@ -477,7 +494,7 @@ export function showRefitModal(unit: { label: string; attributes: UnitAttributes
         repair:       current.repair,
       });
 
-      const healthScale = Math.pow(0.9, 5 - (current.maxHealth || 1));
+      const healthScale = Math.pow(0.9, 5 - (current.size || 1));
       unitGroup.scale.setScalar(healthScale);
       scene.add(unitGroup);
     }
@@ -536,6 +553,8 @@ export function showRefitModal(unit: { label: string; attributes: UnitAttributes
       // all upgrade attrs from slider state, omit zero values.
       const newAttrs: UnitAttributes = {};
       newAttrs[movKey] = movValue;
+      // Size is locked — preserve it (not part of UPGRADE_ATTRS).
+      if (sizeVal > 0) newAttrs.size = sizeVal;
       for (const attr of UPGRADE_ATTRS) {
         const v = current[attr];
         if (v > 0) (newAttrs as Record<string, number>)[attr] = v;

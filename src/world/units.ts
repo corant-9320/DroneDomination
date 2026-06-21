@@ -27,7 +27,7 @@ export type HexSegment = 0 | 1 | 2 | 3 | 4 | 5;
 /** Maximum number of units that can occupy a single tile (one segment must stay free). */
 export const MAX_UNITS_PER_TILE = 5;
 
-/** Each maxHealth point equals this many health units for damage calculation. */
+/** Each size point equals this many health units for damage calculation. */
 export const HP_PER_POINT = 10;
 
 // ---------------------------------------------------------------------------
@@ -36,7 +36,7 @@ export const HP_PER_POINT = 10;
 
 /** Allowed [min, max] for each attribute. */
 export const ATTRIBUTE_RANGES: Record<keyof UnitAttributes, [min: number, max: number]> = {
-  maxHealth: [1, 5],
+  size: [1, 5],
   kinetic: [0, 5],
   armour: [0, 5],
   defence: [0, 5],
@@ -52,6 +52,15 @@ export const ATTRIBUTE_RANGES: Record<keyof UnitAttributes, [min: number, max: n
 
 export { MOVEMENT_ATTRIBUTES } from '../../shared/movementConstants.js';
 import { MOVEMENT_ATTRIBUTES } from '../../shared/movementConstants.js';
+
+/**
+ * Attributes whose value may not exceed the unit's `size`. It is unrealistic
+ * to fit heavy weapons/armour/EW/repair systems on a small frame. `rangeAttack`,
+ * movement attributes, and `engineer` are intentionally NOT capped by size.
+ */
+export const SIZE_CAPPED_ATTRIBUTES: (keyof UnitAttributes)[] = [
+  'kinetic', 'splashAttack', 'antiAir', 'armour', 'defence', 'repair',
+];
 
 /** Validate a single attribute value against its allowed range. */
 export function isValidAttribute(key: keyof UnitAttributes, value: number): boolean {
@@ -82,6 +91,16 @@ export function validateAttributes(attrs: UnitAttributes): string[] {
     );
   }
 
+  // Size acts as a ceiling on the size of weapons/armour/EW/repair that can be
+  // fitted (unrealistic to fit heavy systems on a tiny frame). rangeAttack,
+  // movement, and engineer are NOT capped by size.
+  const size = attrs.size ?? 1;
+  for (const key of SIZE_CAPPED_ATTRIBUTES) {
+    const value = attrs[key] ?? 0;
+    if (value > size) {
+      errors.push(`${key}: ${value} exceeds size ceiling of ${size}`);
+    }
+  }
 
   return errors;
 }
@@ -106,7 +125,7 @@ export interface Unit {
   facing: HexSegment;
   /** The unit's attribute profile — defines what it can do. */
   attributes: UnitAttributes;
-  /** Current health in health units (≤ attributes.maxHealth * HP_PER_POINT). */
+  /** Current health in health units (≤ attributes.size * HP_PER_POINT). */
   currentHealth: number;
 }
 

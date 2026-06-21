@@ -26,7 +26,7 @@ function makeUnit(overrides: Partial<{
     ownerId: overrides.ownerId ?? 'city_0',
     tileIndex: overrides.tileIndex ?? 0,
     segment: overrides.segment ?? 0,
-    attributes: overrides.attributes ?? { maxHealth: 3, wheeledMovement: 2 },
+    attributes: overrides.attributes ?? { size: 3, wheeledMovement: 2 },
     currentHealth: overrides.currentHealth ?? 3,
   } as any;
 }
@@ -109,7 +109,7 @@ describe('unitIcons', () => {
 
     it('does not throw for a basic wheeled unit', () => {
       const unit = makeUnit({
-        attributes: { maxHealth: 3, wheeledMovement: 2, rangeAttack: 1 },
+        attributes: { size: 3, wheeledMovement: 2, rangeAttack: 1 },
         currentHealth: 3,
       });
       expect(() => drawUnitIcon(ctx, unit, 100, 100, 10, '#ff0000')).not.toThrow();
@@ -117,7 +117,7 @@ describe('unitIcons', () => {
 
     it('does not throw for a legged unit with splash attack', () => {
       const unit = makeUnit({
-        attributes: { maxHealth: 2, limbMovement: 3, splashAttack: 2 },
+        attributes: { size: 2, limbMovement: 3, splashAttack: 2 },
         currentHealth: 2,
       });
       expect(() => drawUnitIcon(ctx, unit, 50, 50, 8, '#00ff00')).not.toThrow();
@@ -126,7 +126,7 @@ describe('unitIcons', () => {
     it('does not throw for a flight unit with all attributes', () => {
       const unit = makeUnit({
         attributes: {
-          maxHealth: 5,
+          size: 5,
           armour: 3,
           defence: 2,
           flightMovement: 4,
@@ -166,7 +166,7 @@ describe('unitIcons', () => {
 
     it('handles unit with zero currentHealth gracefully', () => {
       const unit = makeUnit({
-        attributes: { maxHealth: 3, wheeledMovement: 1 },
+        attributes: { size: 3, wheeledMovement: 1 },
         currentHealth: 0,
       });
       expect(() => drawUnitIcon(ctx, unit, 10, 10, 10, '#f00')).not.toThrow();

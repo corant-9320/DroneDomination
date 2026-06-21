@@ -68,7 +68,7 @@ function makeUnit(overrides: Partial<Unit> & { id: string }): Unit {
     tileIndex: 0,
     segment: 0 as HexSegment,
     facing: 0 as HexSegment,
-    attributes: { maxHealth: 3, wheeledMovement: 3 },
+    attributes: { size: 3, wheeledMovement: 3 },
     currentHealth: 30,
     ...overrides,
   };

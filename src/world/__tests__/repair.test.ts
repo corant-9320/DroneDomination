@@ -19,7 +19,7 @@ function makeUnit(overrides: Partial<Unit> & { id: string }): Unit {
     tileIndex: 0,
     segment: 0 as HexSegment,
     facing: 0 as HexSegment,
-    attributes: { maxHealth: 3, wheeledMovement: 1 },
+    attributes: { size: 3, wheeledMovement: 1 },
     currentHealth: 20,
     ...overrides,
   };
@@ -140,7 +140,7 @@ describe('repair', () => {
   describe('validateRepair', () => {
     it('passes for valid same-hex same-faction repair', () => {
       const repairer = makeUnit({ id: 'r', attributes: { repair: 3, wheeledMovement: 1 }, currentHealth: 30 });
-      const target = makeUnit({ id: 't', attributes: { maxHealth: 3, wheeledMovement: 1 }, currentHealth: 15 });
+      const target = makeUnit({ id: 't', attributes: { size: 3, wheeledMovement: 1 }, currentHealth: 15 });
       expect(validateRepair(repairer, target)).toEqual({ valid: true });
     });
 
@@ -200,7 +200,7 @@ describe('repair', () => {
 
     it('rejects when target is already at full health', () => {
       const repairer = makeUnit({ id: 'r', attributes: { repair: 3, wheeledMovement: 1 }, currentHealth: 30 });
-      const target = makeUnit({ id: 't', attributes: { maxHealth: 3, wheeledMovement: 1 }, currentHealth: 30 });
+      const target = makeUnit({ id: 't', attributes: { size: 3, wheeledMovement: 1 }, currentHealth: 30 });
       const result = validateRepair(repairer, target);
       expect(result.valid).toBe(false);
       expect(result.reason).toContain('full health');
@@ -213,8 +213,8 @@ describe('repair', () => {
 
   describe('resolveRepair', () => {
     it('heals target and returns correct result', () => {
-      const repairer = makeUnit({ id: 'r', attributes: { repair: 3, maxHealth: 3, wheeledMovement: 1 }, currentHealth: 30 });
-      const target = makeUnit({ id: 't', attributes: { maxHealth: 3, wheeledMovement: 1 }, currentHealth: 15 });
+      const repairer = makeUnit({ id: 'r', attributes: { repair: 3, size: 3, wheeledMovement: 1 }, currentHealth: 30 });
+      const target = makeUnit({ id: 't', attributes: { size: 3, wheeledMovement: 1 }, currentHealth: 15 });
       const allUnits = [repairer, target];
 
       const result = resolveRepair('r', 't', allUnits);
@@ -227,8 +227,8 @@ describe('repair', () => {
     });
 
     it('caps healing at max health', () => {
-      const repairer = makeUnit({ id: 'r', attributes: { repair: 5, maxHealth: 3, wheeledMovement: 1 }, currentHealth: 30 });
-      const target = makeUnit({ id: 't', attributes: { maxHealth: 3, wheeledMovement: 1 }, currentHealth: 28 });
+      const repairer = makeUnit({ id: 'r', attributes: { repair: 5, size: 3, wheeledMovement: 1 }, currentHealth: 30 });
+      const target = makeUnit({ id: 't', attributes: { size: 3, wheeledMovement: 1 }, currentHealth: 28 });
       const allUnits = [repairer, target];
 
       const result = resolveRepair('r', 't', allUnits);

@@ -1263,7 +1263,7 @@ export class FirstPersonView {
     // --- Repair (friendly damaged unit in the same hex) ---
     const repairCapable = (unit.attributes.repair ?? 0) >= 1;
     if (repairCapable && (tm.movementPoints.get(unit.id) ?? 0) > 0 && !tm.actedUnits.has(unit.id)) {
-      const maxHp = (target: UnitData) => (target.attributes.maxHealth ?? 1) * 10;
+      const maxHp = (target: UnitData) => (target.attributes.size ?? 1) * 10;
       const friendly =
         units.find((u) => u.tileIndex === targetTile && u.segment === targetSegment && u.ownerId === playerOwner && u.id !== unit.id && u.currentHealth < maxHp(u)) ??
         units.find((u) => u.tileIndex === targetTile && u.ownerId === playerOwner && u.id !== unit.id && u.currentHealth < maxHp(u));

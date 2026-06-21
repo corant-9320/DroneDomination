@@ -344,7 +344,7 @@ function rebuildUnits(wireUnits: WireUnit[]): Unit[] {
     segment: wu.segment as HexSegment,
     facing: wu.facing as HexSegment,
     attributes: {
-      maxHealth: wu.attributes.maxHealth,
+      size: wu.attributes.size,
       kinetic: wu.attributes.kinetic,
       armour: wu.attributes.armour,
       defence: wu.attributes.defence,

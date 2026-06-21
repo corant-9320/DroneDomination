@@ -385,7 +385,7 @@ export function explainAttack(
   const primaryTargetDamage = chosenOption.mode === 'splash'
     ? (chosenOption.damages.find((d) => d.unitId === target.id)?.damage ?? 0)
     : totalDamage;
-  const maxHp = (target.attributes.maxHealth ?? 1) * HP_PER_POINT;
+  const maxHp = (target.attributes.size ?? 1) * HP_PER_POINT;
   const healthAfter = Math.max(0, target.currentHealth - primaryTargetDamage);
   const destroyed = healthAfter <= 0;
 
@@ -471,7 +471,7 @@ export function explainSplash(
     const scaledDamage = event.damage;
     const victimIsDrone = isDrone(victim);
 
-    const maxHpVictim = (victim.attributes.maxHealth ?? 1) * HP_PER_POINT;
+    const maxHpVictim = (victim.attributes.size ?? 1) * HP_PER_POINT;
 
     const steps: ExplanationStep[] = [
       {
@@ -545,7 +545,7 @@ export function buildReactionExplanation(
   const healthAfter = drone.currentHealth;
   const healthBefore = healthAfter + result.directDamage;
   const destroyed = result.destroyedUnitIds.includes(drone.id);
-  const maxHpDrone = (drone.attributes.maxHealth ?? 1) * HP_PER_POINT;
+  const maxHpDrone = (drone.attributes.size ?? 1) * HP_PER_POINT;
 
   const steps: ExplanationStep[] = [
     {
@@ -586,7 +586,7 @@ export function buildReactionExplanation(
 
 export function explainRepairAction(repairer: Unit, target: Unit): ExplainedRepair {
   const rp = repairer.attributes.repair ?? 0;
-  const maxHealth = (target.attributes.maxHealth ?? 1) * HP_PER_POINT;
+  const maxHealth = (target.attributes.size ?? 1) * HP_PER_POINT;
 
   // Use the shared formula from src/world/repair.ts — no duplication
   const repairAmount = calculateRepairAmount(rp, maxHealth);

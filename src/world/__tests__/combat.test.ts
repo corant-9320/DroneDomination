@@ -77,7 +77,7 @@ function createLinearGrid(): Tile[] {
 function makeUnit(overrides: Partial<Unit> & { id: string; ownerId: string }): Unit {
   return {
     label: overrides.id, tileIndex: 0, segment: 0, facing: 0,
-    attributes: { maxHealth: 3, kinetic: 2, rangeAttack: 2, limbMovement: 1 },
+    attributes: { size: 3, kinetic: 2, rangeAttack: 2, limbMovement: 1 },
     currentHealth: 30, ...overrides,
   };
 }

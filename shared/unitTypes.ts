@@ -12,7 +12,7 @@
  * All fields are optional — a unit only carries the attributes relevant to it.
  *
  * All values are integers within a fixed range:
- *   maxHealth:      1–5  (must be at least 1 if present)
+ *   size:           1–5  (must be at least 1 if present)
  *   kinetic:        0–5
  *   armour:         0–5
  *   defence:        0–5
@@ -28,8 +28,12 @@
  * (wheeledMovement, limbMovement, or flightMovement).
  */
 export interface UnitAttributes {
-  /** Maximum hit points (1–5). */
-  maxHealth?: number;
+  /**
+   * Unit size / frame class (1–5). Chosen at creation and NOT refittable.
+   * Sets max HP (size × HP_PER_POINT) and acts as a ceiling on the size of
+   * weapons/armour/EW/repair that can be fitted. Costs 1 point per size.
+   */
+  size?: number;
   /** Kinetic attack power — single heavy shell fired through a barrel (0–5). Determines gun length in icon. */
   kinetic?: number;
   /** Damage reduction from incoming attacks (0–5). */

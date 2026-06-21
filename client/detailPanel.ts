@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Detail Panel — populates the right curtain's info sections when the player
  * selects a hex or unit, hovers an enemy, or a combat preview arrives.
  *
@@ -219,7 +219,7 @@ export class DetailPanel {
     for (const unit of hexMates) {
       const color = factionColor(this.world, unit.ownerId);
       const attrs = unit.attributes;
-      const maxHp = (attrs.maxHealth ?? 1) * 10;
+      const maxHp = (attrs.size ?? 1) * 10;
       const arm   = attrs.armour ?? 0;
       const ew    = attrs.defence ?? 0;
       const idSuffix = unit.id.replace(/^unit_/, '');
@@ -237,7 +237,7 @@ export class DetailPanel {
     const color = factionColor(this.world, unit.ownerId);
     const name  = readableUnitName(unit);
     const attrs = unit.attributes;
-    const maxHp = (attrs.maxHealth ?? 1) * 10;
+    const maxHp = (attrs.size ?? 1) * 10;
     const hpRatio = Math.max(0, Math.min(1, unit.currentHealth / maxHp));
 
     let html = '';
@@ -330,7 +330,7 @@ export class DetailPanel {
 
     // ── Summary (Damage + HP Remaining + Target Destroyed) ─────────────
     const targetUnit = this.world.units.find((u) => u.id === c.targetId);
-    const targetMaxHp = targetUnit ? (targetUnit.attributes.maxHealth ?? 1) * 10 : '?';
+    const targetMaxHp = targetUnit ? (targetUnit.attributes.size ?? 1) * 10 : '?';
     const dmgCol = b.netDamage >= 15 ? '#f66' : b.netDamage >= 5 ? '#fa0' : '#fff';
     html += `<tr><td colspan="2" class="dp-combat-section dp-combat-summary-header">Summary</td></tr>`;
     html += `<tr><td colspan="2" class="dp-combat-summary">`;

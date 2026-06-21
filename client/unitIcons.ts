@@ -49,7 +49,7 @@ export function drawUnitIcon(
 ): void {
   // Scale sprite by max health relative to baseline of 5.
   // Each step below 5 reduces size by 10%: scale = 0.9^(5 - maxHealth)
-  const maxHealth = unit.attributes.maxHealth ?? 5;
+  const maxHealth = unit.attributes.size ?? 5;
   const healthScale = Math.pow(0.9, 5 - maxHealth);
   // 7.058 = 5.082 * (2.5 / 1.8) — compensates for the wider camera frustum in
   // unitRenderer.ts (2.5 vs the original 1.8) so on-screen model size is unchanged.
@@ -102,7 +102,7 @@ function drawHealthBar(
   size: number,
   extent: number,
 ): number {  // returns the rendered barH so the movement bar can anchor below it
-  const maxHp = (unit.attributes.maxHealth ?? 1) * 10;
+  const maxHp = (unit.attributes.size ?? 1) * 10;
   const curHp = unit.currentHealth;
 
   const barW = size * 1.2;

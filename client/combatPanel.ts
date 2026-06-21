@@ -446,7 +446,7 @@ export class CombatPanel {
   private buildUnitStats(unit: UnitData): string {
     const a = unit.attributes;
     let s = `<div class="cl-vs-stats">`;
-    s += `<span>HP: ${unit.currentHealth}/${(a.maxHealth ?? 1) * 10}</span>`;
+    s += `<span>HP: ${unit.currentHealth}/${(a.size ?? 1) * 10}</span>`;
     if (a.kinetic) s += ` <span>KIN: ${a.kinetic}</span>`;
     if (a.rangeAttack) s += ` <span>RNG: ${a.rangeAttack}</span>`;
     if (a.splashAttack) s += ` <span>SPL: ${a.splashAttack}</span>`;
@@ -467,7 +467,7 @@ export class CombatPanel {
     if (c.wasValid) {
       // Find target unit to get maxHP
       const target = this.world.units.find((u) => u.id === c.targetId);
-      const maxHp = target ? (target.attributes.maxHealth ?? 1) * 10 : '?';
+      const maxHp = target ? (target.attributes.size ?? 1) * 10 : '?';
       const hpAfter = c.targetHealthAfter;
 
       if (c.targetDestroyed) {
@@ -492,7 +492,7 @@ export class CombatPanel {
         for (const s of c.splash) {
           if (s.victimId === c.targetId) continue; // already shown above
           const v = this.world.units.find((u) => u.id === s.victimId);
-          const vMax = v ? (v.attributes.maxHealth ?? 1) * 10 : '?';
+          const vMax = v ? (v.attributes.size ?? 1) * 10 : '?';
           if (s.victimDestroyed) {
             body += `<div class="cl-step" style="color:#f44;padding:1px 0;margin-left:8px;">☠ ${esc(s.victimLabel)}</div>`;
           } else {
@@ -554,7 +554,7 @@ export class CombatPanel {
       // Max HP: use live world if available, else fall back to healthBefore
       const tgtUnit = this.world.units.find((u) => u.id === c.targetId);
       const maxHp = tgtUnit
-        ? (tgtUnit.attributes.maxHealth ?? 1) * 10
+        ? (tgtUnit.attributes.size ?? 1) * 10
         : c.targetHealthBefore > c.targetHealthAfter ? c.targetHealthBefore : '?';
 
       const atkColor = factionColorForUnit(this.world, c.attackerId);
@@ -602,7 +602,7 @@ export class CombatPanel {
           detailHtml += `<div class="cl-splash-header">💥 Splash (${c.splash.length} victim${c.splash.length > 1 ? 's' : ''})</div>`;
           for (const s of c.splash) {
             const vUnit = this.world.units.find((u) => u.id === s.victimId);
-            const vMax = vUnit ? (vUnit.attributes.maxHealth ?? 1) * 10 : '?';
+            const vMax = vUnit ? (vUnit.attributes.size ?? 1) * 10 : '?';
             const vSuffix = s.victimId.replace(/^unit_/, '');
             const vColor = factionColorForUnit(this.world, s.victimId);
             detailHtml += `<div class="cl-step"><span class="cl-step-title"><span style="color:${esc(vColor)};">#${esc(vSuffix)}</span></span> <span style="color:#999;">${s.victimHealthBefore}→${s.victimHealthAfter}/${vMax} HP</span>`;
@@ -645,7 +645,7 @@ export class CombatPanel {
       const repColor = factionColorForUnit(this.world, r.repairerId);
       const tgtColor = factionColorForUnit(this.world, r.targetId);
       const tgtUnit  = this.world.units.find((u) => u.id === r.targetId);
-      const maxHp    = tgtUnit ? (tgtUnit.attributes.maxHealth ?? 1) * 10 : r.targetHealthAfter;
+      const maxHp    = tgtUnit ? (tgtUnit.attributes.size ?? 1) * 10 : r.targetHealthAfter;
 
       const repSuffix = r.repairerId.replace(/^unit_/, '');
       const tgtSuffix = r.targetId.replace(/^unit_/, '');

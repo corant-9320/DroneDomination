@@ -102,7 +102,7 @@ export function validateRepair(repairer: Unit, target: Unit): RepairValidation {
     return { valid: false, reason: 'Target must be in the same hex' };
   }
 
-  const targetMaxHealth = (target.attributes.maxHealth ?? 1) * HP_PER_POINT;
+  const targetMaxHealth = (target.attributes.size ?? 1) * HP_PER_POINT;
   if (target.currentHealth >= targetMaxHealth) {
     return { valid: false, reason: 'Target is already at full health' };
   }
@@ -148,7 +148,7 @@ export function resolveRepair(
   }
 
   const rp = repairer.attributes.repair!;
-  const maxHealth = (target.attributes.maxHealth ?? 1) * HP_PER_POINT;
+  const maxHealth = (target.attributes.size ?? 1) * HP_PER_POINT;
   const healthBefore = target.currentHealth;
   const healthAfter = applyRepair(healthBefore, maxHealth, rp);
   const repairAmount = healthAfter - healthBefore;

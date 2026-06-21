@@ -235,7 +235,7 @@ function serializeUnit(u: UnitData, tm: TurnManager): Record<string, unknown> {
     segment: u.segment,
     facing: u.facing,
     currentHealth: u.currentHealth,
-    maxHealth: (u.attributes.maxHealth ?? 1) * 10,
+    maxHealth: (u.attributes.size ?? 1) * 10,
     mp,
     maxMp,
     acted: tm.actedUnits.has(u.id),

@@ -117,7 +117,7 @@ export async function handlePlayerRefit(ctx: GameContext, unitId: string): Promi
 
   unit.attributes = result.attributes;
 
-  const newMaxHp = (result.attributes.maxHealth ?? 1) * 10;
+  const newMaxHp = (result.attributes.size ?? 1) * 10;
   unit.currentHealth = newMaxHp;
 
   turnManager.movementPoints.set(unitId, 0);

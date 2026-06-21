@@ -4,6 +4,32 @@ Append-only record of design decisions, gotchas, and known issues. The game's
 rules are invented as we go — this log is how that intent survives across
 sessions so agents stop re-discovering (or re-breaking) the same things.
 
+## 2026-06-21 — `maxHealth` renamed to `size`; size is a locked ceiling
+
+**Decision:** The `maxHealth` unit attribute is renamed to `size` (1–5). Size is
+**chosen at creation and cannot be refitted** (chassis was already locked). HP
+still scales as `size × HP_PER_POINT` (10–50). Size now acts as a **ceiling** on
+`kinetic`, `splashAttack`, `antiAir`, `armour`, `defence` (EW), and `repair` —
+these may not exceed `size`. `rangeAttack`, movement, and `engineer` are exempt.
+Size costs 1 point per size in the point-buy budget.
+
+**Why:** Health-as-an-upgrade was unrealistic and decoupled from frame size. A
+single Size dial that also gates how much weaponry/armour a frame can carry is
+more intuitive ("can't bolt a range-5 kinetic-5 gun onto a size-1 drone") and
+simplifies the model ahead of the remaining combat-rules changes.
+
+**Impact:**
+- `UnitAttributes.maxHealth` → `size` (semantic rename across TS; manual fixes in
+  `units.ts` ATTRIBUTE_RANGES, `server/combatApi.ts`, client render/panels, tests).
+- New `SIZE_CAPPED_ATTRIBUTES` in `units.ts`; `validateAttributes` enforces the ceiling.
+- Refit modal: Size shown locked (no slider), capped sliders clamp to `min(5,size)`,
+  budget excludes Size (its point stays locked on the frame); Size preserved on confirm.
+- Battle generator (`generate-battle-20v20.js`) caps weapon/armour/EW/repair at size.
+- Data regenerated: `data/world.json`, `data/world-summary.json`, `data/battle-20v20.json`.
+- Debug-snapshot field `maxHealth` and `repair.ts` HP-unit locals intentionally kept.
+- COMBAT_RULES §3/§10/§16 + README updated. Checkpoint before this work: `bddd852`.
+- tsc clean, 347 tests pass, `npm run validate` PASSED.
+
 ## 2026-06-21 — Combat formula consolidated into combatFormula.ts
 
 **Decision:** Damage calculation now lives in a single self-contained file,

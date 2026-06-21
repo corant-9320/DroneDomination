@@ -561,7 +561,7 @@ export class MapInputHandler {
                 u.segment === targetSegment &&
                 u.ownerId === playerOwner &&
                 u.id !== repairer.id &&
-                u.currentHealth < (u.attributes.maxHealth ?? 1) * 10
+                u.currentHealth < (u.attributes.size ?? 1) * 10
             );
           }
           if (!friendlyTarget) {
@@ -569,7 +569,7 @@ export class MapInputHandler {
               (u) =>
                 u.ownerId === playerOwner &&
                 u.id !== repairer.id &&
-                u.currentHealth < (u.attributes.maxHealth ?? 1) * 10
+                u.currentHealth < (u.attributes.size ?? 1) * 10
             );
           }
           if (friendlyTarget && repairer.tileIndex === friendlyTarget.tileIndex) {

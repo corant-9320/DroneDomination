@@ -40,23 +40,24 @@ All attribute values are integers. Ranges are hard-clamped during combat resolut
 
 | Attribute | Range | Description |
 |-----------|-------|-------------|
-| `maxHealth` | 1–5 | Maximum hit points. Actual HP = maxHealth × 10 (so 10–50 HP). |
-| `kinetic` | 0–5 | Base attack power for direct (melee/close) damage. Determines gun length in icon. |
-| `armour` | 0–5 | Passive damage reduction from incoming attacks. |
-| `defence` | 0–5 | Electronic Warfare (EW) value. Contributes to nearby allies' defence via same-hex stacking. |
-| `splashAttack` | 0–5 | Area-of-effect attack power. When chosen as the weapon mode, damages all enemy units in the target hex. |
-| `rangeAttack` | 0–5 | Maximum attack range in hexes. 0 = melee only (range 1). |
+| `size` | 1–5 | Frame class. Actual HP = size × 10 (so 10–50 HP). **Chosen at creation and not refittable.** Acts as a ceiling on the size of weapons/armour/EW/repair that can be fitted. Costs 1 point per size. |
+| `kinetic` | 0–5 | Base attack power for direct (melee/close) damage. Determines gun length in icon. Capped by `size`. |
+| `armour` | 0–5 | Passive damage reduction from incoming attacks. Capped by `size`. |
+| `defence` | 0–5 | Electronic Warfare (EW) value. Contributes to nearby allies' defence via same-hex stacking. Capped by `size`. |
+| `splashAttack` | 0–5 | Area-of-effect attack power. When chosen as the weapon mode, damages all enemy units in the target hex. Capped by `size`. |
+| `rangeAttack` | 0–5 | Maximum attack range in hexes. 0 = melee only (range 1). **Not** capped by size. |
 | `wheeledMovement` | 0–5 | Movement points for ground/vehicle traversal. |
 | `limbMovement` | 0–5 | Movement points for legged/spider traversal. |
 | `flightMovement` | 0–5 | Movement points for aerial (drone) traversal. Also classifies unit as a **drone**. |
-| `repair` | 0–5 | Repair capability — points of health restored per repair action to a friendly unit. |
-| `antiAir` | 0–5 | Anti-air attack power — Anti-Air Fire weapon mode, only targets drones. Uses full damage formula (no drone penalty). |
+| `repair` | 0–5 | Repair capability — points of health restored per repair action to a friendly unit. Capped by `size`. |
+| `antiAir` | 0–5 | Anti-air attack power — Anti-Air Fire weapon mode, only targets drones. Uses full damage formula (no drone penalty). Capped by `size`. |
 
 ### Constraints
 
 - A unit **must** have exactly one movement type with at least 1 point (`wheeledMovement`, `limbMovement`, or `flightMovement`).
 - A unit with `flightMovement ≥ 1` is classified as a **drone** (this affects incoming damage).
-- `maxHealth` must be at least 1 if present.
+- `size` must be at least 1 if present.
+- **Size ceiling:** `kinetic`, `splashAttack`, `antiAir`, `armour`, `defence`, and `repair` may not exceed `size`. `rangeAttack`, movement, and `engineer` are exempt.
 
 ### Unit Instance Properties (Non-Attribute)
 
@@ -68,7 +69,7 @@ All attribute values are integers. Ranges are hard-clamped during combat resolut
 | `tileIndex` | Index of the hex tile this unit occupies. |
 | `segment` | Which triangular sub-segment (0–5) within the hex the unit occupies. |
 | `facing` | Direction the unit faces (0–5), set by last movement direction. |
-| `currentHealth` | Current HP (0 to maxHealth × 10). Unit is destroyed at 0. |
+| `currentHealth` | Current HP (0 to size × 10). Unit is destroyed at 0. |
 
 ---
 
@@ -480,7 +481,7 @@ totalDamage = damage from the single selected weapon mode only
 
 ### Health System
 
-- Max HP = `maxHealth × 10` (range: 10–50).
+- Max HP = `size × 10` (range: 10–50).
 - `currentHealth` starts at max and decreases with damage.
 - `newHealth = clamp(currentHealth - damage, 0, 50)`
 - Unit is **destroyed** when `currentHealth` reaches 0.
@@ -928,7 +929,7 @@ NewHealth = min(targetMaxHealth, currentHealth + RepairAmount)
 
 Where:
 - `RP` = repairer's `repair` attribute (1–5).
-- `targetMaxHealth` = target's `maxHealth × 10` (10–50 HP range).
+- `targetMaxHealth` = target's `size × 10` (10–50 HP range).
 - `roundHalfUp` = standard half-up rounding.
 
 ### Repair Validation
@@ -940,7 +941,7 @@ Where:
 | Target alive | `currentHealth > 0` |
 | Same tile | Repairer and target on same `tileIndex` |
 | Same faction | Same `ownerId` |
-| Not at full health | `currentHealth < maxHealth × 10` |
+| Not at full health | `currentHealth < size × 10` |
 | Not self | Repairer ≠ target |
 | MP remaining | Repairer has at least 1 MP remaining |
 | Action not used | Repairer has not already attacked or repaired this turn |
@@ -1014,7 +1015,7 @@ Neither attacker gets priority — both fire at full health.
 | `DRONE_DIRECT_FIRE_DAMAGE_MULTIPLIER` | 0.33 | Final Direct Fire damage multiplier when the target is a drone. |
 | `DRONE_SPLASH_FIRE_DAMAGE_MULTIPLIER` | 0.50 | Final Splash Fire damage multiplier when the affected unit is a drone. |
 | `DRONE_ANTI_AIR_DAMAGE_MULTIPLIER` | 1.00 | Final Anti-Air damage multiplier when the target is a drone (no penalty). |
-| `HP_PER_POINT` | 10 | Each maxHealth point = 10 actual health units. |
+| `HP_PER_POINT` | 10 | Each size point = 10 actual health units. |
 | `MAX_UNITS_PER_TILE` | 5 | Maximum units per hex (one segment must stay free). |
 | `EW_CAP` | 5 | Maximum EW contribution from same-hex allies. |
 | `FORMATION_CAP` | 2 | Maximum defensive formation supporter count (each contributes 0.5, so max +1.0 to DefencePower). |

@@ -16,15 +16,15 @@ interface SpawnTemplate {
 /**
  * The 6 unit templates spawned around each city:
  * 3 Splash (2 wheeled + 1 legged) + 3 Ranged (2 wheeled + 1 legged).
- * All have maxHealth 1 and attack 1.
+ * All have size 1 and attack 1.
  */
 const INITIAL_TEMPLATES: SpawnTemplate[] = [
-  { attrs: { maxHealth: 1, kinetic: 1, splashAttack: 1, wheeledMovement: 1 } },
-  { attrs: { maxHealth: 1, kinetic: 1, splashAttack: 1, wheeledMovement: 1 } },
-  { attrs: { maxHealth: 1, kinetic: 1, splashAttack: 1, limbMovement: 1, engineer: 1 } },
-  { attrs: { maxHealth: 1, kinetic: 1, rangeAttack: 1, wheeledMovement: 1 } },
-  { attrs: { maxHealth: 1, kinetic: 1, rangeAttack: 1, wheeledMovement: 1 } },
-  { attrs: { maxHealth: 1, kinetic: 1, rangeAttack: 1, limbMovement: 1 } },
+  { attrs: { size: 1, kinetic: 1, splashAttack: 1, wheeledMovement: 1 } },
+  { attrs: { size: 1, kinetic: 1, splashAttack: 1, wheeledMovement: 1 } },
+  { attrs: { size: 1, kinetic: 1, splashAttack: 1, limbMovement: 1, engineer: 1 } },
+  { attrs: { size: 1, kinetic: 1, rangeAttack: 1, wheeledMovement: 1 } },
+  { attrs: { size: 1, kinetic: 1, rangeAttack: 1, wheeledMovement: 1 } },
+  { attrs: { size: 1, kinetic: 1, rangeAttack: 1, limbMovement: 1 } },
 ];
 
 /**
@@ -67,7 +67,7 @@ export function spawnInitialUnits(
         segment: seg1,
         facing: seg1,
         attributes: { ...t1.attrs },
-        currentHealth: t1.attrs.maxHealth! * HP_PER_POINT,
+        currentHealth: t1.attrs.size! * HP_PER_POINT,
       });
 
       units.push({
@@ -78,7 +78,7 @@ export function spawnInitialUnits(
         segment: seg2,
         facing: seg2,
         attributes: { ...t2.attrs },
-        currentHealth: t2.attrs.maxHealth! * HP_PER_POINT,
+        currentHealth: t2.attrs.size! * HP_PER_POINT,
       });
     }
   }

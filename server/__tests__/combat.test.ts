@@ -11,7 +11,7 @@ import type { UnitAttributes } from '../../shared/unitTypes.js';
  */
 
 const ATTRS: UnitAttributes = {
-  maxHealth: 5,
+  size: 5,
   kinetic: 3,
   armour: 1,
   defence: 1,

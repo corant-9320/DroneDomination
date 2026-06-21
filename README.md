@@ -49,7 +49,7 @@ No fixed unit types — every unit is assembled from attributes (0–5 each):
 
 | Attribute | Effect |
 |-----------|--------|
-| maxHealth | Hit points (×10, so 10–50 HP) |
+| size | Frame class (1–5). Max HP = size×10. Caps weapons/armour/EW/repair. Locked at creation. |
 | armour | Reduces incoming damage |
 | defence | Electronic warfare — stacks with allies in same hex |
 | splashAttack | Area damage to all enemies in target hex |

@@ -124,7 +124,7 @@ describe('spawn', () => {
       const cities = [{ id: 'city_0', tileIndex: 0 }];
       const units = spawnInitialUnits(tiles, cities);
       for (const unit of units) {
-        expect(unit.attributes.maxHealth).toBe(1);
+        expect(unit.attributes.size).toBe(1);
         expect(unit.currentHealth).toBe(10);
       }
     });

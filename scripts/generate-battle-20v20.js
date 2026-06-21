@@ -293,6 +293,9 @@ function generateUnitName(attrs) {
 // ---------------------------------------------------------------------------
 const COMBAT_ATTRS = ['kinetic', 'armour', 'defence', 'splashAttack', 'rangeAttack', 'antiAir'];
 
+/** Attributes whose value may not exceed the unit's size (rangeAttack is exempt). */
+const SIZE_CAPPED = new Set(['kinetic', 'splashAttack', 'antiAir', 'armour', 'defence', 'repair']);
+
 function makeRandomUnit(movAttr, pointBudget = 27) {
   const attrs = { [movAttr]: 0 };
   let remaining = pointBudget;
@@ -306,17 +309,20 @@ function makeRandomUnit(movAttr, pointBudget = 27) {
 
   // Health: 1-4 points
   const hpPts = Math.min(4, Math.max(1, randInt(1, Math.min(4, Math.floor(remaining * 0.2)))));
-  attrs.maxHealth = hpPts;
+  attrs.size = hpPts;
   remaining -= hpPts;
 
-  // Armour for non-drones: 0-3 points (optional)
+  // Armour for non-drones: 0-3 points (optional), capped by size
   if (movAttr !== 'flightMovement') {
-    const armPts = Math.min(3, randInt(0, Math.floor(remaining * 0.15)));
+    const armPts = Math.min(3, attrs.size, randInt(0, Math.floor(remaining * 0.15)));
     if (armPts > 0) {
       attrs.armour = armPts;
       remaining -= armPts;
     }
   }
+
+  // Per-attribute ceiling: size-capped attrs may not exceed size; others cap at 5.
+  const capOf = (key) => (SIZE_CAPPED.has(key) ? attrs.size : 5);
 
   // Distribute remaining points across combat attributes
   const availableAttrs = [...COMBAT_ATTRS];
@@ -336,7 +342,7 @@ function makeRandomUnit(movAttr, pointBudget = 27) {
     for (const key of chosen) {
       if (remaining <= 0) break;
       const current = attrs[key] ?? 0;
-      if (current < 5) {
+      if (current < capOf(key)) {
         attrs[key] = current + 1;
         remaining--;
         found = true;
@@ -345,7 +351,7 @@ function makeRandomUnit(movAttr, pointBudget = 27) {
     
     // If all chosen attributes are maxed, pick a random available one
     if (!found && remaining > 0) {
-      const allAvailable = availableAttrs.filter(k => (attrs[k] ?? 0) < 5);
+      const allAvailable = availableAttrs.filter(k => (attrs[k] ?? 0) < capOf(k));
       if (allAvailable.length > 0) {
         const key = randChoice(allAvailable);
         attrs[key] = (attrs[key] ?? 0) + 1;
@@ -356,8 +362,8 @@ function makeRandomUnit(movAttr, pointBudget = 27) {
     }
   }
 
-  // Ensure maxHealth is set
-  if (!attrs.maxHealth) attrs.maxHealth = 1;
+  // Ensure size is set
+  if (!attrs.size) attrs.size = 1;
 
   return attrs;
 }
@@ -504,7 +510,7 @@ function placeArmy(armyUnits, frontTiles, ownerId, facingDir) {
   for (const entry of placed) {
     if (entry.skip) continue;
     const attrs     = entry.unitDef.attrs;
-    const maxHealth = attrs.maxHealth ?? 1;
+    const size = attrs.size ?? 1;
     units.push({
       id:            `unit_${unitId++}`,
       label:         generateUnitName(attrs),
@@ -513,7 +519,7 @@ function placeArmy(armyUnits, frontTiles, ownerId, facingDir) {
       segment:       entry.seg,
       facing:        facingDir,
       attributes:    attrs,
-      currentHealth: maxHealth * HP_PER_PT,
+      currentHealth: size * HP_PER_PT,
     });
   }
 }
@@ -572,7 +578,7 @@ if (playerCity) {
 
   // Garrison unit on the last (open) segment, clear of the building arc.
   const garrisonSeg = sides - 1;
-  const garrisonAttrs = { wheeledMovement: 3, kinetic: 2, rangeAttack: 2, armour: 2, maxHealth: 3 };
+  const garrisonAttrs = { wheeledMovement: 3, kinetic: 2, rangeAttack: 2, armour: 2, size: 3 };
   units.push({
     id:            `unit_${unitId++}`,
     label:         generateUnitName(garrisonAttrs),
@@ -581,7 +587,7 @@ if (playerCity) {
     segment:       garrisonSeg,
     facing:        0,
     attributes:    garrisonAttrs,
-    currentHealth: (garrisonAttrs.maxHealth ?? 1) * HP_PER_PT,
+    currentHealth: (garrisonAttrs.size ?? 1) * HP_PER_PT,
   });
 
   console.log(`Player capital ${capIdx}: ${buildings.length} buildings on segs [${buildSegs.join(', ')}], garrison unit on seg ${garrisonSeg}`);

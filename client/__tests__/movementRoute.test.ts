@@ -110,7 +110,7 @@ function makeUnit(tileIndex: number, overrides: Partial<UnitData> = {}): UnitDat
     tileIndex,
     segment: overrides.segment ?? 0,
     facing: overrides.facing ?? 0,
-    attributes: overrides.attributes ?? { maxHealth: 3, wheeledMovement: 2, rangeAttack: 2, kinetic: 2 },
+    attributes: overrides.attributes ?? { size: 3, wheeledMovement: 2, rangeAttack: 2, kinetic: 2 },
     currentHealth: overrides.currentHealth ?? 30,
   };
 }
@@ -226,7 +226,7 @@ describe('movementRoute — characterization', () => {
 
   it('computeContextualAttackRoute: enemy already in range → single red hop, no movement', () => {
     const enemyTile = at(1, 0);
-    const unit = makeUnit(startTile, { attributes: { maxHealth: 3, wheeledMovement: 2, rangeAttack: 3, kinetic: 2 } });
+    const unit = makeUnit(startTile, { attributes: { size: 3, wheeledMovement: 2, rangeAttack: 3, kinetic: 2 } });
     const enemy = makeUnit(enemyTile, { id: 'e1', ownerId: 'enemy', segment: 3 });
     const world = makeWorld(tiles, [unit, enemy]);
     const rangeResult = computeMovementRange(world, unit, MP);
