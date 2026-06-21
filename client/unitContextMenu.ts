@@ -8,6 +8,7 @@
 
 import { UnitData } from './worldData.js';
 import { rotateHexIndex } from './facing.js';
+import { setEwFocus } from './ewOverlay.js';
 
 /** Minimal slice of MapInputHandler that UnitContextMenu needs to call back into. */
 export interface ContextMenuHost {
@@ -136,6 +137,13 @@ export class UnitContextMenu {
         host.closeContextMenu();
       }));
     }
+
+    // EW coverage — show this unit's anti-drone screen radius
+    menu.appendChild(makeItem('📡 EW coverage', "Show this unit's EW anti-drone screen (toggle off with 'e')", () => {
+      setEwFocus(unit.tileIndex, unit.segment);
+      host.closeContextMenu();
+      v.render();
+    }));
 
     document.body.appendChild(menu);
     this.el = menu;

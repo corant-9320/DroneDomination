@@ -4,6 +4,29 @@ Append-only record of design decisions, gotchas, and known issues. The game's
 rules are invented as we go — this log is how that intent survives across
 sessions so agents stop re-discovering (or re-breaking) the same things.
 
+## 2026-06-21 — EW coverage overlay (key 'e' + RMB)
+
+**Decision:** Added a client visualization of EW anti-drone screens. New module
+`client/ewOverlay.ts` holds overlay state and draws a coverage circle per EW
+source (radius = `defence` value × per-hop screen distance), coloured by faction.
+
+- **Key `e`** toggles a global overlay showing every EW-bearing unit AND building
+  of both factions.
+- **RMB → 📡 EW coverage** focuses a single entity: added to the player
+  `UnitContextMenu` and to the `SegmentContextMenu` (no-unit-selected RMB), the
+  latter covering units/buildings of either faction at the clicked tile+segment.
+
+**Why:** EW is now a radius screen (more overlap = more protection); players need
+to see the coverage to position units.
+
+**Impact:**
+- Overlay drawn in `LocalMapView.render()` beneath structures/units via `drawEwCoverage`.
+- Buildings are shown as EW sources in the viz even though building EW is not yet
+  a combat contributor (combat EW = units only, see prior entry). Coverage circle
+  reflects the entity's own `defence` radius regardless.
+- ui-defaults steering updated (keyboard table + RMB menus). Checkpoint: `8e2b288`.
+- tsc clean (src/shared), 348 tests pass; client diagnostics clean.
+
 ## 2026-06-21 — EW is a radius-based anti-drone screen
 
 **Decision:** Electronic Warfare (`defence`) is no longer same-hex stacking with

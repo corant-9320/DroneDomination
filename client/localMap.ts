@@ -47,6 +47,7 @@ import {
   drawCombatHighlight as _drawCombatHighlight,
   drawMoveHighlight as _drawMoveHighlight,
 } from './localMapUnits.js';
+import { drawEwCoverage as _drawEwCoverage } from './ewOverlay.js';
 import {
   computeMovementRange as _computeMovementRange,
   computeContextualAttackRoute as _computeContextualAttackRoute,
@@ -480,6 +481,14 @@ export class LocalMapView implements MapViewInterface {
       this.world,
       this.flatTiles,
       this._movementCostRoute,
+      (wx, wy) => this.worldToScreen(wx, wy),
+    );
+
+    // Draw EW coverage circles (toggle 'e' / RMB) beneath structures & units
+    _drawEwCoverage(
+      this.ctx,
+      this.world,
+      this.flatTiles,
       (wx, wy) => this.worldToScreen(wx, wy),
     );
 

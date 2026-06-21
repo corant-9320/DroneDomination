@@ -20,6 +20,8 @@ export interface CityMenuCallbacks {
   onViewSegment: ((tileIndex: number, segment: number) => void) | null;
   onCityDesign: ((cityId: string) => void) | null;
   onBuildingRefit: ((buildingId: string) => void) | null;
+  /** Show the EW coverage of whatever unit/building occupies this tile+segment (either faction). */
+  onShowEwCoverage: ((tileIndex: number, segment: number) => void) | null;
 }
 
 /** Which actions are available for the right-clicked segment. */
@@ -159,6 +161,17 @@ export class SegmentContextMenu {
         () => {
           this.close();
           callbacks.onCityDesign?.(cityId);
+        },
+      ));
+    }
+
+    if (callbacks.onShowEwCoverage) {
+      menu.appendChild(makeItem(
+        '📡 EW coverage',
+        "Show the EW anti-drone screen of the unit/building here (toggle off with 'e')",
+        () => {
+          this.close();
+          callbacks.onShowEwCoverage?.(actions.tileIndex, actions.segment);
         },
       ));
     }

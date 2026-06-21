@@ -9,6 +9,7 @@ import { syncPlannedToWorld } from './cityPlan.js';
 import { dbg } from './debug.js';
 import { emitDebugEvent } from './gameDebug.js';
 import { advanceTurn } from './turnController.js';
+import { toggleEwGlobal } from './ewOverlay.js';
 import type { GameContext } from './gameContext.js';
 
 export function setupKeyboardShortcuts(ctx: GameContext): void {
@@ -155,6 +156,15 @@ export function setupKeyboardShortcuts(ctx: GameContext): void {
     syncPlannedToWorld(world);
     localMap.render();
     detailPanel.showTile(localMap.selectedTile, localMap.selectedSegment >= 0 ? localMap.selectedSegment : undefined);
+  });
+
+  // E — toggle EW coverage circles (all EW-bearing units & buildings)
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'e' && e.key !== 'E') return;
+    if ((e.target as HTMLElement).tagName === 'INPUT') return;
+    e.preventDefault();
+    toggleEwGlobal();
+    localMap.render();
   });
 
   // Ctrl+S — save; Ctrl+L — load

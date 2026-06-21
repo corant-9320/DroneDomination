@@ -10,6 +10,7 @@ import type { MovePlan } from './localMapMovement.js';
 import { rotateHexIndex } from './facing.js';
 import { UnitContextMenu } from './unitContextMenu.js';
 import { SegmentContextMenu } from './cityContextMenus.js';
+import { setEwFocus } from './ewOverlay.js';
 import { TurnManager } from './turnManager.js';
 
 /** Minimal polygon tile reference needed by the input handler. */
@@ -742,6 +743,10 @@ export class MapInputHandler {
       onViewSegment: this.view.onViewSegment,
       onCityDesign: this.view.onCityDesign,
       onBuildingRefit: this.view.onBuildingRefit,
+      onShowEwCoverage: (tileIndex, segment) => {
+        setEwFocus(tileIndex, segment);
+        this.view.render();
+      },
     });
   }
 
