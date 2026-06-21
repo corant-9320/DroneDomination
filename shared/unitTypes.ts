@@ -38,7 +38,7 @@ export interface UnitAttributes {
   kinetic?: number;
   /** Damage reduction from incoming attacks (0–5). */
   armour?: number;
-  /** Electronic Warfare (EW) value. Contributes to same-hex allies' DefencePower (0–5). */
+  /** Electronic Warfare (EW) value. Radius (in hops) of an anti-drone screen protecting nearby friendlies (0–5). */
   defence?: number;
   /** Base splash damage dealt in adjacent combat (0–5). */
   splashAttack?: number;

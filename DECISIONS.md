@@ -4,6 +4,35 @@ Append-only record of design decisions, gotchas, and known issues. The game's
 rules are invented as we go — this log is how that intent survives across
 sessions so agents stop re-discovering (or re-breaking) the same things.
 
+## 2026-06-21 — EW is a radius-based anti-drone screen
+
+**Decision:** Electronic Warfare (`defence`) is no longer same-hex stacking with
+a per-weapon-mode multiplier. A unit's `defence` value is the **radius** (in
+tile hops) of an anti-drone screen. Each friendly source (including the
+defender) contributes `max(0, defence − hopDistance)` to a defender, additive
+across overlapping screens with **no cap**. EW **only mitigates damage from
+drone attackers** — zero against tank/spider fire. The old
+`EW_EFFECTIVENESS_DIRECT/SPLASH/ANTIAIR` table is removed.
+
+**Why:** Makes EW a meaningful area-denial screen against the drone threat and
+removes the per-mode complexity. Pairs with drones being the adjacent
+bomb/collision attacker.
+
+**Impact:**
+- `combat.ts`: `getEWDefense` → `getEWProtection(target, allUnits, tiles)` (BFS radius sum);
+  `getDefencePower(..., attackerIsDrone)` gates EW on a drone attacker; all call
+  sites pass `isDrone(attacker)`. Added `MAX_EW_RADIUS = 5`.
+- `combatFormula.ts`: removed `EW_EFFECTIVENESS_*` + `ewEffectiveness`.
+- Explainer/detailPanel: defence display now shows a single radius anti-drone EW
+  (applies only vs drone attackers). `CombatBreakdown.defEWMultiplier` is now 1
+  (drone attacker) or 0.
+- EW sources are **units only** for now — buildings carry `defence` but are not
+  yet threaded into combat resolution (the combat API takes units+tiles only).
+  Follow-up if building EW should contribute.
+- Tests: `getEWDefense` tests replaced with `getEWProtection` radius tests.
+- COMBAT_RULES §5/§12 + constants/appendix updated. Checkpoint before this work: `31e5b28`.
+- tsc clean, 348 tests pass.
+
 ## 2026-06-21 — Drones lose rangeAttack; hard-locked to range 1
 
 **Decision:** Drones (flight chassis) have no `rangeAttack` concept and attack

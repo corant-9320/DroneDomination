@@ -308,9 +308,10 @@ export class DetailPanel {
     // ── Defence section ──────────────────────────────────────────────────
     html += `<tr><td colspan="2" class="dp-combat-section">Defence</td></tr>`;
     html += cpRow('Armour',    b.defArmour);
-    const ewLabel = b.defEWMultiplier < 1
-      ? `EW ${b.defEWRaw} ×${b.defEWMultiplier}`
-      : 'EW';
+    // EW is a radius-based anti-drone screen: only mitigates damage from drone attackers.
+    const ewLabel = b.defEWMultiplier >= 1
+      ? `EW screen (anti-drone)`
+      : `EW ${b.defEWRaw.toFixed(1)} (n/a vs ground)`;
     html += cpRow(ewLabel, b.defEW.toFixed(2));
     html += cpRow('Terrain',   b.defTerrain);
     if (b.droneEvasion > 0) {

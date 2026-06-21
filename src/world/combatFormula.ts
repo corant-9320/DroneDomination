@@ -70,15 +70,14 @@ export const DRONE_SPLASH_FIRE_DAMAGE_MULTIPLIER = 0.50;
 export const DRONE_ANTI_AIR_DAMAGE_MULTIPLIER = 1.00;
 
 // ---------------------------------------------------------------------------
-// Electronic Warfare effectiveness — per weapon mode
+// Electronic Warfare
 // ---------------------------------------------------------------------------
-
-/** EW effectiveness vs kinetic/direct fire (bullets/shells bypass most ECM). */
-export const EW_EFFECTIVENESS_DIRECT = 0.50;
-/** EW effectiveness vs splash/area fire (partially jammed). */
-export const EW_EFFECTIVENESS_SPLASH = 0.75;
-/** EW effectiveness vs anti-air/reaction fire (fully countered). */
-export const EW_EFFECTIVENESS_ANTIAIR = 1.00;
+//
+// EW is now a radius-based anti-drone screen (see combat.ts getEWProtection):
+// a unit's `defence` value is its coverage radius in hops, contributing
+// max(0, defence − distance) to friendly units within range, additive across
+// sources. It ONLY mitigates damage from drone attackers. The old per-mode
+// effectiveness table (direct/splash/antiAir) has been removed.
 
 // ---------------------------------------------------------------------------
 // Elevation
@@ -142,18 +141,6 @@ export function modifiedAttackPower(
   rangeEfficiency: number,
 ): number {
   return Math.max(0.01, baseWeaponValue * chassisModifier * rangeEfficiency + orientationBonus);
-}
-
-/**
- * EW effectiveness multiplier for a weapon mode.
- */
-export function ewEffectiveness(mode: WeaponMode): number {
-  switch (mode) {
-    case 'direct':  return EW_EFFECTIVENESS_DIRECT;
-    case 'splash':  return EW_EFFECTIVENESS_SPLASH;
-    case 'antiAir': return EW_EFFECTIVENESS_ANTIAIR;
-    default:        return EW_EFFECTIVENESS_ANTIAIR;
-  }
 }
 
 /**

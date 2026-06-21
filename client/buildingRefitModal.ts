@@ -51,7 +51,7 @@ const DESCS: Record<keyof BuildingModelAttrs, string> = {
   splashAttack: 'Area-of-effect attack hitting all enemies in the target hex.',
   antiAir: 'Dedicated anti-drone weapon. No drone penalty; triggers reaction fire.',
   armour: 'Passive damage reduction added to DefencePower.',
-  defence: 'Electronic Warfare. Stacks with same-hex allies; strongest vs anti-air.',
+  defence: 'Electronic Warfare — radius anti-drone screen; protects nearby friendlies from drone attacks only.',
   repair: 'Restores ×10 HP to a friendly unit per repair action.',
 };
 

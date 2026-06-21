@@ -223,7 +223,7 @@ export function showRefitModal(unit: { label: string; attributes: UnitAttributes
       splashAttack: 'Area-of-effect attack hitting all enemies in the target hex. Each enemy takes 30% of the full formula damage — total output beats single-target kinetic when 4+ enemies are stacked. Drones hit by splash take 50% of that (vs 33% for direct fire), so splash is relatively better against drone clusters.',
       antiAir:      'Dedicated anti-drone weapon. Full formula damage against drones with NO drone penalty. Also triggers reaction fire when a drone flies over or attacks your hex.',
       armour:       'Passive damage reduction. Contributes directly to DefencePower (0–5), reducing all incoming attack damage.',
-      defence:      'Electronic Warfare (EW). Stacks with all friendly units in the same hex (cap 5). Fully counters Anti-Air targeting; 75% effective vs Splash; 50% vs Direct Fire.',
+      defence:      'Electronic Warfare (EW) — a radius-based anti-drone screen. Your defence value is the coverage radius in hexes; it protects friendly units within range (max(0, value − distance), additive across overlapping screens). Only mitigates damage from DRONE attackers — useless against tanks/spiders.',
       repair:       'Repair capability — restores this many ×10 HP to a selected friendly unit per repair action.',
     };
 
@@ -330,7 +330,7 @@ export function showRefitModal(unit: { label: string; attributes: UnitAttributes
       },
       {
         heading: '  Defence side',
-        text: 'Armour (always), EW / Defence (stacked with same-hex allies, most effective vs anti-air), and forest cover.',
+        text: 'Armour (always) and forest cover. EW is a separate radius-based anti-drone screen that only reduces damage from drone attackers.',
       },
       {
         heading: 'Example — even match',

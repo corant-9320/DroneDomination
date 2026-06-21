@@ -3,7 +3,7 @@ import {
   classifyAttackArc,
   getFacingModifier,
   getOrientationBonus,
-  getEWDefense,
+  getEWProtection,
   getTerrainDefense,
   getDefencePower,
   clamp,
@@ -212,22 +212,34 @@ describe('combat', () => {
     });
   });
 
-  describe('getEWDefense', () => {
-    it('sums same-hex friendly defence, capped at 5', () => {
+  describe('getEWProtection', () => {
+    it('same-hex sources contribute full defence, additive with no cap', () => {
       const target = makeUnit({ id: 't', ownerId: 'p1', tileIndex: 0 });
       const ally = makeUnit({ id: 'a1', ownerId: 'p1', tileIndex: 0 });
       ally.attributes.defence = 4;
       const ally2 = makeUnit({ id: 'a2', ownerId: 'p1', tileIndex: 0 });
       ally2.attributes.defence = 4;
-      expect(getEWDefense(target, [target, ally, ally2])).toBe(5);
+      // Two same-hex EW-4 screens → 4 + 4 = 8 (no cap at 5).
+      expect(getEWProtection(target, [target, ally, ally2], tiles)).toBe(8);
     });
 
-    it('excludes different tiles, dead units, enemies', () => {
+    it('contribution falls off by 1 per hop', () => {
       const target = makeUnit({ id: 't', ownerId: 'p1', tileIndex: 0 });
-      const far = makeUnit({ id: 'f', ownerId: 'p1', tileIndex: 1 }); far.attributes.defence = 5;
-      const dead = makeUnit({ id: 'd', ownerId: 'p1', tileIndex: 0, currentHealth: 0 }); dead.attributes.defence = 5;
-      const enemy = makeUnit({ id: 'e', ownerId: 'p2', tileIndex: 0 }); enemy.attributes.defence = 5;
-      expect(getEWDefense(target, [target, far, dead, enemy])).toBe(0);
+      const adj = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1 });
+      adj.attributes.defence = 5;
+      // Adjacent (1 hop) EW-5 screen → max(0, 5 − 1) = 4.
+      expect(getEWProtection(target, [target, adj], tiles)).toBe(4);
+    });
+
+    it('excludes enemies, dead units, and sources whose radius does not reach', () => {
+      const target = makeUnit({ id: 't', ownerId: 'p1', tileIndex: 0 });
+      const dead = makeUnit({ id: 'd', ownerId: 'p1', tileIndex: 0, currentHealth: 0 });
+      dead.attributes.defence = 5;
+      const enemy = makeUnit({ id: 'e', ownerId: 'p2', tileIndex: 0 });
+      enemy.attributes.defence = 5;
+      const weakAdjacent = makeUnit({ id: 'w', ownerId: 'p1', tileIndex: 1 });
+      weakAdjacent.attributes.defence = 1; // EW-1 at 1 hop → max(0, 1 − 1) = 0
+      expect(getEWProtection(target, [target, dead, enemy, weakAdjacent], tiles)).toBe(0);
     });
   });
 

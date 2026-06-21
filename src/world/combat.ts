@@ -48,9 +48,6 @@ export {
   DRONE_DIRECT_FIRE_DAMAGE_MULTIPLIER,
   DRONE_SPLASH_FIRE_DAMAGE_MULTIPLIER,
   DRONE_ANTI_AIR_DAMAGE_MULTIPLIER,
-  EW_EFFECTIVENESS_DIRECT,
-  EW_EFFECTIVENESS_SPLASH,
-  EW_EFFECTIVENESS_ANTIAIR,
   // Pure functions
   calculateRangeEfficiency,
   clamp,
@@ -87,9 +84,6 @@ export {
 
 import {
   DEFENCE_SCALE,
-  EW_EFFECTIVENESS_DIRECT,
-  EW_EFFECTIVENESS_SPLASH,
-  EW_EFFECTIVENESS_ANTIAIR,
   SEGMENT_RANGE_BASE,
   type ChassisType,
   getChassisModifier,
@@ -191,29 +185,63 @@ export function getSegmentRangeThreshold(unit: Unit): number {
 // for wire/UI compatibility and will be removed in the combat-formula refactor.
 
 // ---------------------------------------------------------------------------
-// Electronic Warfare (EW) — sum of defence in same hex, capped at 5
+// Electronic Warfare (EW) — radius-based anti-drone screen
 // ---------------------------------------------------------------------------
 
 /**
- * Get the total EW defence from friendly units in the same hex as the target.
- * Sum all defence values (including the target itself), capped at 5.
- * Excludes destroyed units.
+ * Maximum EW coverage radius in hops (a unit's `defence` value is its radius,
+ * 0–5, so 5 is the largest possible).
  */
-export function getEWDefense(
+export const MAX_EW_RADIUS = 5;
+
+/** BFS hop-distance map from a start tile out to maxRadius (inclusive). */
+function bfsHopDistances(tiles: Tile[], start: number, maxRadius: number): Map<number, number> {
+  const dist = new Map<number, number>();
+  dist.set(start, 0);
+  const queue: number[] = [start];
+  let head = 0;
+  while (head < queue.length) {
+    const current = queue[head++];
+    const d = dist.get(current)!;
+    if (d >= maxRadius) continue;
+    for (const n of tiles[current].neighbours) {
+      if (!dist.has(n)) {
+        dist.set(n, d + 1);
+        queue.push(n);
+      }
+    }
+  }
+  return dist;
+}
+
+/**
+ * Radius-based Electronic Warfare protection for a target unit.
+ *
+ * Each friendly unit (including the target itself) with a `defence` value E
+ * projects an anti-drone screen of radius E hops, contributing max(0, E − d)
+ * to a unit d hops away. Contributions are additive across all sources, with
+ * no explicit cap — geometry limits it naturally (e.g. three EW-5 screens one
+ * hop away give 3 × (5 − 1) = 12). Destroyed units and enemies do not contribute.
+ *
+ * This value only mitigates damage from DRONE attackers (see getDefencePower).
+ */
+export function getEWProtection(
   target: Unit,
   allUnits: Unit[],
+  tiles: Tile[],
 ): number {
+  const dist = bfsHopDistances(tiles, target.tileIndex, MAX_EW_RADIUS);
   let total = 0;
-
   for (const unit of allUnits) {
     if (unit.ownerId !== target.ownerId) continue;
     if (unit.currentHealth <= 0) continue;
-    if (unit.tileIndex !== target.tileIndex) continue;
-
-    total += unit.attributes.defence ?? 0;
+    const E = unit.attributes.defence ?? 0;
+    if (E <= 0) continue;
+    const d = unit.tileIndex === target.tileIndex ? 0 : dist.get(unit.tileIndex);
+    if (d === undefined) continue; // beyond max radius
+    total += Math.max(0, E - d);
   }
-
-  return Math.min(5, total);
+  return total;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,36 +266,31 @@ export function getTerrainDefense(tile: Tile): number {
 // ---------------------------------------------------------------------------
 
 /**
- * EW effectiveness multipliers by weapon mode now live in combatFormula.ts
- * (EW_EFFECTIVENESS_DIRECT/SPLASH/ANTIAIR), imported and re-exported above.
+ * EW effectiveness is no longer per-weapon-mode. EW is a radius-based
+ * anti-drone screen that only mitigates damage from drone attackers.
  */
 
 /**
  * Calculate the full DefencePower for a target unit.
- * DefencePower = armour + (EW × ewMultiplier) + terrain
+ * DefencePower = armour + EW + terrain
  *
- * Each component is clamped to its valid range before summing.
- * (The defensive-formation term was deprecated 2026-06-21 and is always 0.)
+ * EW is the radius-based anti-drone screen (getEWProtection) and ONLY applies
+ * when the attacker is a drone; against ground (tank/spider) attackers EW
+ * contributes 0. (The defensive-formation term was deprecated 2026-06-21 and is always 0.)
  *
- * @param weaponMode - The attacking weapon mode, which determines EW effectiveness.
- *   'direct'  → EW at 50%
- *   'splash'  → EW at 75%
- *   'antiAir' → EW at 100% (default when omitted)
+ * @param attackerIsDrone - whether the attacking unit is a drone (enables EW).
  */
 export function getDefencePower(
   target: Unit,
   allUnits: Unit[],
   tiles: Tile[],
-  weaponMode: 'direct' | 'splash' | 'antiAir' = 'antiAir',
+  attackerIsDrone: boolean = false,
 ): { armour: number; ew: number; ewRaw: number; ewMultiplier: number; defensiveFormation: number; terrain: number; total: number } {
   const armour = clamp(target.attributes.armour ?? 0, 0, 5);
-  const ewRaw = clamp(getEWDefense(target, allUnits), 0, 5);
-  const ewMultiplier = weaponMode === 'direct' ? EW_EFFECTIVENESS_DIRECT
-    : weaponMode === 'splash' ? EW_EFFECTIVENESS_SPLASH
-    : EW_EFFECTIVENESS_ANTIAIR;
+  const ewRaw = getEWProtection(target, allUnits, tiles);
+  const ewMultiplier = attackerIsDrone ? 1 : 0;
   const ew = ewRaw * ewMultiplier;
-  // Defensive formation bonus deprecated (2026-06-21) — adjacency confers no
-  // defence in modern missile warfare. Retained as 0 for wire/UI compatibility.
+  // Defensive formation bonus deprecated (2026-06-21).
   const defensiveFormation = 0;
   const terrain = clamp(getTerrainDefense(tiles[target.tileIndex]), 0, 1);
   const total = armour + ew + terrain;
@@ -303,8 +326,8 @@ export function calculateDirectDamage(
   const angleDiff = getAngularDifference(tiles, attacker.tileIndex, target.tileIndex, target.facing);
   const arc: AttackArc = isNaN(angleDiff) ? 'unknown' : classifyArcFromAngle(angleDiff);
 
-  // EW is 50% effective against kinetic (direct) fire
-  const defencePower = getDefencePower(target, allUnits, tiles, 'direct');
+  // EW (radius anti-drone screen) only applies when the attacker is a drone.
+  const defencePower = getDefencePower(target, allUnits, tiles, isDrone(attacker));
   const antiDronePenaltyApplied = isDrone(target);
 
   const { finalDamage } = computeDamage({
@@ -348,8 +371,8 @@ export function calculateSplashDamage(
     ? calculateOrientationBonus(tiles, attacker.tileIndex, victim.tileIndex, victim.facing)
     : 0;
 
-  // EW is 75% effective against splash fire
-  const defPower = getDefencePower(victim, allUnits, tiles, 'splash');
+  // EW (radius anti-drone screen) only applies when the attacker is a drone.
+  const defPower = getDefencePower(victim, allUnits, tiles, isDrone(attacker));
 
   const { finalDamage } = computeDamage({
     mode: 'splash',
@@ -486,7 +509,7 @@ export function evaluateWeaponOptions(
 
   // --- Anti-Air Fire ---
   if ((attacker.attributes.antiAir ?? 0) > 0 && isDrone(target)) {
-    const defencePower = getDefencePower(target, allUnits, tiles, 'antiAir');
+    const defencePower = getDefencePower(target, allUnits, tiles, isDrone(attacker));
     const { finalDamage } = computeDamage({
       mode: 'antiAir',
       attackerChassis: getChassisType(attacker),
@@ -559,8 +582,8 @@ export function resolveAttack(
   const orientationBonus = calculateOrientationBonus(tiles, attacker.tileIndex, target.tileIndex, target.facing);
   const angleDiff = getAngularDifference(tiles, attacker.tileIndex, target.tileIndex, target.facing);
   const arc: AttackArc = isNaN(angleDiff) ? 'unknown' : classifyArcFromAngle(angleDiff);
-  // Anti-air uses full EW (100% effectiveness); direct/splash use mode-specific values via their own calls
-  const defencePower = getDefencePower(target, allUnits, tiles, 'antiAir');
+  // EW (radius anti-drone screen) only applies when the attacker is a drone.
+  const defencePower = getDefencePower(target, allUnits, tiles, isDrone(attacker));
 
   // Evaluate all valid weapon options (shared with explainer)
   const validOptions = evaluateWeaponOptions(attacker, target, allUnits, tiles, segDist, orientationBonus);
@@ -672,8 +695,8 @@ export function calculateAntiAirReactionDamage(
   allUnits: Unit[],
   tiles: Tile[],
 ): number {
-  // Anti-air / reaction fire uses full EW effectiveness (100%).
-  const defPower = getDefencePower(drone, allUnits, tiles, 'antiAir');
+  // Anti-air reaction: EW only applies if the reacting attacker is itself a drone.
+  const defPower = getDefencePower(drone, allUnits, tiles, isDrone(reactingUnit));
   // Terrain is 0 for airborne drones (formation bonus deprecated — see getDefencePower)
   const airborneDefence = (defPower.armour + defPower.ew) * DEFENCE_SCALE;
 
@@ -731,7 +754,7 @@ export function resolveAntiAirReactionFireForTile(
       attackArc: 'front', // snap shot — no arc
       facingModifier: 0,
       targetArmour: drone.attributes.armour ?? 0,
-      targetEffectiveDefense: getDefencePower(drone, allUnits, tiles).total,
+      targetEffectiveDefense: getDefencePower(drone, allUnits, tiles, isDrone(unit)).total,
       directDamage: damage,
       antiAirDamage: damage,
       splashEvents: [],

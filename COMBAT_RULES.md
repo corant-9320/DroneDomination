@@ -250,7 +250,7 @@ DefencePower = armour + EW + terrain
 | Component | Source | Range |
 |-----------|--------|-------|
 | Armour | Target unit's `armour` attribute | 0–5 |
-| EW | Sum of `defence` attributes of all friendly units in same hex (incl. self), capped at 5 | 0–5 |
+| EW | Radius anti-drone screen (see §12). Only reduces damage from drone attackers. | 0+ (additive) |
 | Terrain | Based on tile's forest cover (see §13) | 0–1 |
 
 > **Deprecated (2026-06-21):** the *Defensive Formation* term (defence for
@@ -503,35 +503,39 @@ backward compatibility and will be removed entirely in a later pass.
 
 ---
 
-## 12. Electronic Warfare (EW)
+## 12. Electronic Warfare (EW) — Radius Anti-Drone Screen
 
-EW defence is contributed by friendly units stacked in the **same hex** as the target.
+EW is a **radius-based anti-drone screen**. A unit's `defence` value is the
+radius (in tile hops) of a protective screen it projects. It **only mitigates
+damage from drone attackers** — against tank/spider (ground) attackers EW does nothing.
 
 ### Calculation
 
+For a defending unit, sum the contribution of every friendly source (including
+the defender itself) with `defence ≥ 1`:
+
 ```
-EW_raw = min(5, sum of defence attributes of all same-hex friendly units including target)
-EW = EW_raw × ewMultiplier
+contribution(source) = max(0, source.defence − hopDistance(source, defender))
+EW_raw = Σ contribution(source)   over all living friendly units
+EW     = EW_raw × (attackerIsDrone ? 1 : 0)
 ```
 
-### EW Effectiveness by Weapon Mode
+- `hopDistance` is the BFS tile-hop distance (same tile = 0).
+- Contributions are **additive** across overlapping screens, with **no explicit
+  cap** — geometry limits it (only so many sources can be close).
+- A source contributes 0 beyond its own radius (`defence` hops).
 
-EW represents electronic countermeasures that are better at disrupting electronic targeting systems than raw kinetic fire. Its effectiveness depends on the incoming weapon mode:
+### Example
 
-| Weapon Mode | EW Multiplier | Rationale |
-|-------------|---------------|-----------|
-| Direct Fire (kinetic) | ×0.50 | Bullets and shells bypass most ECM |
-| Splash Fire | ×0.75 | Area weapons are partially jammed |
-| Anti-Air Fire | ×1.00 | AA targeting is fully countered by EW |
-| Anti-Air Reaction Fire | ×1.00 | Same as Anti-Air Fire |
+A defender adjacent (1 hop) to three EW-5 screens receives
+`3 × max(0, 5 − 1) = 12` EW — but only when the attacker is a drone.
 
 ### Rules
 
-- Only units in the **exact same tile** contribute (not adjacent tiles).
-- The target's own `defence` attribute **counts** toward its own EW.
-- Destroyed units (`currentHealth ≤ 0`) do not contribute.
-- Enemy units do not contribute.
-- Raw EW capped at 5 before multiplier is applied.
+- EW applies **only when the attacker is a drone**; otherwise EW = 0.
+- The defender's own `defence` counts (distance 0 → full value).
+- Destroyed units and enemy units do not contribute.
+- `MAX_EW_RADIUS = 5` (largest possible `defence`).
 
 ---
 
@@ -1030,7 +1034,7 @@ Neither attacker gets priority — both fire at full health.
 | `DRONE_ANTI_AIR_DAMAGE_MULTIPLIER` | 1.00 | Final Anti-Air damage multiplier when the target is a drone (no penalty). |
 | `HP_PER_POINT` | 10 | Each size point = 10 actual health units. |
 | `MAX_UNITS_PER_TILE` | 5 | Maximum units per hex (one segment must stay free). |
-| `EW_CAP` | 5 | Maximum EW contribution from same-hex allies. |
+| `MAX_EW_RADIUS` | 5 | Largest EW coverage radius in hops (a unit's `defence` value). EW is additive with no cap. |
 | `FORMATION_CAP` | 2 | Maximum defensive formation supporter count (each contributes 0.5, so max +1.0 to DefencePower). |
 | `TERRAIN_DEFENCE_CAP` | 1 | Maximum terrain defence value (forest only). |
 | `ELEVATION_RANGE_PER_LEVEL` | 0.5 / 3 ≈ 0.167 | Range multiplier per elevation level difference. Clamped to [0.50, 1.50]. Affects attack reach, not damage. |
@@ -1114,7 +1118,7 @@ When evaluating combat for a defending unit, these tile/formation properties mat
 | Defending Attribute | Contribution | Cap |
 |--------------------|--------------|-----|
 | `armour` | Direct to DefencePower | 5 |
-| `defence` (EW) | Adds to same-hex allies' DefencePower | Sum capped at 5 |
+| `defence` (EW) | Radius anti-drone screen for nearby friendlies; only vs drone attackers | additive, no cap |
 | `flightMovement` | Classifies as drone → triggers drone incoming damage modifiers on incoming Attack/Splash | — |
 
 | Contextual Factor | Contribution | Cap |

@@ -28,9 +28,6 @@ import {
   applyDroneIncomingDamageModifier,
   evaluateWeaponOptions,
   chooseWeaponOption,
-  EW_EFFECTIVENESS_DIRECT,
-  EW_EFFECTIVENESS_SPLASH,
-  EW_EFFECTIVENESS_ANTIAIR,
   DEFENCE_SCALE,
   SPLASH_SCALE,
   SEGMENT_RANGE_PER_POINT,
@@ -264,21 +261,17 @@ export function explainAttack(
     tone: orientationBonus > 0.3 ? 'positive' : 'neutral',
   });
 
-  // Step 3: Defence breakdown — EW effectiveness depends on weapon mode.
-  // We compute per-mode defence powers; shown after weapon selection is known.
-  // For display we show the direct-fire defence (conservative, most likely mode).
-  // The actual per-mode values are shown in the chosen weapon detail step.
-  const defPowerDirect = getDefencePower(target, allUnits, tiles, 'direct');
-  const defPowerSplash = getDefencePower(target, allUnits, tiles, 'splash');
-  const defPowerAntiAir = getDefencePower(target, allUnits, tiles, 'antiAir');
-  const defPower = defPowerDirect; // default for initial display
+  // Step 3: Defence breakdown. EW is now a radius-based anti-drone screen —
+  // it only applies when the ATTACKER is a drone (independent of weapon mode).
+  const attackerIsDrone = isDrone(attacker);
+  const defPower = getDefencePower(target, allUnits, tiles, attackerIsDrone);
   const effectiveDefence = defPower.total * DEFENCE_SCALE;
 
   steps.push({
     title: '🛡 Defence Power',
-    description: `Armour(${defPower.armour}) + EW(${defPower.ewRaw}×${EW_EFFECTIVENESS_DIRECT} kinetic / ×${EW_EFFECTIVENESS_SPLASH} splash / ×${EW_EFFECTIVENESS_ANTIAIR} AA) + Terrain(${defPower.terrain}).`,
-    formula: `DefencePower(kinetic) = ${defPower.armour} + ${defPower.ew.toFixed(2)} + ${defPower.terrain} = ${defPower.total.toFixed(2)}`,
-    result: `EffectiveDefence(kinetic) = ${effectiveDefence.toFixed(2)}`,
+    description: `Armour(${defPower.armour}) + EW(${defPower.ewRaw.toFixed(2)} radius screen, ${attackerIsDrone ? 'applies vs drone attacker' : '0 vs ground attacker'}) + Terrain(${defPower.terrain}).`,
+    formula: `DefencePower = ${defPower.armour} + ${defPower.ew.toFixed(2)} + ${defPower.terrain} = ${defPower.total.toFixed(2)}`,
+    result: `EffectiveDefence = ${effectiveDefence.toFixed(2)}`,
     tone: defPower.total > 0 ? 'negative' : 'neutral',
   });
 
@@ -341,12 +334,12 @@ export function explainAttack(
     const rangeEff = calculateRangeEfficiency(segDist);
     const attackPower = calculateModifiedAttackPower(attacker, baseAttack, orientationBonus, segDist);
     const apSq = attackPower * attackPower;
-    const edDirect = defPowerDirect.total * DEFENCE_SCALE;
+    const edDirect = defPower.total * DEFENCE_SCALE;
     const edSq = edDirect * edDirect;
     const cm = getChassisAttackModifier(attacker);
     steps.push({
       title: '💥 Kinetic Fire',
-      description: `rangeEfficiency = ${rangeEff.toFixed(2)} (segDist ${segDist.toFixed(2)}). AttackPower = (${baseAttack} × ${cm} × ${rangeEff.toFixed(2)}) + ${orientationBonus} = ${attackPower.toFixed(2)}. EW at ${EW_EFFECTIVENESS_DIRECT * 100}% vs kinetic → ED = ${edDirect.toFixed(2)}.${targetIsDrone ? ` Drone incoming modifier ×${DRONE_DIRECT_FIRE_DAMAGE_MULTIPLIER} applied.` : ''}`,
+      description: `rangeEfficiency = ${rangeEff.toFixed(2)} (segDist ${segDist.toFixed(2)}). AttackPower = (${baseAttack} × ${cm} × ${rangeEff.toFixed(2)}) + ${orientationBonus} = ${attackPower.toFixed(2)}. EW screen ${attackerIsDrone ? `applies (drone attacker)` : `n/a (ground attacker)`} → ED = ${edDirect.toFixed(2)}.${targetIsDrone ? ` Drone incoming modifier ×${DRONE_DIRECT_FIRE_DAMAGE_MULTIPLIER} applied.` : ''}`,
       formula: `round(1 + 29 × ${apSq.toFixed(2)} / (${apSq.toFixed(2)} + ${edSq.toFixed(2)}))${targetIsDrone ? ` × ${DRONE_DIRECT_FIRE_DAMAGE_MULTIPLIER}` : ''} = ${totalDamage}`,
       result: `${totalDamage} direct damage`,
       tone: totalDamage >= 15 ? 'critical' : totalDamage >= 5 ? 'positive' : 'neutral',
@@ -354,11 +347,11 @@ export function explainAttack(
   } else if (chosenOption.mode === 'splash') {
     const affectedCount = allUnits.filter((u) => u.ownerId !== attacker.ownerId && u.currentHealth > 0 && u.tileIndex === target.tileIndex).length;
     const rangeEff = calculateRangeEfficiency(segDist);
-    const edSplash = defPowerSplash.total * DEFENCE_SCALE;
+    const edSplash = defPower.total * DEFENCE_SCALE;
     const splashAttack = attacker.attributes.splashAttack ?? 0;
     steps.push({
       title: '💣 Splash Fire',
-      description: `splashAttack=${splashAttack}. rangeEfficiency = ${rangeEff.toFixed(2)} (segDist ${segDist.toFixed(2)}). EW at ${EW_EFFECTIVENESS_SPLASH * 100}% vs splash → ED = ${edSplash.toFixed(2)}. Affects ${affectedCount} enemy unit${affectedCount !== 1 ? 's' : ''} in target hex. Each takes ${Math.round(SPLASH_SCALE * 100)}% of formula damage.`,
+      description: `splashAttack=${splashAttack}. rangeEfficiency = ${rangeEff.toFixed(2)} (segDist ${segDist.toFixed(2)}). EW screen ${attackerIsDrone ? `applies (drone attacker)` : `n/a (ground attacker)`} → ED = ${edSplash.toFixed(2)}. Affects ${affectedCount} enemy unit${affectedCount !== 1 ? 's' : ''} in target hex. Each takes ${Math.round(SPLASH_SCALE * 100)}% of formula damage.`,
       formula: `Total splash score = ${totalDamage}`,
       result: `${totalDamage} total splash damage across ${affectedCount} unit${affectedCount !== 1 ? 's' : ''}`,
       tone: totalDamage >= 15 ? 'critical' : totalDamage >= 5 ? 'positive' : 'neutral',
@@ -369,11 +362,11 @@ export function explainAttack(
     const rangeEff = calculateRangeEfficiency(segDist);
     const aaAttackPower = calculateModifiedAttackPower(attacker, aaLevel, orientationBonus, segDist);
     const apSq = aaAttackPower * aaAttackPower;
-    const edAntiAir = defPowerAntiAir.total * DEFENCE_SCALE;
+    const edAntiAir = defPower.total * DEFENCE_SCALE;
     const edSq = edAntiAir * edAntiAir;
     steps.push({
       title: '🚀 Anti-Air Fire',
-      description: `antiAir=${antiAirAttack}. rangeEfficiency = ${rangeEff.toFixed(2)} (segDist ${segDist.toFixed(2)}). AttackPower = (${aaLevel} × ${cm} × ${rangeEff.toFixed(2)}) + ${orientationBonus} = ${aaAttackPower.toFixed(2)}. EW at ${EW_EFFECTIVENESS_ANTIAIR * 100}% vs AA → ED = ${edAntiAir.toFixed(2)}. Fires at drone target. Full damage formula, no drone penalty.`,
+      description: `antiAir=${antiAirAttack}. rangeEfficiency = ${rangeEff.toFixed(2)} (segDist ${segDist.toFixed(2)}). AttackPower = (${aaLevel} × ${cm} × ${rangeEff.toFixed(2)}) + ${orientationBonus} = ${aaAttackPower.toFixed(2)}. EW screen ${attackerIsDrone ? `applies (drone attacker)` : `n/a (ground attacker)`} → ED = ${edAntiAir.toFixed(2)}. Fires at drone target. Full damage formula, no drone penalty.`,
       formula: `round(1 + 29 × ${apSq.toFixed(2)} / (${apSq.toFixed(2)} + ${edSq.toFixed(2)})) = ${totalDamage}`,
       result: `${totalDamage} anti-air damage`,
       tone: totalDamage >= 15 ? 'critical' : totalDamage >= 5 ? 'positive' : 'neutral',
@@ -418,9 +411,7 @@ export function explainAttack(
       segDist, baseRangeThreshold,
       rangeAttack, meleeAttack, antiAirAttack,
       orientationBonus,
-      chosenOption.mode === 'direct' ? defPowerDirect
-        : chosenOption.mode === 'splash' ? defPowerSplash
-        : defPowerAntiAir,
+      defPower,
       chosenOption.mode,
       outOfRange ? 0 : totalDamage,
     ),
@@ -449,7 +440,7 @@ export function explainSplash(
     const victim = allUnits.find((u) => u.id === event.victimId);
     if (!victim) continue;
 
-    const defPower = getDefencePower(victim, allUnits, tiles, 'splash');
+    const defPower = getDefencePower(victim, allUnits, tiles, isDrone(attacker));
     const effectiveDefence = defPower.total * DEFENCE_SCALE;
     const healthBefore = victim.currentHealth + event.damage;
 
@@ -486,7 +477,7 @@ export function explainSplash(
       },
       {
         title: '🛡 Victim Defence',
-        description: `Armour(${defPower.armour}) + EW(${defPower.ewRaw}×${EW_EFFECTIVENESS_SPLASH}) + Terrain(${defPower.terrain}) = ${defPower.total.toFixed(2)}. EffectiveDefence = ${effectiveDefence.toFixed(2)}.`,
+        description: `Armour(${defPower.armour}) + EW(${defPower.ew.toFixed(2)} anti-drone screen) + Terrain(${defPower.terrain}) = ${defPower.total.toFixed(2)}. EffectiveDefence = ${effectiveDefence.toFixed(2)}.`,
         formula: `DefencePower = ${defPower.armour} + ${defPower.ew.toFixed(2)} + ${defPower.terrain} = ${defPower.total.toFixed(2)}, ED = ${effectiveDefence.toFixed(2)}`,
         result: `EffectiveDefence = ${effectiveDefence.toFixed(2)}`,
         tone: defPower.total > 0 ? 'negative' : 'neutral',
