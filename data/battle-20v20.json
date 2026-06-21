@@ -222,202 +222,164 @@
   "units": [
     {
       "id": "unit_0",
-      "label": "Distance Pontoneer Loitering Tank (Mov 1, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 2)",
+      "label": "Distance Raider Plodder Tank (Mov 2, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 2)",
       "ownerId": "city_0",
       "tileIndex": 1235,
       "segment": 0,
       "facing": 0,
       "attributes": {
-        "wheeledMovement": 1,
-        "size": 1,
-        "armour": 1,
-        "splashAttack": 1,
-        "defence": 1,
-        "kinetic": 1,
+        "wheeledMovement": 2,
+        "size": 2,
+        "armour": 2,
+        "antiAir": 2,
         "rangeAttack": 5,
-        "antiAir": 1,
+        "defence": 2,
+        "kinetic": 2,
+        "splashAttack": 2,
         "engineer": 2
       },
-      "currentHealth": 10
+      "currentHealth": 20
     },
     {
       "id": "unit_1",
-      "label": "Distance Pontoneer Walker Tank (Mov 3, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 2)",
+      "label": "Breaker Middleweight Plodder Tank (Mov 2, Kin 4, Rng 3, Spl 4, AA 4, Arm 4, EW 2, Rep 0, Eng 2)",
       "ownerId": "city_0",
       "tileIndex": 1235,
       "segment": 1,
-      "facing": 0,
-      "attributes": {
-        "wheeledMovement": 3,
-        "size": 1,
-        "armour": 1,
-        "defence": 1,
-        "rangeAttack": 5,
-        "kinetic": 1,
-        "antiAir": 1,
-        "splashAttack": 1,
-        "engineer": 2
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_2",
-      "label": "Distance Striker Walker Tank (Mov 3, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1235,
-      "segment": 2,
-      "facing": 0,
-      "attributes": {
-        "wheeledMovement": 3,
-        "size": 3,
-        "armour": 3,
-        "kinetic": 3,
-        "antiAir": 3,
-        "splashAttack": 3,
-        "rangeAttack": 5,
-        "defence": 3
-      },
-      "currentHealth": 30
-    },
-    {
-      "id": "unit_3",
-      "label": "Breaker Middleweight Plodder Tank (Mov 2, Kin 4, Rng 3, Spl 4, AA 4, Arm 4, EW 2, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1235,
-      "segment": 3,
       "facing": 0,
       "attributes": {
         "wheeledMovement": 2,
         "size": 4,
         "armour": 4,
         "kinetic": 4,
-        "splashAttack": 4,
         "antiAir": 4,
         "rangeAttack": 3,
-        "defence": 2
+        "splashAttack": 4,
+        "defence": 2,
+        "engineer": 2
       },
       "currentHealth": 40
     },
     {
-      "id": "unit_4",
-      "label": "Distance Striker Loitering Tank (Mov 1, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
+      "id": "unit_2",
+      "label": "Distance Harasser Walker Tank (Mov 3, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 1323,
-      "segment": 0,
+      "tileIndex": 1235,
+      "segment": 2,
       "facing": 0,
       "attributes": {
-        "wheeledMovement": 1,
-        "size": 3,
-        "armour": 3,
-        "kinetic": 3,
-        "antiAir": 3,
-        "rangeAttack": 5,
-        "splashAttack": 3,
-        "defence": 3
-      },
-      "currentHealth": 30
-    },
-    {
-      "id": "unit_5",
-      "label": "Distance Harasser Plodder Tank (Mov 2, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1323,
-      "segment": 1,
-      "facing": 0,
-      "attributes": {
-        "wheeledMovement": 2,
+        "wheeledMovement": 3,
         "size": 1,
         "armour": 1,
-        "antiAir": 1,
         "kinetic": 1,
         "splashAttack": 1,
-        "rangeAttack": 5,
-        "defence": 1
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_6",
-      "label": "Distance Harasser Plodder Spider (Mov 2, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1431,
-      "segment": 0,
-      "facing": 0,
-      "attributes": {
-        "limbMovement": 2,
-        "size": 1,
-        "rangeAttack": 5,
         "antiAir": 1,
-        "splashAttack": 1,
         "defence": 1,
-        "kinetic": 1,
-        "armour": 1
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_7",
-      "label": "Distance Raider Walker Spider (Mov 3, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1431,
-      "segment": 1,
-      "facing": 0,
-      "attributes": {
-        "limbMovement": 3,
-        "size": 2,
-        "armour": 2,
-        "kinetic": 2,
-        "antiAir": 2,
-        "splashAttack": 2,
-        "rangeAttack": 5,
-        "defence": 2
-      },
-      "currentHealth": 20
-    },
-    {
-      "id": "unit_8",
-      "label": "Distance Striker Runner Spider (Mov 4, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1257,
-      "segment": 0,
-      "facing": 0,
-      "attributes": {
-        "limbMovement": 4,
-        "size": 3,
-        "armour": 3,
-        "antiAir": 3,
-        "kinetic": 3,
-        "rangeAttack": 5,
-        "splashAttack": 3,
-        "defence": 3
-      },
-      "currentHealth": 30
-    },
-    {
-      "id": "unit_9",
-      "label": "Distance Harasser Walker Spider (Mov 3, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1257,
-      "segment": 1,
-      "facing": 0,
-      "attributes": {
-        "limbMovement": 3,
-        "size": 1,
-        "antiAir": 1,
-        "splashAttack": 1,
-        "defence": 1,
-        "kinetic": 1,
-        "armour": 1,
         "rangeAttack": 5
       },
       "currentHealth": 10
     },
     {
-      "id": "unit_10",
+      "id": "unit_3",
+      "label": "Distance Breaker Loitering Tank (Mov 1, Kin 4, Rng 5, Spl 1, AA 4, Arm 4, EW 4, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1235,
+      "segment": 3,
+      "facing": 0,
+      "attributes": {
+        "wheeledMovement": 1,
+        "size": 4,
+        "armour": 4,
+        "antiAir": 4,
+        "rangeAttack": 5,
+        "defence": 4,
+        "kinetic": 4,
+        "splashAttack": 1
+      },
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_4",
+      "label": "Distance Raider Walker Tank (Mov 3, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1323,
+      "segment": 0,
+      "facing": 0,
+      "attributes": {
+        "wheeledMovement": 3,
+        "size": 2,
+        "kinetic": 2,
+        "armour": 2,
+        "antiAir": 2,
+        "defence": 2,
+        "rangeAttack": 5,
+        "splashAttack": 2
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_5",
+      "label": "Distance Harasser Loitering Tank (Mov 1, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1323,
+      "segment": 1,
+      "facing": 0,
+      "attributes": {
+        "wheeledMovement": 1,
+        "size": 1,
+        "armour": 1,
+        "kinetic": 1,
+        "rangeAttack": 5,
+        "antiAir": 1,
+        "defence": 1,
+        "splashAttack": 1
+      },
+      "currentHealth": 10
+    },
+    {
+      "id": "unit_6",
+      "label": "Distance Breaker Runner Spider (Mov 4, Kin 4, Rng 5, Spl 1, AA 4, Arm 4, EW 1, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1431,
+      "segment": 0,
+      "facing": 0,
+      "attributes": {
+        "limbMovement": 4,
+        "size": 4,
+        "armour": 4,
+        "kinetic": 4,
+        "rangeAttack": 5,
+        "antiAir": 4,
+        "defence": 1,
+        "splashAttack": 1
+      },
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_7",
+      "label": "Distance Striker Loitering Spider (Mov 1, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1431,
+      "segment": 1,
+      "facing": 0,
+      "attributes": {
+        "limbMovement": 1,
+        "size": 3,
+        "antiAir": 3,
+        "rangeAttack": 5,
+        "kinetic": 3,
+        "defence": 3,
+        "armour": 3,
+        "splashAttack": 3
+      },
+      "currentHealth": 30
+    },
+    {
+      "id": "unit_8",
       "label": "Distance Raider Walker Spider (Mov 3, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
       "tileIndex": 1257,
-      "segment": 2,
+      "segment": 0,
       "facing": 0,
       "attributes": {
         "limbMovement": 3,
@@ -432,475 +394,503 @@
       "currentHealth": 20
     },
     {
+      "id": "unit_9",
+      "label": "Distance Raider Walker Spider (Mov 3, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1257,
+      "segment": 1,
+      "facing": 0,
+      "attributes": {
+        "limbMovement": 3,
+        "size": 2,
+        "armour": 2,
+        "kinetic": 2,
+        "defence": 2,
+        "rangeAttack": 5,
+        "antiAir": 2,
+        "splashAttack": 2
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_10",
+      "label": "Distance Harasser Runner Spider (Mov 4, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1257,
+      "segment": 2,
+      "facing": 0,
+      "attributes": {
+        "limbMovement": 4,
+        "size": 1,
+        "kinetic": 1,
+        "armour": 1,
+        "defence": 1,
+        "splashAttack": 1,
+        "rangeAttack": 5,
+        "antiAir": 1
+      },
+      "currentHealth": 10
+    },
+    {
       "id": "unit_11",
-      "label": "Distance Raider Loitering Spider (Mov 1, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
+      "label": "Distance Striker Runner Spider (Mov 4, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
       "tileIndex": 1257,
       "segment": 3,
       "facing": 0,
       "attributes": {
-        "limbMovement": 1,
-        "size": 2,
-        "splashAttack": 2,
-        "kinetic": 2,
-        "rangeAttack": 5,
-        "defence": 2,
-        "armour": 2,
-        "antiAir": 2
+        "limbMovement": 4,
+        "size": 3,
+        "armour": 3,
+        "kinetic": 3,
+        "splashAttack": 3,
+        "antiAir": 3,
+        "defence": 3,
+        "rangeAttack": 5
       },
-      "currentHealth": 20
+      "currentHealth": 30
     },
     {
       "id": "unit_12",
-      "label": "Distance Breaker Runner Spider (Mov 4, Kin 4, Rng 5, Spl 2, AA 2, Arm 4, EW 2, Rep 0, Eng 0)",
+      "label": "Distance Raider Runner Spider (Mov 4, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
       "tileIndex": 1169,
       "segment": 0,
       "facing": 0,
       "attributes": {
         "limbMovement": 4,
-        "size": 4,
-        "kinetic": 4,
-        "armour": 4,
+        "size": 2,
+        "armour": 2,
+        "splashAttack": 2,
         "rangeAttack": 5,
-        "defence": 2,
         "antiAir": 2,
-        "splashAttack": 2
+        "kinetic": 2,
+        "defence": 2
       },
-      "currentHealth": 40
+      "currentHealth": 20
     },
     {
       "id": "unit_13",
-      "label": "Distance Striker Runner Drone (Mov 4, Kin 3, Rng 5, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
+      "label": "Striker Jammer Plodder Drone (Mov 2, Kin 3, Rng 0, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
       "tileIndex": 1147,
       "segment": 1,
       "facing": 0,
       "attributes": {
-        "flightMovement": 4,
-        "size": 3,
-        "defence": 3,
-        "kinetic": 3,
-        "splashAttack": 3,
-        "antiAir": 3,
-        "rangeAttack": 5
-      },
-      "currentHealth": 30
-    },
-    {
-      "id": "unit_14",
-      "label": "Distance Harasser Runner Drone (Mov 4, Kin 1, Rng 5, Spl 1, AA 1, Arm 0, EW 1, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1147,
-      "segment": 2,
-      "facing": 0,
-      "attributes": {
-        "flightMovement": 4,
-        "size": 1,
-        "splashAttack": 1,
-        "kinetic": 1,
-        "rangeAttack": 5,
-        "antiAir": 1,
-        "defence": 1
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_15",
-      "label": "Distance Striker Plodder Drone (Mov 2, Kin 3, Rng 5, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1147,
-      "segment": 3,
-      "facing": 0,
-      "attributes": {
         "flightMovement": 2,
         "size": 3,
-        "kinetic": 3,
         "antiAir": 3,
-        "defence": 3,
-        "rangeAttack": 5,
-        "splashAttack": 3
-      },
-      "currentHealth": 30
-    },
-    {
-      "id": "unit_16",
-      "label": "Distance Harasser Loitering Drone (Mov 1, Kin 1, Rng 5, Spl 1, AA 1, Arm 0, EW 1, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1146,
-      "segment": 0,
-      "facing": 0,
-      "attributes": {
-        "flightMovement": 1,
-        "size": 1,
-        "rangeAttack": 5,
-        "kinetic": 1,
-        "defence": 1,
-        "splashAttack": 1,
-        "antiAir": 1
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_17",
-      "label": "Distance Harasser Runner Drone (Mov 4, Kin 1, Rng 5, Spl 1, AA 1, Arm 0, EW 1, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1146,
-      "segment": 1,
-      "facing": 0,
-      "attributes": {
-        "flightMovement": 4,
-        "size": 1,
-        "rangeAttack": 5,
-        "defence": 1,
-        "kinetic": 1,
-        "antiAir": 1,
-        "splashAttack": 1
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_18",
-      "label": "Breaker Disruptor Runner Drone (Mov 4, Kin 4, Rng 3, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1146,
-      "segment": 2,
-      "facing": 0,
-      "attributes": {
-        "flightMovement": 4,
-        "size": 4,
-        "kinetic": 4,
-        "defence": 4,
-        "rangeAttack": 3,
-        "splashAttack": 4,
-        "antiAir": 4
-      },
-      "currentHealth": 40
-    },
-    {
-      "id": "unit_19",
-      "label": "Distance Striker Plodder Drone (Mov 2, Kin 3, Rng 5, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1146,
-      "segment": 3,
-      "facing": 0,
-      "attributes": {
-        "flightMovement": 2,
-        "size": 3,
+        "kinetic": 3,
         "splashAttack": 3,
-        "antiAir": 3,
-        "rangeAttack": 5,
-        "kinetic": 3,
         "defence": 3
       },
       "currentHealth": 30
     },
     {
-      "id": "unit_20",
-      "label": "Distance Striker Loitering Tank (Mov 1, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 2)",
-      "ownerId": "city_6",
-      "tileIndex": 1665,
-      "segment": 0,
-      "facing": 3,
+      "id": "unit_14",
+      "label": "Breaker Disruptor Loitering Drone (Mov 1, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1147,
+      "segment": 2,
+      "facing": 0,
       "attributes": {
-        "wheeledMovement": 1,
-        "size": 3,
-        "armour": 3,
-        "defence": 3,
-        "kinetic": 3,
-        "splashAttack": 3,
-        "rangeAttack": 5,
-        "antiAir": 3,
-        "engineer": 2
-      },
-      "currentHealth": 30
-    },
-    {
-      "id": "unit_21",
-      "label": "Middleweight Disruptor Walker Tank (Mov 3, Kin 3, Rng 1, Spl 4, AA 4, Arm 4, EW 4, Rep 0, Eng 2)",
-      "ownerId": "city_6",
-      "tileIndex": 1665,
-      "segment": 1,
-      "facing": 3,
-      "attributes": {
-        "wheeledMovement": 3,
+        "flightMovement": 1,
         "size": 4,
-        "armour": 4,
-        "defence": 4,
         "antiAir": 4,
-        "rangeAttack": 1,
         "splashAttack": 4,
-        "kinetic": 3,
-        "engineer": 2
+        "defence": 4,
+        "kinetic": 4
       },
       "currentHealth": 40
     },
     {
-      "id": "unit_22",
-      "label": "Distance Harasser Plodder Tank (Mov 2, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 1665,
-      "segment": 2,
-      "facing": 3,
+      "id": "unit_15",
+      "label": "Raider Scrambler Runner Drone (Mov 4, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1147,
+      "segment": 3,
+      "facing": 0,
       "attributes": {
-        "wheeledMovement": 2,
+        "flightMovement": 4,
+        "size": 2,
+        "kinetic": 2,
+        "splashAttack": 2,
+        "antiAir": 2,
+        "defence": 2
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_16",
+      "label": "Harasser Listener Runner Drone (Mov 4, Kin 1, Rng 0, Spl 1, AA 1, Arm 0, EW 1, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1146,
+      "segment": 0,
+      "facing": 0,
+      "attributes": {
+        "flightMovement": 4,
         "size": 1,
-        "kinetic": 1,
-        "armour": 1,
-        "defence": 1,
         "antiAir": 1,
         "splashAttack": 1,
-        "rangeAttack": 5
+        "defence": 1,
+        "kinetic": 1
       },
       "currentHealth": 10
     },
     {
-      "id": "unit_23",
-      "label": "Distance Striker Plodder Tank (Mov 2, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 1665,
-      "segment": 3,
-      "facing": 3,
+      "id": "unit_17",
+      "label": "Raider Scrambler Runner Drone (Mov 4, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1146,
+      "segment": 1,
+      "facing": 0,
       "attributes": {
-        "wheeledMovement": 2,
-        "size": 3,
-        "armour": 3,
-        "rangeAttack": 5,
-        "antiAir": 3,
-        "defence": 3,
-        "kinetic": 3,
-        "splashAttack": 3
-      },
-      "currentHealth": 30
-    },
-    {
-      "id": "unit_24",
-      "label": "Distance Raider Loitering Tank (Mov 1, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 1582,
-      "segment": 0,
-      "facing": 3,
-      "attributes": {
-        "wheeledMovement": 1,
+        "flightMovement": 4,
         "size": 2,
-        "armour": 2,
-        "antiAir": 2,
         "defence": 2,
-        "rangeAttack": 5,
+        "antiAir": 2,
         "splashAttack": 2,
         "kinetic": 2
       },
       "currentHealth": 20
     },
     {
+      "id": "unit_18",
+      "label": "Raider Scrambler Runner Drone (Mov 4, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1146,
+      "segment": 2,
+      "facing": 0,
+      "attributes": {
+        "flightMovement": 4,
+        "size": 2,
+        "kinetic": 2,
+        "defence": 2,
+        "antiAir": 2,
+        "splashAttack": 2
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_19",
+      "label": "Breaker Disruptor Loitering Drone (Mov 1, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1146,
+      "segment": 3,
+      "facing": 0,
+      "attributes": {
+        "flightMovement": 1,
+        "size": 4,
+        "splashAttack": 4,
+        "defence": 4,
+        "kinetic": 4,
+        "antiAir": 4
+      },
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_20",
+      "label": "Distance Raider Runner Tank (Mov 4, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 2)",
+      "ownerId": "city_6",
+      "tileIndex": 1665,
+      "segment": 0,
+      "facing": 3,
+      "attributes": {
+        "wheeledMovement": 4,
+        "size": 2,
+        "armour": 2,
+        "splashAttack": 2,
+        "rangeAttack": 5,
+        "antiAir": 2,
+        "kinetic": 2,
+        "defence": 2,
+        "engineer": 2
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_21",
+      "label": "Distance Striker Loitering Tank (Mov 1, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 2)",
+      "ownerId": "city_6",
+      "tileIndex": 1665,
+      "segment": 1,
+      "facing": 3,
+      "attributes": {
+        "wheeledMovement": 1,
+        "size": 3,
+        "armour": 3,
+        "rangeAttack": 5,
+        "kinetic": 3,
+        "antiAir": 3,
+        "splashAttack": 3,
+        "defence": 3,
+        "engineer": 2
+      },
+      "currentHealth": 30
+    },
+    {
+      "id": "unit_22",
+      "label": "Distance Middleweight Walker Tank (Mov 3, Kin 1, Rng 5, Spl 4, AA 2, Arm 4, EW 4, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1665,
+      "segment": 2,
+      "facing": 3,
+      "attributes": {
+        "wheeledMovement": 3,
+        "size": 4,
+        "armour": 4,
+        "defence": 4,
+        "rangeAttack": 5,
+        "splashAttack": 4,
+        "antiAir": 2,
+        "kinetic": 1
+      },
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_23",
+      "label": "Distance Harasser Walker Tank (Mov 3, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1665,
+      "segment": 3,
+      "facing": 3,
+      "attributes": {
+        "wheeledMovement": 3,
+        "size": 1,
+        "armour": 1,
+        "kinetic": 1,
+        "defence": 1,
+        "rangeAttack": 5,
+        "antiAir": 1,
+        "splashAttack": 1
+      },
+      "currentHealth": 10
+    },
+    {
+      "id": "unit_24",
+      "label": "Breaker Middleweight Plodder Tank (Mov 2, Kin 4, Rng 4, Spl 1, AA 4, Arm 4, EW 4, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1582,
+      "segment": 0,
+      "facing": 3,
+      "attributes": {
+        "wheeledMovement": 2,
+        "size": 4,
+        "armour": 4,
+        "antiAir": 4,
+        "kinetic": 4,
+        "defence": 4,
+        "rangeAttack": 4,
+        "splashAttack": 1
+      },
+      "currentHealth": 40
+    },
+    {
       "id": "unit_25",
-      "label": "Distance Striker Runner Tank (Mov 4, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
+      "label": "Distance Raider Runner Tank (Mov 4, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_6",
       "tileIndex": 1582,
       "segment": 1,
       "facing": 3,
       "attributes": {
         "wheeledMovement": 4,
-        "size": 3,
-        "armour": 3,
-        "defence": 3,
-        "kinetic": 3,
-        "splashAttack": 3,
+        "size": 2,
+        "armour": 2,
         "rangeAttack": 5,
-        "antiAir": 3
+        "splashAttack": 2,
+        "defence": 2,
+        "kinetic": 2,
+        "antiAir": 2
       },
-      "currentHealth": 30
+      "currentHealth": 20
     },
     {
       "id": "unit_26",
-      "label": "Distance Harasser Runner Spider (Mov 4, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
+      "label": "Distance Raider Plodder Spider (Mov 2, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_6",
       "tileIndex": 1685,
       "segment": 0,
       "facing": 3,
       "attributes": {
+        "limbMovement": 2,
+        "size": 2,
+        "armour": 2,
+        "defence": 2,
+        "splashAttack": 2,
+        "rangeAttack": 5,
+        "kinetic": 2,
+        "antiAir": 2
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_27",
+      "label": "Distance Raider Runner Spider (Mov 4, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1685,
+      "segment": 1,
+      "facing": 3,
+      "attributes": {
         "limbMovement": 4,
+        "size": 2,
+        "armour": 2,
+        "kinetic": 2,
+        "splashAttack": 2,
+        "antiAir": 2,
+        "rangeAttack": 5,
+        "defence": 2
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_28",
+      "label": "Distance Harasser Plodder Spider (Mov 2, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1685,
+      "segment": 2,
+      "facing": 3,
+      "attributes": {
+        "limbMovement": 2,
         "size": 1,
         "armour": 1,
-        "kinetic": 1,
-        "splashAttack": 1,
-        "rangeAttack": 5,
         "antiAir": 1,
+        "splashAttack": 1,
+        "kinetic": 1,
+        "rangeAttack": 5,
         "defence": 1
       },
       "currentHealth": 10
     },
     {
-      "id": "unit_27",
-      "label": "Distance Middleweight Walker Spider (Mov 3, Kin 2, Rng 5, Spl 4, AA 1, Arm 4, EW 4, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 1685,
-      "segment": 1,
-      "facing": 3,
-      "attributes": {
-        "limbMovement": 3,
-        "size": 4,
-        "armour": 4,
-        "splashAttack": 4,
-        "defence": 4,
-        "rangeAttack": 5,
-        "kinetic": 2,
-        "antiAir": 1
-      },
-      "currentHealth": 40
-    },
-    {
-      "id": "unit_28",
-      "label": "Breaker Middleweight Plodder Spider (Mov 2, Kin 4, Rng 1, Spl 4, AA 4, Arm 4, EW 4, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 1685,
-      "segment": 2,
-      "facing": 3,
-      "attributes": {
-        "limbMovement": 2,
-        "size": 4,
-        "armour": 4,
-        "splashAttack": 4,
-        "kinetic": 4,
-        "defence": 4,
-        "antiAir": 4,
-        "rangeAttack": 1
-      },
-      "currentHealth": 40
-    },
-    {
       "id": "unit_29",
-      "label": "Distance Harasser Runner Spider (Mov 4, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
+      "label": "Middleweight Disruptor Plodder Spider (Mov 2, Kin 3, Rng 3, Spl 3, AA 4, Arm 4, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_6",
       "tileIndex": 1685,
       "segment": 3,
       "facing": 3,
       "attributes": {
-        "limbMovement": 4,
-        "size": 1,
-        "armour": 1,
-        "splashAttack": 1,
-        "rangeAttack": 5,
-        "defence": 1,
-        "kinetic": 1,
-        "antiAir": 1
+        "limbMovement": 2,
+        "size": 4,
+        "armour": 4,
+        "antiAir": 4,
+        "defence": 4,
+        "kinetic": 3,
+        "splashAttack": 3,
+        "rangeAttack": 3
       },
-      "currentHealth": 10
+      "currentHealth": 40
     },
     {
       "id": "unit_30",
-      "label": "Distance Breaker Plodder Spider (Mov 2, Kin 4, Rng 5, Spl 1, AA 3, Arm 4, EW 4, Rep 0, Eng 0)",
+      "label": "Distance Harasser Loitering Spider (Mov 1, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_6",
       "tileIndex": 1768,
       "segment": 0,
       "facing": 3,
       "attributes": {
-        "limbMovement": 2,
-        "size": 4,
-        "armour": 4,
-        "defence": 4,
+        "limbMovement": 1,
+        "size": 1,
+        "armour": 1,
+        "splashAttack": 1,
+        "defence": 1,
+        "antiAir": 1,
         "rangeAttack": 5,
-        "kinetic": 4,
-        "antiAir": 3,
-        "splashAttack": 1
+        "kinetic": 1
       },
-      "currentHealth": 40
+      "currentHealth": 10
     },
     {
       "id": "unit_31",
-      "label": "Breaker Middleweight Plodder Spider (Mov 2, Kin 4, Rng 2, Spl 3, AA 4, Arm 4, EW 4, Rep 0, Eng 0)",
+      "label": "Distance Striker Loitering Spider (Mov 1, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_6",
       "tileIndex": 1768,
       "segment": 1,
       "facing": 3,
       "attributes": {
-        "limbMovement": 2,
-        "size": 4,
-        "armour": 4,
-        "kinetic": 4,
-        "defence": 4,
-        "antiAir": 4,
-        "rangeAttack": 2,
-        "splashAttack": 3
+        "limbMovement": 1,
+        "size": 3,
+        "splashAttack": 3,
+        "kinetic": 3,
+        "rangeAttack": 5,
+        "armour": 3,
+        "defence": 3,
+        "antiAir": 3
       },
-      "currentHealth": 40
+      "currentHealth": 30
     },
     {
       "id": "unit_32",
-      "label": "Distance Striker Walker Spider (Mov 3, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
+      "label": "Distance Harasser Plodder Spider (Mov 2, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_6",
       "tileIndex": 1517,
       "segment": 0,
       "facing": 3,
       "attributes": {
-        "limbMovement": 3,
-        "size": 3,
-        "armour": 3,
-        "antiAir": 3,
-        "splashAttack": 3,
-        "defence": 3,
-        "rangeAttack": 5,
-        "kinetic": 3
-      },
-      "currentHealth": 30
-    },
-    {
-      "id": "unit_33",
-      "label": "Distance Harasser Walker Drone (Mov 3, Kin 1, Rng 5, Spl 1, AA 1, Arm 0, EW 1, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 1498,
-      "segment": 1,
-      "facing": 3,
-      "attributes": {
-        "flightMovement": 3,
+        "limbMovement": 2,
         "size": 1,
-        "kinetic": 1,
-        "defence": 1,
+        "armour": 1,
         "splashAttack": 1,
         "antiAir": 1,
+        "kinetic": 1,
+        "defence": 1,
         "rangeAttack": 5
       },
       "currentHealth": 10
     },
     {
+      "id": "unit_33",
+      "label": "Raider Scrambler Plodder Drone (Mov 2, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1498,
+      "segment": 1,
+      "facing": 3,
+      "attributes": {
+        "flightMovement": 2,
+        "size": 2,
+        "kinetic": 2,
+        "defence": 2,
+        "splashAttack": 2,
+        "antiAir": 2
+      },
+      "currentHealth": 20
+    },
+    {
       "id": "unit_34",
-      "label": "Distance Harasser Plodder Drone (Mov 2, Kin 1, Rng 5, Spl 1, AA 1, Arm 0, EW 1, Rep 0, Eng 0)",
+      "label": "Breaker Disruptor Loitering Drone (Mov 1, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_6",
       "tileIndex": 1498,
       "segment": 2,
       "facing": 3,
       "attributes": {
-        "flightMovement": 2,
-        "size": 1,
-        "defence": 1,
-        "rangeAttack": 5,
-        "antiAir": 1,
-        "kinetic": 1,
-        "splashAttack": 1
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_35",
-      "label": "Breaker Disruptor Runner Drone (Mov 4, Kin 4, Rng 3, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 1498,
-      "segment": 3,
-      "facing": 3,
-      "attributes": {
-        "flightMovement": 4,
+        "flightMovement": 1,
         "size": 4,
-        "kinetic": 4,
         "defence": 4,
+        "kinetic": 4,
         "antiAir": 4,
-        "rangeAttack": 3,
         "splashAttack": 4
       },
       "currentHealth": 40
     },
     {
+      "id": "unit_35",
+      "label": "Breaker Disruptor Loitering Drone (Mov 1, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1498,
+      "segment": 3,
+      "facing": 3,
+      "attributes": {
+        "flightMovement": 1,
+        "size": 4,
+        "kinetic": 4,
+        "defence": 4,
+        "splashAttack": 4,
+        "antiAir": 4
+      },
+      "currentHealth": 40
+    },
+    {
       "id": "unit_36",
-      "label": "Distance Striker Plodder Drone (Mov 2, Kin 3, Rng 5, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
+      "label": "Striker Jammer Plodder Drone (Mov 2, Kin 3, Rng 0, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_6",
       "tileIndex": 5267,
       "segment": 0,
@@ -908,67 +898,63 @@
       "attributes": {
         "flightMovement": 2,
         "size": 3,
-        "rangeAttack": 5,
-        "kinetic": 3,
-        "splashAttack": 3,
         "antiAir": 3,
-        "defence": 3
+        "kinetic": 3,
+        "defence": 3,
+        "splashAttack": 3
       },
       "currentHealth": 30
     },
     {
       "id": "unit_37",
-      "label": "Distance Striker Runner Drone (Mov 4, Kin 3, Rng 5, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
+      "label": "Striker Jammer Walker Drone (Mov 3, Kin 3, Rng 0, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_6",
       "tileIndex": 5267,
       "segment": 1,
       "facing": 3,
       "attributes": {
-        "flightMovement": 4,
+        "flightMovement": 3,
         "size": 3,
-        "splashAttack": 3,
-        "rangeAttack": 5,
+        "kinetic": 3,
         "defence": 3,
-        "antiAir": 3,
-        "kinetic": 3
+        "splashAttack": 3,
+        "antiAir": 3
       },
       "currentHealth": 30
     },
     {
       "id": "unit_38",
-      "label": "Distance Striker Plodder Drone (Mov 2, Kin 3, Rng 5, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
+      "label": "Raider Scrambler Plodder Drone (Mov 2, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_6",
       "tileIndex": 5267,
       "segment": 2,
       "facing": 3,
       "attributes": {
         "flightMovement": 2,
-        "size": 3,
-        "defence": 3,
-        "antiAir": 3,
-        "rangeAttack": 5,
-        "kinetic": 3,
-        "splashAttack": 3
+        "size": 2,
+        "kinetic": 2,
+        "defence": 2,
+        "antiAir": 2,
+        "splashAttack": 2
       },
-      "currentHealth": 30
+      "currentHealth": 20
     },
     {
       "id": "unit_39",
-      "label": "Distance Raider Plodder Drone (Mov 2, Kin 2, Rng 5, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
+      "label": "Breaker Disruptor Walker Drone (Mov 3, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_6",
       "tileIndex": 5267,
       "segment": 3,
       "facing": 3,
       "attributes": {
-        "flightMovement": 2,
-        "size": 2,
-        "defence": 2,
-        "kinetic": 2,
-        "antiAir": 2,
-        "splashAttack": 2,
-        "rangeAttack": 5
+        "flightMovement": 3,
+        "size": 4,
+        "antiAir": 4,
+        "kinetic": 4,
+        "defence": 4,
+        "splashAttack": 4
       },
-      "currentHealth": 20
+      "currentHealth": 40
     },
     {
       "id": "unit_40",

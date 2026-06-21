@@ -102,6 +102,11 @@ export function validateAttributes(attrs: UnitAttributes): string[] {
     }
   }
 
+  // Drones (flight chassis) attack adjacent only — they have no rangeAttack.
+  if ((attrs.flightMovement ?? 0) > 0 && (attrs.rangeAttack ?? 0) > 0) {
+    errors.push('rangeAttack is not available to drones (flight chassis attack adjacent only)');
+  }
+
   return errors;
 }
 

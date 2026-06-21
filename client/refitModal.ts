@@ -231,6 +231,8 @@ export function showRefitModal(unit: { label: string; attributes: UnitAttributes
     const valEls: Map<keyof UnitAttributes, HTMLSpanElement> = new Map();
 
     for (const attr of UPGRADE_ATTRS) {
+      // Drones (flight chassis) attack adjacent only — no rangeAttack slider.
+      if (attr === 'rangeAttack' && chassis === 'flight') continue;
       const label = SLIDER_LABELS[attr] ?? attr;
       const row = document.createElement('div');
       Object.assign(row.style, { display: 'flex', flexDirection: 'column', gap: '2px' });

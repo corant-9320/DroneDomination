@@ -326,10 +326,12 @@ function makeRandomUnit(movAttr, pointBudget = 27) {
 
   // Distribute remaining points across combat attributes
   const availableAttrs = [...COMBAT_ATTRS];
-  // Drones can't have armour
+  // Drones can't have armour or rangeAttack (they attack adjacent only).
   if (movAttr === 'flightMovement') {
     const armIdx = availableAttrs.indexOf('armour');
     if (armIdx >= 0) availableAttrs.splice(armIdx, 1);
+    const rngIdx = availableAttrs.indexOf('rangeAttack');
+    if (rngIdx >= 0) availableAttrs.splice(rngIdx, 1);
   }
 
   // Distribute remaining points randomly across 2-4 attributes

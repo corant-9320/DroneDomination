@@ -45,7 +45,7 @@ All attribute values are integers. Ranges are hard-clamped during combat resolut
 | `armour` | 0–5 | Passive damage reduction from incoming attacks. Capped by `size`. |
 | `defence` | 0–5 | Electronic Warfare (EW) value. Contributes to nearby allies' defence via same-hex stacking. Capped by `size`. |
 | `splashAttack` | 0–5 | Area-of-effect attack power. When chosen as the weapon mode, damages all enemy units in the target hex. Capped by `size`. |
-| `rangeAttack` | 0–5 | Maximum attack range in hexes. 0 = melee only (range 1). **Not** capped by size. |
+| `rangeAttack` | 0–5 | Maximum attack range in hexes. 0 = melee only (range 1). **Not** capped by size. **Not available to drones** — flight chassis attack adjacent only (range 1, all weapon modes). |
 | `wheeledMovement` | 0–5 | Movement points for ground/vehicle traversal. |
 | `limbMovement` | 0–5 | Movement points for legged/spider traversal. |
 | `flightMovement` | 0–5 | Movement points for aerial (drone) traversal. Also classifies unit as a **drone**. |
@@ -56,6 +56,7 @@ All attribute values are integers. Ranges are hard-clamped during combat resolut
 
 - A unit **must** have exactly one movement type with at least 1 point (`wheeledMovement`, `limbMovement`, or `flightMovement`).
 - A unit with `flightMovement ≥ 1` is classified as a **drone** (this affects incoming damage).
+- **Drones have no `rangeAttack`** and attack adjacent only — their reach is hard-locked to range 1 (`SEGMENT_RANGE_BASE`) for all weapon modes (they drop bombs / collide). The elevation range multiplier also does not apply to them.
 - `size` must be at least 1 if present.
 - **Size ceiling:** `kinetic`, `splashAttack`, `antiAir`, `armour`, `defence`, and `repair` may not exceed `size`. `rangeAttack`, movement, and `engineer` are exempt.
 

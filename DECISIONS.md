@@ -4,6 +4,27 @@ Append-only record of design decisions, gotchas, and known issues. The game's
 rules are invented as we go — this log is how that intent survives across
 sessions so agents stop re-discovering (or re-breaking) the same things.
 
+## 2026-06-21 — Drones lose rangeAttack; hard-locked to range 1
+
+**Decision:** Drones (flight chassis) have no `rangeAttack` concept and attack
+adjacent only. Their attack reach is hard-locked to `SEGMENT_RANGE_BASE` (range 1)
+for all weapon modes (direct/splash/anti-air), simulating that they drop bombs or
+collide with adjacent targets.
+
+**Why:** Fits the drone fantasy and removes a degenerate "sniper drone" loadout;
+pairs with EW becoming an anti-drone screen (next step).
+
+**Impact:**
+- `combat.ts` `getSegmentRangeThreshold`: returns `SEGMENT_RANGE_BASE` for drones
+  regardless of any `rangeAttack` (defensive lock; the explainer's range step uses this too).
+- `validateAttributes`: a drone with `rangeAttack > 0` is now invalid.
+- Refit modal: the `rangeAttack` slider is hidden for a flight chassis.
+- Battle generator excludes `rangeAttack` from drone loadouts; `battle-20v20.json`
+  regenerated (14 drones, 0 with rangeAttack).
+- Elevation range multiplier already skips drones (airborne).
+- COMBAT_RULES §3 attribute table + constraints updated. Checkpoint before this work: `754224c`.
+- tsc clean, 347 tests pass.
+
 ## 2026-06-21 — Elevation moved from damage to range
 
 **Decision:** Relative elevation no longer modifies damage. It now scales the

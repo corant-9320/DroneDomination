@@ -90,6 +90,7 @@ import {
   EW_EFFECTIVENESS_DIRECT,
   EW_EFFECTIVENESS_SPLASH,
   EW_EFFECTIVENESS_ANTIAIR,
+  SEGMENT_RANGE_BASE,
   type ChassisType,
   getChassisModifier,
   calculateRangeEfficiency,
@@ -171,8 +172,11 @@ export function applyDroneIncomingDamageModifier(
   return droneIncomingDamageModifier(weaponMode, isDrone(targetUnit), damage);
 }
 
-/** Segment-distance range threshold for a unit (adapter). */
+/** Segment-distance range threshold for a unit (adapter).
+ * Drones are hard-locked to adjacent reach (range 1) — they drop bombs / collide,
+ * so they have no rangeAttack and ignore any that might be present. */
 export function getSegmentRangeThreshold(unit: Unit): number {
+  if (isDrone(unit)) return SEGMENT_RANGE_BASE;
   return segmentRangeThreshold(unit.attributes.rangeAttack ?? 0);
 }
 
