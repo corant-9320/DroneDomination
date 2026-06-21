@@ -112,6 +112,7 @@ export function bandToHeight(band: string | undefined): number {
     case 'hills':    return 7;
     case 'rolling':  return 4;
     case 'flat':     return 1;
+    case undefined:  return 1;
     default:         return 1;
   }
 }

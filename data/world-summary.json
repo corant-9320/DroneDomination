@@ -1,5 +1,5 @@
 {
-  "seed": 112765,
+  "seed": 696890,
   "tileCount": 100002,
   "pentagonCount": 12,
   "hexCount": 99990,
@@ -8,7 +8,7 @@
     {
       "id": "city_0",
       "label": "C01",
-      "tileIndex": 23525,
+      "tileIndex": 276,
       "neighbourCount": 6,
       "terrain": "grassland"
     },
@@ -16,7 +16,7 @@
       "id": "city_1",
       "label": "C02",
       "tileIndex": 10021,
-      "neighbourCount": 4,
+      "neighbourCount": 5,
       "terrain": "grassland"
     },
     {
@@ -29,29 +29,29 @@
     {
       "id": "city_3",
       "label": "C04",
-      "tileIndex": 27420,
-      "neighbourCount": 7,
+      "tileIndex": 5442,
+      "neighbourCount": 6,
       "terrain": "grassland"
     },
     {
       "id": "city_4",
       "label": "C05",
-      "tileIndex": 38949,
-      "neighbourCount": 5,
+      "tileIndex": 38893,
+      "neighbourCount": 4,
       "terrain": "grassland"
     },
     {
       "id": "city_5",
       "label": "C06",
-      "tileIndex": 47463,
-      "neighbourCount": 7,
+      "tileIndex": 48199,
+      "neighbourCount": 6,
       "terrain": "grassland"
     },
     {
       "id": "city_6",
       "label": "C07",
-      "tileIndex": 32010,
-      "neighbourCount": 5,
+      "tileIndex": 32003,
+      "neighbourCount": 6,
       "terrain": "grassland"
     },
     {
@@ -64,14 +64,14 @@
     {
       "id": "city_8",
       "label": "C09",
-      "tileIndex": 72235,
-      "neighbourCount": 5,
+      "tileIndex": 73916,
+      "neighbourCount": 7,
       "terrain": "grassland"
     },
     {
       "id": "city_9",
       "label": "C10",
-      "tileIndex": 56457,
+      "tileIndex": 56095,
       "neighbourCount": 7,
       "terrain": "grassland"
     },
@@ -79,7 +79,7 @@
       "id": "city_10",
       "label": "C11",
       "tileIndex": 93496,
-      "neighbourCount": 8,
+      "neighbourCount": 7,
       "terrain": "grassland"
     },
     {
@@ -91,10 +91,10 @@
     }
   ],
   "terrainDistribution": {
-    "grassland": 43793,
-    "ocean": 39897,
-    "plains": 13795,
-    "desert": 2320,
-    "tundra": 197
+    "grassland": 41672,
+    "ocean": 40209,
+    "plains": 10375,
+    "tundra": 5245,
+    "desert": 2501
   }
 }

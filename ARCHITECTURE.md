@@ -36,6 +36,11 @@ client/           → Browser entry (loaded by index.html via Vite)
   aiTurn.ts         AI faction turn logic (move toward enemy, attack when in range)
   aiPlayback.ts     Video-style playback controller (play/pause/fast-forward for enemy turns)
   worldData.ts      Loads world JSON, caches in memory/sessionStorage
+  buildController.ts Client building placement: validate/construct via
+                      shared/buildings, founding-on-load fallback
+  cityPlan.ts       City Design plan persistence (per-seed localStorage),
+                      syncPlannedToWorld() overlay
+  cityDesignModal.ts Capital RMB → City Design planner modal
   newWorldModal.ts  Modal UI for world generation config
   saveLoad.ts       Save/Load game state via localStorage
   colors.ts         Faction color palette + terrain color mapping (combined)
@@ -59,6 +64,13 @@ shared/           → Logic + types shared by client AND server (client-importab
   movementConstants.ts Movement constants + pure cost helpers
   rangeCheck.ts     Segment-distance range check + weaponRangeFromAttributes()
   unitNaming.ts     Shared naming tables + core name-building logic
+  buildings.ts      Pure building-placement rules: through-street + external
+                      reachability invariants, validateBuildingPlacement()
+  wireTypes.ts      Single source of truth for compact wire types (WireTile,
+                      WireUnit, WireBuilding, WireCity, WireWorld, CompactSave);
+                      previously duplicated in compact.ts (server) and worldData.ts (client)
+  pathfinding.ts    graphDistance(), tilesWithinRadius(), findPath() — pure BFS/A*;
+                      previously duplicated between src/world/ and client/aiTurn.ts
 
 src/              → Server/CLI-only core logic (NOT client-importable)
   generateCli.ts    CLI: generate world → data/world.json
@@ -66,9 +78,13 @@ src/              → Server/CLI-only core logic (NOT client-importable)
   world/            World module (barrel: index.ts)
     types.ts          Tile, City, World, Vec3, TerrainType
     units.ts          Unit, HexSegment, validation helpers
-    generate.ts       Full world-gen pipeline in one file:
-                        generateWorld(seed) → World, plus generateGeodesicSphere/
-                        computeDual (Goldberg), generateTerrain, generateRivers,
+    buildings.ts      Server adapter over shared/buildings: foundCity(es),
+                        constructBuilding(), checkCityIntegrity()
+    rng.ts            mulberry32 seeded PRNG (extracted from generate.ts)
+    geodesic.ts       Goldberg geometry: generateGeodesicSphere() + computeDual()
+                        (extracted from generate.ts sections 1)
+    generate.ts       World-gen orchestrator + terrain/river/city logic:
+                        generateWorld(seed) → World, generateTerrain, generateRivers,
                         placeCities, and mulberry32
     spawn.ts          spawnInitialUnits(tiles, cities) → Unit[]
     compact.ts        toCompactWorld/toCompactTile/toCompactUnit (wire format)
@@ -240,5 +256,8 @@ See [`DECISIONS.md`](DECISIONS.md) "Known Issues" for the live list. As of
 - **Server combat ignores elevation** — FIXED 2026-06-10. `server/combatApi.ts`
   (then named `server/combat.ts`) now carries `elev` through the wire format so
   the elevation multiplier (COMBAT_RULES §13) works on the server path. (DECISIONS KI-2)
-- The compact wire format (`TileData`/`UnitData` in `client/worldData.ts`) is a
-  hand-maintained mirror of `src/world/types.ts`; keep the shapes in sync.
+- The compact wire format (`TileData`/`UnitData` in `client/worldData.ts`) **was** a
+  hand-maintained mirror of `src/world/types.ts`; as of 2026-06-17 this has been
+  unified into `shared/wireTypes.ts`. Both sides now import from that single source.
+  `TileData` in `client/worldData.ts` extends `WireTile` with a client-only `bridge?`
+  flag.

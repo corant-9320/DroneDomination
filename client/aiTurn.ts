@@ -18,6 +18,7 @@ import { AiPlaybackController } from './aiPlayback.js';
 import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
 import { getMovementMode, segmentCost } from '../shared/movementConstants.js';
+import { graphDistance, findPath as sharedFindPath } from '../shared/pathfinding.js';
 
 // ---------------------------------------------------------------------------
 // Callback types for visual feedback during AI turns
@@ -28,6 +29,13 @@ export interface AiTurnCallbacks {
   highlightCombat(attackerId: string, targetId: string): void;
   /** Clear any combat highlight. */
   clearHighlight(): void;
+  /**
+   * Show a move indicator (origin ring + dashed arrow) for an enemy unit that
+   * just moved, so the player can see what moved from where to where.
+   */
+  highlightMove(unitId: string, fromTile: number, fromSeg: number): void;
+  /** Mark an enemy unit as having moved/acted (renders its number in red). */
+  markActed(unitId: string): void;
   /**
    * Select the currently-acting AI unit so the detail/combat panels show its
    * hex and unit info (mirrors a player click before they move or attack).
@@ -52,77 +60,6 @@ export interface AiTurnCallbacks {
 }
 
 // ---------------------------------------------------------------------------
-// Lightweight client-side pathfinding (BFS on tile neighbours)
-// ---------------------------------------------------------------------------
-
-/** BFS distance between two tiles. Returns -1 if unreachable. */
-function bfsDistance(tiles: TileData[], from: number, to: number): number {
-  if (from === to) return 0;
-  const visited = new Set<number>();
-  const queue: [number, number][] = [[from, 0]];
-  visited.add(from);
-
-  let head = 0;
-  while (head < queue.length) {
-    const [current, dist] = queue[head++];
-    for (const nb of tiles[current].n) {
-      if (nb === to) return dist + 1;
-      if (!visited.has(nb)) {
-        visited.add(nb);
-        queue.push([nb, dist + 1]);
-      }
-    }
-  }
-  return -1;
-}
-
-/**
- * BFS shortest path from `from` to `to`. Returns tile index array
- * including both endpoints, or null if unreachable.
- * Avoids tiles occupied by other units (except the destination).
- */
-function findPath(
-  tiles: TileData[],
-  from: number,
-  to: number,
-  occupiedTiles: Set<number>,
-): number[] | null {
-  if (from === to) return [from];
-
-  const visited = new Set<number>();
-  const parent = new Map<number, number>();
-  const queue: number[] = [from];
-  visited.add(from);
-
-  let head = 0;
-  while (head < queue.length) {
-    const current = queue[head++];
-    for (const nb of tiles[current].n) {
-      if (visited.has(nb)) continue;
-      visited.add(nb);
-      parent.set(nb, current);
-
-      if (nb === to) {
-        // Reconstruct path
-        const path: number[] = [nb];
-        let step = nb;
-        while (parent.has(step)) {
-          step = parent.get(step)!;
-          path.unshift(step);
-        }
-        return path;
-      }
-
-      // Don't pathfind through occupied tiles (but allow destination)
-      if (!occupiedTiles.has(nb)) {
-        queue.push(nb);
-      }
-    }
-  }
-  return null;
-}
-
-// ---------------------------------------------------------------------------
 // RangeTile adapter
 // ---------------------------------------------------------------------------
 
@@ -138,6 +75,48 @@ function toRangeTiles(tiles: TileData[]): RangeTile[] {
     neighbours: t.n,
     sides: t.s,
   }));
+}
+
+/**
+ * Adapt TileData[] to the PathTile[] interface for shared/pathfinding.ts.
+ * TileData already uses `n` for neighbours and `pos` for position — PathTile
+ * needs `neighbours` and `pos`, so we just remap the key.
+ */
+function toPathTilesForAI(tiles: TileData[]) {
+  return tiles.map((t) => ({ neighbours: t.n, pos: t.pos }));
+}
+
+/** BFS distance — thin wrapper around shared graphDistance. */
+function bfsDistance(tiles: TileData[], from: number, to: number): number {
+  return graphDistance(toPathTilesForAI(tiles), from, to);
+}
+
+/**
+ * BFS shortest path avoiding occupied tiles (except the destination).
+ * Wraps shared findPath with a cost function that returns Infinity for
+ * occupied tiles (other than the goal tile).
+ */
+function findPath(
+  tiles: TileData[],
+  from: number,
+  to: number,
+  occupiedTiles: Set<number>,
+): number[] | null {
+  const pathTiles = toPathTilesForAI(tiles);
+  // We need per-index cost — build an index lookup from the same objects.
+  // pathTiles[i] corresponds to tiles[i] so indexOf gives us the index.
+  // Pre-build a Map for O(1) lookup.
+  const idxMap = new Map<object, number>();
+  for (let i = 0; i < pathTiles.length; i++) idxMap.set(pathTiles[i], i);
+
+  return sharedFindPath(pathTiles, from, to, (tile) => {
+    const idx = idxMap.get(tile);
+    if (idx === undefined) return 1;
+    // Allow the destination tile even if occupied
+    if (idx === to) return 1;
+    if (occupiedTiles.has(idx)) return Infinity;
+    return 1;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -164,6 +143,12 @@ export async function executeAiTurn(
   );
 
   if (aliveUnits.length === 0 || enemies.length === 0) return;
+
+  // Always yield at least once so the AI playback bar is visible to the
+  // player (and to automated tests) before the turn resolves. Without this,
+  // a faction with no valid actions completes synchronously and the bar
+  // disappears before anything can interact with it.
+  await playback.waitForNext();
 
   // Set the combat panel's active faction so server accepts AI actions
   combatPanel.setActiveFaction(factionId);
@@ -250,6 +235,7 @@ export async function executeAiTurn(
         world.units = units;
       }
       callbacks.clearHighlight();
+      callbacks.markActed(unit.id);
       callbacks.renderMap();
       playback.recordSnapshot();
       continue;
@@ -280,12 +266,19 @@ export async function executeAiTurn(
           callbacks.renderMap();
           await playback.waitForNext();
 
+          // Capture origin (tile + segment) before the move so we can draw a
+          // "moved from → to" indicator once the unit has relocated.
+          const fromTile = unit.tileIndex;
+          const fromSeg  = unit.segment;
+
           const updated = await combatPanel.resolveMove(unit.id, movePath);
           if (updated) {
             world.units = updated;
             // Update occupied tiles
             occupiedTiles.add(movePath[movePath.length - 1]);
           }
+          callbacks.markActed(unit.id);
+          callbacks.highlightMove(unit.id, fromTile, fromSeg);
           callbacks.renderMap();
           playback.recordSnapshot();
 
@@ -341,6 +334,7 @@ export async function executeAiTurn(
                 world.units = units2;
               }
               callbacks.clearHighlight();
+              callbacks.markActed(unit.id);
               callbacks.renderMap();
               playback.recordSnapshot();
             }

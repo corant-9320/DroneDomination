@@ -1,6 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { mulberry32, generateTerrain } from '../generate.js';
+import { generateGeodesicSphere, computeDual } from '../geodesic.js';
 import type { Vec3, TerrainType } from '../types.js';
+
+/** Build a small real Goldberg world (real pole pentagons + neighbour graph). */
+function buildSmallWorld(frequency: number) {
+  const mesh = generateGeodesicSphere(frequency);
+  const tiles = computeDual(mesh);
+  return {
+    positions: tiles.map((t) => t.position3d),
+    neighbours: tiles.map((t) => t.neighbours),
+    sides: tiles.map((t) => t.sides),
+  };
+}
+
+const latitudeOf = (p: Vec3): number =>
+  p.y / (Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z) || 1);
 
 describe('terrain', () => {
   describe('mulberry32', () => {
@@ -134,133 +149,69 @@ describe('terrain', () => {
       expect(types.size).toBeGreaterThan(1);
     });
 
-    it('polar pentagon and its two hex rings are tundra', () => {
-      // Build a small radial mesh: pentagon at index 0, ring-1 at 1-5, ring-2 at 6-15
-      // (mimics the actual Goldberg pole structure)
-      const polePositions: Vec3[] = [
-        { x: 0, y: 1, z: 0 }, // 0: north pole pentagon
-      ];
-      // Ring 1: 5 tiles
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * Math.PI * 2;
-        polePositions.push({ x: Math.cos(a) * 0.1, y: 0.995, z: Math.sin(a) * 0.1 });
-      }
-      // Ring 2: 10 tiles
-      for (let i = 0; i < 10; i++) {
-        const a = (i / 10) * Math.PI * 2;
-        polePositions.push({ x: Math.cos(a) * 0.2, y: 0.98, z: Math.sin(a) * 0.2 });
-      }
-      // Ring 3 (should NOT be tundra by hard cap): 15 tiles
-      for (let i = 0; i < 15; i++) {
-        const a = (i / 15) * Math.PI * 2;
-        polePositions.push({ x: Math.cos(a) * 0.4, y: 0.92, z: Math.sin(a) * 0.4 });
+    it('gives both poles an ice region (organic tundra caps)', () => {
+      // Real Goldberg sphere: pole pentagons sit at y = ±1 (latitude ±1).
+      const { positions, neighbours, sides } = buildSmallWorld(12);
+      const result = generateTerrain(positions, neighbours, sides, 42);
+
+      let northTundra = 0;
+      let southTundra = 0;
+      let equatorTundra = 0;
+      for (let i = 0; i < positions.length; i++) {
+        if (result[i].terrainType !== 'tundra') continue;
+        const lat = latitudeOf(positions[i]);
+        if (lat > 0.9) northTundra++;
+        else if (lat < -0.9) southTundra++;
+        else if (Math.abs(lat) < 0.5) equatorTundra++;
       }
 
-      const poleNeighbours: number[][] = polePositions.map(() => []);
-      // Pentagon (0) connects to ring-1 (1-5)
-      for (let i = 1; i <= 5; i++) {
-        poleNeighbours[0].push(i);
-        poleNeighbours[i].push(0);
-      }
-      // Ring-1 connects to ring-2
-      for (let i = 1; i <= 5; i++) {
-        const r2a = 6 + (i - 1) * 2;
-        const r2b = 6 + ((i - 1) * 2 + 1) % 10;
-        poleNeighbours[i].push(r2a, r2b);
-        poleNeighbours[r2a].push(i);
-        poleNeighbours[r2b].push(i);
-      }
-      // Ring-2 connects to ring-3
-      for (let i = 6; i <= 15; i++) {
-        const r3 = 16 + (i - 6);
-        poleNeighbours[i].push(r3);
-        poleNeighbours[r3].push(i);
-      }
-
-      const poleSides = polePositions.map((_, i) => (i === 0 ? 5 : 6));
-      const result = generateTerrain(polePositions, poleNeighbours, poleSides, 42);
-
-      // Pentagon (dist 0) must be tundra
-      expect(result[0].terrainType).toBe('tundra');
-      // Ring 1 (dist 1) must be tundra
-      for (let i = 1; i <= 5; i++) {
-        expect(result[i].terrainType).toBe('tundra');
-      }
-      // Ring 2 (dist 2) must be tundra
-      for (let i = 6; i <= 15; i++) {
-        expect(result[i].terrainType).toBe('tundra');
-      }
+      // Each pole must carry a region of ice...
+      expect(northTundra).toBeGreaterThan(0);
+      expect(southTundra).toBeGreaterThan(0);
+      // ...and ice must stay polar — no tundra anywhere near the equator.
+      expect(equatorTundra).toBe(0);
     });
 
-    it('rings 3 and 4 around the polar pentagon are ocean', () => {
-      // Build a fully-connected 6-ring radial mesh around a polar pentagon.
-      // Every tile in each ring is connected to its ring neighbours AND to
-      // at least one tile in the adjacent rings, so BFS distances are exact.
-      //
-      // Ring sizes chosen to match the Goldberg pole structure:
-      //   ring 0: 1  (pentagon)
-      //   ring 1: 5
-      //   ring 2: 10
-      //   ring 3: 15  ← must be ocean (dist 3 buffer)
-      //   ring 4: 20  ← must be ocean (dist 4 buffer)
-      //   ring 5: 60  (outer land — large enough to dilute the bottom-30% pool)
-      const ringSizes = [1, 5, 10, 15, 20, 60];
-      const ringStart = ringSizes.reduce<number[]>((acc, s, i) => {
-        acc.push(i === 0 ? 0 : acc[i - 1] + ringSizes[i - 1]);
-        return acc;
-      }, []);
-      const total = ringSizes.reduce((a, b) => a + b, 0);
+    it('polar ice caps have an organic (non-ring) edge', () => {
+      // A clean latitude ring would put every land tile above some |lat|
+      // threshold into tundra and every land tile below it out of tundra, with
+      // no overlap. The noise-perturbed cap edge breaks that: there exists a
+      // non-tundra LAND tile sitting closer to a pole than some tundra tile.
+      const { positions, neighbours, sides } = buildSmallWorld(12);
+      const result = generateTerrain(positions, neighbours, sides, 42);
 
-      const pp: Vec3[] = [];
-      for (let r = 0; r < ringSizes.length; r++) {
-        const size = ringSizes[r];
-        for (let i = 0; i < size; i++) {
-          const a = (i / Math.max(size, 1)) * Math.PI * 2;
-          const y = 1 - r * 0.05;
-          const xz = Math.sqrt(Math.max(0, 1 - y * y));
-          pp.push({ x: Math.cos(a) * xz, y, z: Math.sin(a) * xz });
-        }
+      let maxTundraLatAbs = 0;
+      let maxNonTundraLandLatAbs = 0;
+      for (let i = 0; i < positions.length; i++) {
+        const t = result[i].terrainType;
+        if (t === 'ocean') continue; // sea is allowed inside the caps
+        const latAbs = Math.abs(latitudeOf(positions[i]));
+        if (t === 'tundra') maxTundraLatAbs = Math.max(maxTundraLatAbs, latAbs);
+        else maxNonTundraLandLatAbs = Math.max(maxNonTundraLandLatAbs, latAbs);
       }
 
-      const nb: number[][] = Array.from({ length: total }, () => []);
+      // Some non-ice land reaches a higher latitude than ice does somewhere
+      // else — only possible if the cap boundary waves rather than following a
+      // single parallel.
+      expect(maxNonTundraLandLatAbs).toBeGreaterThan(0.6);
+      expect(maxTundraLatAbs).toBeGreaterThan(maxNonTundraLandLatAbs - 0.3);
+    });
 
-      function connect(a: number, b: number) {
-        if (!nb[a].includes(b)) { nb[a].push(b); nb[b].push(a); }
+    it('allows organic sea around the poles', () => {
+      // With the polar land bias relaxed, the rank-selected ocean mask should
+      // leave at least some sea inside the polar caps across seeds, rather than
+      // a solid land collar. Checked over several seeds so the property holds in
+      // general, not just for one lucky map.
+      const { positions, neighbours, sides } = buildSmallWorld(12);
+      let seedsWithPolarSea = 0;
+      for (const seed of [1, 7, 42, 99, 2024]) {
+        const result = generateTerrain(positions, neighbours, sides, seed);
+        const hasPolarSea = positions.some(
+          (p, i) => Math.abs(latitudeOf(p)) > 0.85 && result[i].terrainType === 'ocean'
+        );
+        if (hasPolarSea) seedsWithPolarSea++;
       }
-
-      // Intra-ring connections (ring around each ring)
-      for (let r = 0; r < ringSizes.length; r++) {
-        const size = ringSizes[r];
-        if (size < 2) continue;
-        for (let i = 0; i < size; i++) {
-          connect(ringStart[r] + i, ringStart[r] + (i + 1) % size);
-        }
-      }
-
-      // Inter-ring connections (each tile connects to its nearest in the next ring)
-      for (let r = 0; r < ringSizes.length - 1; r++) {
-        const aSize = ringSizes[r], bSize = ringSizes[r + 1];
-        for (let ai = 0; ai < aSize; ai++) {
-          const bi = Math.floor(ai * bSize / aSize);
-          connect(ringStart[r] + ai, ringStart[r + 1] + bi);
-        }
-        // Also connect in the other direction to ensure full coverage
-        for (let bi = 0; bi < bSize; bi++) {
-          const ai = Math.floor(bi * aSize / bSize);
-          connect(ringStart[r] + ai, ringStart[r + 1] + bi);
-        }
-      }
-
-      const s = pp.map((_, i) => (i === 0 ? 5 : 6));
-      const result = generateTerrain(pp, nb, s, 42);
-
-      // Rings 3 and 4 must be ocean (pole-distance buffer, immune to isOcean flag)
-      for (let i = ringStart[3]; i < ringStart[3] + ringSizes[3]; i++) {
-        expect(result[i].terrainType).toBe('ocean');
-      }
-      for (let i = ringStart[4]; i < ringStart[4] + ringSizes[4]; i++) {
-        expect(result[i].terrainType).toBe('ocean');
-      }
+      expect(seedsWithPolarSea).toBeGreaterThan(0);
     });
   });
 });

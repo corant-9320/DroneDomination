@@ -10,6 +10,6 @@ export default defineConfig({
   },
   plugins: [apiPlugin()],
   test: {
-    exclude: ['e2e/**', 'node_modules/**'],
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
   },
 });

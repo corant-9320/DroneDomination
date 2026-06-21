@@ -33,6 +33,12 @@ export class TurnManager {
   /** Units the player has put to sleep this turn (suppresses "are you sure?" check). */
   sleepingUnits: Set<string> = new Set();
 
+  /**
+   * Factions that have used their single building-construction action this turn
+   * (Requirement 2.4 — the cap is per faction, across all of its cities).
+   */
+  builtFactions: Set<string> = new Set();
+
   /** Units currently selected for movement (by unit id). */
   selectedUnits: Set<string> = new Set();
 
@@ -83,6 +89,7 @@ export class TurnManager {
     this.actedUnits.clear();
     this.rotatedUnits.clear();
     this.sleepingUnits.clear();
+    this.builtFactions.clear();
     for (const unit of this.world.units) {
       this.movementPoints.set(unit.id, this.getMaxMovement(unit));
     }
@@ -131,6 +138,21 @@ export class TurnManager {
   recordBuildBridge(unitId: string): void {
     this.actedUnits.add(unitId);
     this.recordMove(unitId, 1);
+  }
+
+  // ─── Building construction (per faction, once per turn) ───────────────────
+
+  /**
+   * Whether a faction may still construct a building this turn
+   * (Requirement 2.1 / 2.3 / 2.4).
+   */
+  canBuild(factionId: string): boolean {
+    return !this.builtFactions.has(factionId);
+  }
+
+  /** Record that a faction has used its single construction action this turn. */
+  recordBuild(factionId: string): void {
+    this.builtFactions.add(factionId);
   }
 
   // ─── Sleep helpers ──────────────────────────────────────────────────────

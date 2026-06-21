@@ -213,16 +213,22 @@ export class TerrainRenderer {
     const h = maxY - minY;
     if (!(w > 0) || !(h > 0)) return;
 
+    // Wash textures out: composite at reduced opacity so the solid biome fill
+    // shows through and the artwork reads as a subtle overlay rather than a
+    // strong, saturated surface.
+    const TEXTURE_WASH_ALPHA = 0.45;
+
     const ctx = this.c.ctx;
     ctx.save();
     this.c.clipToTile(ft, expand);
     if (key === 'hillsPlains') {
-      ctx.globalAlpha = 0.8;
+      ctx.globalAlpha = TEXTURE_WASH_ALPHA * 0.8;
       ctx.drawImage(img, minX, minY, w, h);
       ctx.globalAlpha = 1;
       ctx.fillStyle = 'rgba(232,206,120,0.30)';
       ctx.fillRect(minX, minY, w, h);
     } else {
+      ctx.globalAlpha = TEXTURE_WASH_ALPHA;
       ctx.drawImage(img, minX, minY, w, h);
     }
     ctx.restore();

@@ -83,8 +83,8 @@ export function installDebugState(deps: DebugStateDeps): void {
       facing: u.facing,
       currentHealth: u.currentHealth,
       maxHealth: u.attributes.maxHealth,
-      mp: localMap.getRemainingMovement(u.id),
-      acted: localMap.hasActed(u.id),
+      mp: turnManager.getMovementPoints(u.id),
+      acted: turnManager.actedUnits.has(u.id),
     }));
 
     const byFaction: Record<string, number> = {};
@@ -124,10 +124,10 @@ export function installDebugState(deps: DebugStateDeps): void {
      * the unit's segment/facing. Used to debug directional movement bias.
      */
     moveRange(unitId: string) {
-      const { world, localMap } = deps;
+      const { world, localMap, turnManager } = deps;
       const unit = world.units.find((u) => u.id === unitId);
       if (!unit) return null;
-      const mp = localMap.getRemainingMovement(unitId);
+      const mp = turnManager.getMovementPoints(unitId);
       const res = computeMovementRange(world, unit, mp);
       const startTile = world.tiles[unit.tileIndex];
       const neighbours = (startTile as unknown as { n: number[] }).n ?? [];

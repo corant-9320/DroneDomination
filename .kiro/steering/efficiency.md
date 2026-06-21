@@ -17,3 +17,7 @@
 5. **Skip sub-agents for simple changes.** Context-gathering is for unfamiliar code. For straightforward changes (rename, constant update, signature change), grep for references, edit them all, and verify. No exploration phase.
 
 6. **Don't explain the obvious.** If the user asks to change a number, change it. Don't narrate the plan or summarize what a constant does.
+
+## Expensive Tools — Ask First
+
+7. **Chrome DevTools and Playwright (e2e) tests cost a lot of tokens.** Do not invoke Chrome DevTools browser tools or run Playwright/e2e tests on your own. Consult with the user and get explicit approval before using them. Prefer cheaper alternatives first (unit tests, `npm run debug:snapshot`, reading existing `artifacts/sessions/**` output).

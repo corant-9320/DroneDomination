@@ -88,6 +88,7 @@ function formatArcShort(arc: AttackArc): string {
     case 'front': return '🛡 Front';
     case 'side': return '→ Flank';
     case 'rear': return '🎯 Rear';
+    case 'unknown': return '? Unknown';
     default: return '? Unknown';
   }
 }

@@ -42,7 +42,10 @@ import {
   getSegmentCentroid,
   getSegmentIconSize,
   drawUnits as _drawUnits,
+  drawBuildings as _drawBuildings,
+  drawPlannedBuildings as _drawPlannedBuildings,
   drawCombatHighlight as _drawCombatHighlight,
+  drawMoveHighlight as _drawMoveHighlight,
 } from './localMapUnits.js';
 import {
   computeMovementRange as _computeMovementRange,
@@ -66,6 +69,14 @@ export class LocalMapView implements MapViewInterface {
   flatTiles: FlatTile[] = [];
   centreTileIndex: number = -1;
   radius: number = 12; // BFS hop radius; hex count ≈ 1+3r(r+1). r10→331, r12→469 (~+50% hexes shown)
+  /**
+   * Current screen-up direction (world space) supplied by the globe camera.
+   * Used as the flat-view basis so the map's orientation tracks the globe
+   * continuously, including spin at the poles. Null → fall back to a
+   * position-derived basis (canonical orientation). Persists across map-drag
+   * recentres so orientation stays stable until the globe orbits again.
+   */
+  private viewUp: [number, number, number] | null = null;
   /** Callback when a tile is selected (exposed as onTileSelectCb for MapViewInterface). */
   private onTileSelect: (tileIndex: number, segment?: number) => void;
   hoveredTile: number = -1;
@@ -79,6 +90,15 @@ export class LocalMapView implements MapViewInterface {
   /** Active AI combat highlight (attacker → target). */
   private highlightAttackerId: string | null = null;
   private highlightTargetId: string | null = null;
+  /** Active AI move highlight (unit that just moved + its origin tile/segment). */
+  private highlightMoveUnitId: string | null = null;
+  private highlightMoveFromTile: number | null = null;
+  private highlightMoveFromSeg: number = 0;
+  /**
+   * Enemy units that have already moved/acted during the current AI turn.
+   * Their unit number is drawn in red. Cleared at endTurn().
+   */
+  private aiActedUnits: Set<string> = new Set();
 
   // Movement system callbacks
   onTurnEnd: (() => void) | null = null;
@@ -87,32 +107,35 @@ export class LocalMapView implements MapViewInterface {
   onSleepUnit: ((unitId: string) => void) | null = null;
   onRefit: ((unitId: string) => void) | null = null;
   onViewUnit: ((unitId: string) => void) | null = null;
+  /** Enter first-person look-around at an arbitrary hex segment (no unit needed). */
+  onViewSegment: ((tileIndex: number, segment: number) => void) | null = null;
+  /** Open the City Design planner for a city (by city id). */
+  onCityDesign: ((cityId: string) => void) | null = null;
+
+  /** Open the refit modal for a player-owned building (by building id). */
+  onBuildingRefit: ((buildingId: string) => void) | null = null;
   /** The faction (ownerId) allowed to select and move units. */
   activeFaction: string = '';
   /** Optional TurnManager — when set, endTurn() syncs state back to it. */
-  private turnManager: TurnManager | null = null;
+  private turnManager: TurnManager;
 
-  // ─── Delegated state — backed by TurnManager once wired ────────────────────
+  // ─── Delegated state — backed by TurnManager ───────────────────────────────
 
   get selectedUnits(): Set<string> {
-    return this.turnManager ? this.turnManager.selectedUnits : this._localSelectedUnits;
+    return this.turnManager.selectedUnits;
   }
-  private _localSelectedUnits: Set<string> = new Set();
 
   get movementPoints(): Map<string, number> {
-    return this.turnManager ? this.turnManager.movementPoints : this._localMovementPoints;
+    return this.turnManager.movementPoints;
   }
-  private _localMovementPoints: Map<string, number> = new Map();
 
   get actedUnits(): Set<string> {
-    return this.turnManager ? this.turnManager.actedUnits : this._localActedUnits;
+    return this.turnManager.actedUnits;
   }
-  private _localActedUnits: Set<string> = new Set();
 
   get rotatedUnits(): Set<string> {
-    return this.turnManager ? this.turnManager.rotatedUnits : this._localRotatedUnits;
+    return this.turnManager.rotatedUnits;
   }
-  private _localRotatedUnits: Set<string> = new Set();
 
   // Movement range overlay (results from last computeMovementRange call)
   private _rangeResult: MovementRangeResult = {
@@ -141,8 +164,17 @@ export class LocalMapView implements MapViewInterface {
   // Combat animations
   private animator: CombatAnimator;
   private hiddenUnits: Set<string> = new Set();
-  /** Screen-position overrides for units currently being move-animated. */
-  private unitScreenOverrides: Map<string, { x: number; y: number }> = new Map();
+  /**
+   * In-flight move glides, keyed by unit id. Stores the origin/destination
+   * tile+segment and eased progress (0–1) rather than a fixed screen position,
+   * so drawUnits re-projects the interpolated point every frame. This keeps the
+   * glide correct even when the map recentres mid-animation (e.g. the globe
+   * pan-to-tile triggered by selecting the moved unit).
+   */
+  private unitMoveAnims: Map<
+    string,
+    { fromTile: number; fromSeg: number; toTile: number; toSeg: number; progress: number }
+  > = new Map();
 
   // Terrain renderer (stateless except for view transform)
   private terrain: TerrainRenderer;
@@ -154,17 +186,19 @@ export class LocalMapView implements MapViewInterface {
     canvas: HTMLCanvasElement,
     world: WorldData,
     onTileSelect: (tileIndex: number, segment?: number) => void,
+    tm: TurnManager,
   ) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
     this.world = world;
     this.onTileSelect = onTileSelect;
+    this.turnManager = tm;
     this.animator = new CombatAnimator(canvas);
     this.animator.setRenderCallback(() => this.render());
     this.terrain = new TerrainRenderer(this.ctx, world);
 
     // Delegate all input event handling to MapInputHandler
-    this.inputHandler = new MapInputHandler(canvas, this);
+    this.inputHandler = new MapInputHandler(canvas, this, tm);
 
     window.addEventListener('resize', () => this.render());
 
@@ -174,14 +208,6 @@ export class LocalMapView implements MapViewInterface {
       this.terrain.setTextures(textures);
       this.render();
     });
-
-    // Initialize movement points for all units (pre-TurnManager fallback)
-    this._localMovementPoints.clear();
-    this._localActedUnits.clear();
-    this._localRotatedUnits.clear();
-    for (const unit of world.units) {
-      this._localMovementPoints.set(unit.id, sharedGetMaxMovement(unit.attributes));
-    }
 
     if (world.cities.length > 0) {
       this.setCentre(world.cities[0].tileIndex, true);
@@ -193,8 +219,12 @@ export class LocalMapView implements MapViewInterface {
     return this.onTileSelect;
   }
 
-  setCentre(tileIndex: number, resetZoom = false): void {
+  setCentre(tileIndex: number, resetZoom = false, up?: [number, number, number] | null): void {
     dbg.localMap.log('setCentre:', tileIndex, 'resetZoom:', resetZoom);
+    // Update the orientation only when the caller supplies one (globe orbit).
+    // Programmatic centres (goHome, battle, unit cycle) omit it and keep the
+    // current orientation.
+    if (up !== undefined) this.viewUp = up;
     this.centreTileIndex = tileIndex;
     this.lastEmittedCentreTile = tileIndex;
     dbg.localMap.time('buildFlatView');
@@ -229,6 +259,25 @@ export class LocalMapView implements MapViewInterface {
     }
   }
 
+  /**
+   * Centre on, select, and highlight a specific unit by id — mirrors the
+   * left-click selection path (clears selectedUnits, selects the unit's
+   * segment, recomputes the movement range overlay). Used by the end-turn
+   * confirmation popup so clicking a listed unit actually selects it on the map
+   * rather than only moving the camera.
+   */
+  focusUnit(unitId: string): void {
+    const unit = this.world.units.find((u) => u.id === unitId);
+    if (!unit) return;
+    this.setCentre(unit.tileIndex);
+    this.selectedUnits.clear();
+    this.selectedUnits.add(unitId);
+    this.selectedTile = unit.tileIndex;
+    this.selectedSegment = unit.segment;
+    this.computeMovementRange();
+    this.render();
+  }
+
   setOnCentreChange(cb: (tileIndex: number) => void): void {
     this.onCentreChange = cb;
   }
@@ -240,6 +289,31 @@ export class LocalMapView implements MapViewInterface {
   setHighlightCombat(attackerId: string | null, targetId: string | null): void {
     this.highlightAttackerId = attackerId;
     this.highlightTargetId = targetId;
+    // An attack supersedes any lingering move indicator for the same step.
+    if (attackerId) {
+      this.highlightMoveUnitId = null;
+      this.highlightMoveFromTile = null;
+    }
+  }
+
+  /**
+   * Highlight an enemy move: draws an origin ring and a dashed arrow from the
+   * unit's starting segment to its current position. Pass a null unitId to clear.
+   */
+  setHighlightMove(unitId: string | null, fromTile: number | null, fromSeg: number = 0): void {
+    this.highlightMoveUnitId = unitId;
+    this.highlightMoveFromTile = fromTile;
+    this.highlightMoveFromSeg = fromSeg;
+    // A move indicator supersedes any lingering combat highlight.
+    if (unitId) {
+      this.highlightAttackerId = null;
+      this.highlightTargetId = null;
+    }
+  }
+
+  /** Mark an enemy unit as having moved/acted this AI turn (red unit number). */
+  markAiActed(unitId: string): void {
+    this.aiActedUnits.add(unitId);
   }
 
   /**
@@ -312,21 +386,26 @@ export class LocalMapView implements MapViewInterface {
   }
 
   /**
-   * Animate a unit gliding from its current screen position to its destination.
+   * Animate a unit gliding from its origin segment to its destination segment.
    *
    * The unit's facing is updated to point toward the destination BEFORE the
    * animation begins (so the sprite rotates immediately, then slides).
-   * During the animation the unit is rendered via a screen-position override
-   * rather than its tile centroid, so the world state can be updated
-   * (tileIndex / segment changed) at any point without snapping the sprite.
+   *
+   * The glide is driven by eased progress (0–1); drawUnits re-projects the
+   * interpolated origin→destination point every frame using the current view
+   * transform. This means the world state can already reflect the destination,
+   * and the map can recentre mid-glide (e.g. the globe pan-to-tile triggered by
+   * selecting the moved unit) without the sprite overshooting or snapping.
    *
    * @param unitId     The id of the unit to animate
-   * @param fromPos    The screen position the unit started at (before world update)
+   * @param fromTile   Tile index the unit started on (before world update)
+   * @param fromSeg    Segment the unit started on (before world update)
    * @param newFacing  Facing index to apply before animating
    */
   async playMoveAnimation(
     unitId: string,
-    fromPos: { x: number; y: number },
+    fromTile: number,
+    fromSeg: number,
     newFacing: 0 | 1 | 2 | 3 | 4 | 5,
   ): Promise<void> {
     const unit = this.world.units.find((u) => u.id === unitId);
@@ -335,23 +414,23 @@ export class LocalMapView implements MapViewInterface {
     // Apply facing immediately so the sprite points the right way from frame 1
     unit.facing = newFacing;
 
-    // Compute where the unit will end up (world state already reflects destination)
-    const toPos = this.getUnitScreenPos(unitId);
-    if (!toPos) return;
+    // Skip the glide for a pure intra-segment move (no visible displacement).
+    if (fromTile === unit.tileIndex && fromSeg === unit.segment) return;
 
-    // Skip if start and end are essentially the same screen position
-    const dx = toPos.x - fromPos.x;
-    const dy = toPos.y - fromPos.y;
-    if (dx * dx + dy * dy < 4) return;
+    const anim = {
+      fromTile,
+      fromSeg,
+      toTile: unit.tileIndex,
+      toSeg: unit.segment,
+      progress: 0,
+    };
+    this.unitMoveAnims.set(unitId, anim);
 
-    // Seed the override at the start position so the first frame is correct
-    this.unitScreenOverrides.set(unitId, { ...fromPos });
-
-    await this.animator.playMove(fromPos, toPos, (pos) => {
-      this.unitScreenOverrides.set(unitId, { x: pos.x, y: pos.y });
+    await this.animator.playMove((progress) => {
+      anim.progress = progress;
     });
 
-    this.unitScreenOverrides.delete(unitId);
+    this.unitMoveAnims.delete(unitId);
     this.render();
   }
 
@@ -404,6 +483,20 @@ export class LocalMapView implements MapViewInterface {
       (wx, wy) => this.worldToScreen(wx, wy),
     );
 
+    // Draw buildings (static structures) beneath the mobile units
+    _drawPlannedBuildings(
+      this.ctx,
+      this.world,
+      this.flatTiles,
+      (wx, wy) => this.worldToScreen(wx, wy),
+    );
+    _drawBuildings(
+      this.ctx,
+      this.world,
+      this.flatTiles,
+      (wx, wy) => this.worldToScreen(wx, wy),
+    );
+
     // Draw units
     _drawUnits(
       this.ctx,
@@ -413,8 +506,19 @@ export class LocalMapView implements MapViewInterface {
       this.movementPoints,
       this.hiddenUnits,
       (wx, wy) => this.worldToScreen(wx, wy),
-      this.actedUnits,
-      this.unitScreenOverrides,
+      this.aiActedUnits,
+      this.unitMoveAnims,
+    );
+
+    // Draw AI move indicator (origin ring + dashed arrow to current position)
+    _drawMoveHighlight(
+      this.ctx,
+      this.world,
+      this.flatTiles,
+      this.highlightMoveUnitId,
+      this.highlightMoveFromTile,
+      this.highlightMoveFromSeg,
+      (wx, wy) => this.worldToScreen(wx, wy),
     );
 
     // Draw AI combat highlights (attacker ring + target ring + connecting line)
@@ -443,7 +547,7 @@ export class LocalMapView implements MapViewInterface {
   // ─── Projection delegation (MapViewInterface) ───────────────────────────────
 
   buildFlatView(centreIdx: number, radius: number): FlatTile[] {
-    return _buildFlatView(this.world, centreIdx, radius);
+    return _buildFlatView(this.world, centreIdx, radius, this.viewUp);
   }
 
   worldToScreen(wx: number, wy: number): [number, number] {
@@ -648,51 +752,10 @@ export class LocalMapView implements MapViewInterface {
 
   // ─── Turn state ─────────────────────────────────────────────────────────────
 
-  /** Get the remaining movement points for a unit. */
-  getRemainingMovement(unitId: string): number {
-    if (this.turnManager) return this.turnManager.getMovementPoints(unitId);
-    return this._localMovementPoints.get(unitId) ?? 0;
-  }
-
-  /** Consume all remaining movement points for a unit (e.g. after repair action). */
-  consumeMovement(unitId: string): void {
-    this.movementPoints.set(unitId, 0);
-  }
-
-  /** Whether a unit has already used its once-per-turn repair action this turn. */
-  hasActed(unitId: string): boolean {
-    return this.actedUnits.has(unitId);
-  }
-
-  /** Record that a unit has attacked (costs 1 MP, once per turn). */
-  recordAttack(unitId: string): void {
-    if (this.turnManager) {
-      this.turnManager.recordAttack(unitId);
-    } else {
-      this._localActedUnits.add(unitId);
-      const current = this._localMovementPoints.get(unitId) ?? 0;
-      this._localMovementPoints.set(unitId, Math.max(0, current - 1));
-    }
-  }
-
-  /** Record that a unit has used its once-per-turn repair action (costs 1 MP). */
-  recordAction(unitId: string): void {
-    if (this.turnManager) {
-      this.turnManager.recordRepair(unitId);
-    } else {
-      this._localActedUnits.add(unitId);
-      const current = this._localMovementPoints.get(unitId) ?? 0;
-      this._localMovementPoints.set(unitId, Math.max(0, current - 1));
-    }
-  }
-
   /** Wire the TurnManager that owns movement/action/selection state. */
-  setTurnManager(tm: TurnManager): void {
-    this.turnManager = tm;
-    this._localMovementPoints.clear();
-    this._localActedUnits.clear();
-    this._localRotatedUnits.clear();
-    this._localSelectedUnits.clear();
+  setTurnManager(_tm: TurnManager): void {
+    // TurnManager is now injected at construction time; this method is a no-op
+    // kept for call-site compatibility during the transition period.
   }
 
   setOnTurnEnd(cb: () => void): void {
@@ -719,6 +782,18 @@ export class LocalMapView implements MapViewInterface {
     this.onViewUnit = cb;
   }
 
+  setOnViewSegment(cb: (tileIndex: number, segment: number) => void): void {
+    this.onViewSegment = cb;
+  }
+
+  setOnCityDesign(cb: (cityId: string) => void): void {
+    this.onCityDesign = cb;
+  }
+
+  setOnBuildingRefit(cb: (buildingId: string) => void): void {
+    this.onBuildingRefit = cb;
+  }
+
   setActiveFaction(factionId: string): void {
     this.activeFaction = factionId;
     // Also update terrain renderer's world reference (faction colors may change)
@@ -727,17 +802,10 @@ export class LocalMapView implements MapViewInterface {
 
   endTurn(): void {
     dbg.localMap.log('End turn — resetting movement points');
-    if (this.turnManager) {
-      this.turnManager.endTurn();
-    } else {
-      this._localMovementPoints.clear();
-      this._localActedUnits.clear();
-          this._localRotatedUnits.clear();
-    this._localSelectedUnits.clear();
-      for (const unit of this.world.units) {
-        this._localMovementPoints.set(unit.id, sharedGetMaxMovement(unit.attributes));
-      }
-    }
+    this.aiActedUnits.clear();
+    this.highlightMoveUnitId = null;
+    this.highlightMoveFromTile = null;
+    this.turnManager.endTurn();
     this.render();
     if (this.onTurnEnd) this.onTurnEnd();
   }

@@ -5,6 +5,7 @@
 import { generateWorld } from './world/generate.js';
 import { validateWorld, printValidation } from './world/validate.js';
 import { spawnInitialUnits } from './world/spawn.js';
+import { foundCities } from './world/buildings.js';
 import { toCompactWorld } from './world/compact.js';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
@@ -19,7 +20,12 @@ const OUTPUT_DIR = join(__dirname, '..', '..', 'data');
 // Generate
 const world = generateWorld(SEED);
 
-// Validate
+// Spawn initial units for all cities, then found a city (free building) on each.
+const units = spawnInitialUnits(world.tiles, world.cities.map((c) => ({ id: c.id, tileIndex: c.tileIndex })));
+world.units = units;
+foundCities(world);
+
+// Validate (after founding, so the through-street/reachability checks run)
 const result = validateWorld(world);
 printValidation(result);
 
@@ -31,9 +37,6 @@ if (!result.passed) {
 // Save
 mkdirSync(OUTPUT_DIR, { recursive: true });
 
-// Spawn initial units for all cities
-const units = spawnInitialUnits(world.tiles, world.cities.map((c) => ({ id: c.id, tileIndex: c.tileIndex })));
-
 // Save a compact version (no redundant data)
 const compact = toCompactWorld(
   world.seed,
@@ -41,6 +44,7 @@ const compact = toCompactWorld(
   world.pentagonIndices,
   world.cities,
   units,
+  world.buildings,
 );
 
 const outPath = join(OUTPUT_DIR, 'world.json');

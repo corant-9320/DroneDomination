@@ -5,9 +5,25 @@
  * and returns a detailed step-by-step explanation via server/combatExplainer.ts.
  *
  * Framework-agnostic — takes a plain object, returns one.
+ *
+ * ── Responsibilities ─────────────────────────────────────────────────────────
+ * - Deserialize WireUnit[] + WireTile[] from the HTTP request into server types
+ * - Dispatch to handleAttack / handlePreview / handleMove / handleRepair
+ * - Re-serialize the updated units back to WireUnit[] for the response
+ *
+ * ── Wire format ───────────────────────────────────────────────────────────────
+ * WireUnit / WireTile are imported from shared/wireTypes.ts. The wire format
+ * deliberately uses short field names (pos, n, s, terrain …) to keep JSON
+ * compact for the client. The rebuildTiles / rebuildUnits helpers here convert
+ * back to authoritative server types (position3d, neighbours, terrainType …).
+ *
+ * ── What this does NOT handle ─────────────────────────────────────────────────
+ * - Reaction fire triggered by AI moves (handled client-side in aiTurn.ts)
+ * - Turn/MP management (owned by client TurnManager)
+ * - Combat explanation text (combatExplainer.ts)
  */
 
-import { Tile, ElevationType } from '../src/world/types.js';
+import { Tile, ElevationType, TerrainType } from '../src/world/types.js';
 import { Unit, HexSegment } from '../src/world/units.js';
 import type { UnitAttributes } from '../shared/unitTypes.js';
 import {
@@ -294,7 +310,7 @@ function handleRepair(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatR
 
 function rebuildTiles(wireTiles: WireTile[]): Tile[] {
   const maxIdx = wireTiles.reduce((m, t) => Math.max(m, t.idx), 0);
-  const tiles: Tile[] = new Array(maxIdx + 1);
+  const tiles: Tile[] = new Array<Tile>(maxIdx + 1);
 
   for (const wt of wireTiles) {
     const pos = wt.pos
@@ -310,7 +326,7 @@ function rebuildTiles(wireTiles: WireTile[]): Tile[] {
       neighbours: wt.n,
       position3d: pos,
       boundary,
-      terrainType: (wt.t as any) ?? 'plains',
+      terrainType: (wt.t as TerrainType) ?? 'plains',
       elevationType: (wt.elev as ElevationType) ?? 'flat',
       forested: wt.f || undefined,
     };

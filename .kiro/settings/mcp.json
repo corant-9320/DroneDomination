@@ -6,8 +6,13 @@
         "-y",
         "@modelcontextprotocol/server-memory"
       ],
-      "disabled": true,
-      "autoApprove": []
+      "disabled": false,
+      "autoApprove": [
+        "create_entities",
+        "create_relations",
+        "search_nodes",
+        "add_observations"
+      ]
     },
     "chrome-devtools": {
       "command": "npx",

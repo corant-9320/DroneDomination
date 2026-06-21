@@ -4,6 +4,10 @@
 
 import type { Plugin, ViteDevServer } from 'vite';
 
+type RegenerateTiles = (seed: number) => unknown;
+type HandleGenerate = (body: unknown) => { success: boolean };
+type HandleCombat = (body: unknown) => { success: boolean };
+
 export function apiPlugin(): Plugin {
   return {
     name: 'drone-domination-api',
@@ -20,7 +24,7 @@ export function apiPlugin(): Plugin {
         for await (const chunk of req) {
           chunks.push(chunk as Buffer);
         }
-        const body = JSON.parse(Buffer.concat(chunks).toString());
+        const body = JSON.parse(Buffer.concat(chunks).toString()) as { seed?: unknown };
         const { seed } = body;
 
         if (typeof seed !== 'number') {
@@ -30,8 +34,10 @@ export function apiPlugin(): Plugin {
         }
 
         console.log('[DD][api] POST /api/world-tiles — regenerating from seed:', seed);
-        const { regenerateTiles } = await server.ssrLoadModule('/server/regenerate.ts');
-        const result = (regenerateTiles as Function)(seed);
+        const mod = await server.ssrLoadModule('/server/regenerate.ts') as {
+          regenerateTiles: RegenerateTiles;
+        };
+        const result = mod.regenerateTiles(seed);
 
         res.setHeader('Content-Type', 'application/json');
         res.statusCode = 200;
@@ -52,12 +58,14 @@ export function apiPlugin(): Plugin {
         for await (const chunk of req) {
           chunks.push(chunk as Buffer);
         }
-        const body = JSON.parse(Buffer.concat(chunks).toString());
+        const body = JSON.parse(Buffer.concat(chunks).toString()) as unknown;
         console.log('[DD][api] Request body:', JSON.stringify(body));
 
         // Dynamic import so it uses the latest TS via Vite's transform
-        const { handleGenerate } = await server.ssrLoadModule('/server/generateApi.ts');
-        const result = (handleGenerate as Function)(body);
+        const mod = await server.ssrLoadModule('/server/generateApi.ts') as {
+          handleGenerate: HandleGenerate;
+        };
+        const result = mod.handleGenerate(body);
 
         res.setHeader('Content-Type', 'application/json');
         res.statusCode = result.success ? 200 : 400;
@@ -78,11 +86,13 @@ export function apiPlugin(): Plugin {
         for await (const chunk of req) {
           chunks.push(chunk as Buffer);
         }
-        const body = JSON.parse(Buffer.concat(chunks).toString());
+        const body = JSON.parse(Buffer.concat(chunks).toString()) as { action?: unknown };
         console.log('[DD][api] Combat request action:', body.action);
 
-        const { handleCombat } = await server.ssrLoadModule('/server/combatApi.ts');
-        const result = (handleCombat as Function)(body);
+        const mod = await server.ssrLoadModule('/server/combatApi.ts') as {
+          handleCombat: HandleCombat;
+        };
+        const result = mod.handleCombat(body);
 
         res.setHeader('Content-Type', 'application/json');
         res.statusCode = result.success ? 200 : 400;

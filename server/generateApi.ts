@@ -11,6 +11,7 @@ import { validateWorld } from '../src/world/validate.js';
 import { World, City } from '../src/world/types.js';
 import { graphDistance } from '../src/world/pathfinding.js';
 import { spawnInitialUnits } from '../src/world/spawn.js';
+import { foundCities } from '../src/world/buildings.js';
 import { CITY_COUNT } from '../src/world/generate.js';
 
 export interface GenerateConfig {
@@ -75,15 +76,6 @@ export function handleGenerate(config: GenerateConfig): GenerateResult {
   // Strip unused cities from the world
   const filteredCities = world.cities.filter((c) => activeCityIds.has(c.id));
 
-  // Mark player home
-  const compactCities = filteredCities.map((c) => ({
-    id: c.id,
-    label: c.label,
-    tileIndex: c.tileIndex,
-    neighbourCityIds: c.neighbourCityIds.filter((nid) => activeCityIds.has(nid)),
-    isPlayerHome: c.id === playerCity.id || undefined,
-  }));
-
   // Clear cityId on tiles for removed cities
   for (const tile of world.tiles) {
     if (tile.cityId && !activeCityIds.has(tile.cityId)) {
@@ -93,7 +85,25 @@ export function handleGenerate(config: GenerateConfig): GenerateResult {
 
   // Spawn initial units for each active city
   const units = spawnInitialUnits(world.tiles, filteredCities);
+  world.units = units;
   console.log('[DD][api] Spawned %d units for %d cities', units.length, filteredCities.length);
+
+  // Found each active city: marks the capital city-owned and places one free
+  // building on a through-street-preserving segment (Requirement 1).
+  world.cities = filteredCities;
+  foundCities(world, filteredCities);
+  console.log('[DD][api] Founded %d cities with %d buildings', filteredCities.length, world.buildings.length);
+
+  // Mark player home + carry city ownership (owned hexes) over the wire.
+  const compactCities = filteredCities.map((c) => ({
+    id: c.id,
+    label: c.label,
+    tileIndex: c.tileIndex,
+    neighbourCityIds: c.neighbourCityIds.filter((nid) => activeCityIds.has(nid)),
+    isPlayerHome: c.id === playerCity.id || undefined,
+    ownerId: c.ownerId ?? c.id,
+    ownedHexes: c.ownedHexes ?? [c.tileIndex],
+  }));
 
   // Build compact save format (no tiles — client regenerates from seed)
   const compactUnits = units.map((u) => ({
@@ -107,15 +117,24 @@ export function handleGenerate(config: GenerateConfig): GenerateResult {
     currentHealth: u.currentHealth,
   }));
 
+  const compactBuildings = world.buildings.map((b) => ({
+    id: b.id,
+    ownerId: b.ownerId,
+    tileIndex: b.tileIndex,
+    segment: b.segment,
+    attributes: b.attributes,
+  }));
+
   const compact = {
     format: 'compact',
     seed: world.seed,
     cities: compactCities,
     units: compactUnits,
+    buildings: compactBuildings,
   };
 
-  console.log('[DD][api] handleGenerate complete in %dms — cities: %d, units: %d',
-    Date.now() - startMs, compactCities.length, units.length);
+  console.log('[DD][api] handleGenerate complete in %dms — cities: %d, units: %d, buildings: %d',
+    Date.now() - startMs, compactCities.length, units.length, compactBuildings.length);
   return { success: true, world: compact };
 }
 

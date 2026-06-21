@@ -4,71 +4,50 @@
  * All saves use the compact format: seed + cities + units + metadata.
  * Tiles are always regenerated from the seed via POST /api/world-tiles.
  *
- * ── Compact wire-format mirror ──────────────────────────────────────────────
- * The interfaces below MIRROR the authoritative server types. The wire format
- * is produced by `src/world/compact.ts` (toCompactTile/toCompactUnit). When you
- * rename or add a field on either side, update BOTH or the client silently reads
- * `undefined`. Field name mapping (authoritative → wire/client):
+ * ── Wire types ───────────────────────────────────────────────────────────────
+ * The interfaces below are imported from `shared/wireTypes.ts`, which is the
+ * single source of truth for all compact wire shapes (WireTile, WireUnit,
+ * WireBuilding, WireCity, CompactSave). Previously they were hand-maintained
+ * here as TileData/UnitData/BuildingData/CityData — see shared/wireTypes.ts
+ * for the authoritative → wire field-name mapping.
  *
- *   Tile (src/world/types.ts)      → TileData (here) / CompactTile (compact.ts)
- *     index            → idx
- *     sides            → s
- *     neighbours       → n
- *     position3d {x,y,z} → pos [x,y,z]
- *     boundary [{x,y,z}] → b [[x,y,z]]
- *     terrainType      → terrain
- *     elevationType    → elevType
- *     height           → h
- *     forested         → f        (omitted when false)
- *     riverTo          → rv       (downstream tile index; omitted when no river)
- *     cityId           → city
- *
- *   Unit (src/world/units.ts)      → UnitData (here) / CompactUnit (compact.ts)
- *     same field names; attributes is UnitAttributes (shared/unitTypes.ts).
+ * Client-only runtime extensions to the wire types (e.g. `bridge?: boolean`
+ * on tiles) are added via intersection types below.
  */
 
 import { dbg } from './debug.js';
-import type { UnitAttributes } from '../shared/unitTypes.js';
+import { ensureCitiesFounded } from './buildController.js';
+import type {
+  WireTile,
+  WireUnit,
+  WireBuilding,
+  WireCity,
+  CompactSave as WireCompactSave,
+} from '../shared/wireTypes.js';
 
-export interface TileData {
-  idx: number;
-  s: 5 | 6;
-  n: number[];
-  pos: [number, number, number];
-  /** Boundary polygon vertices [[x,y,z], ...] */
-  b: [number, number, number][];
-  terrain: string;
-  elevType: string;
-  /** Discrete terrain height 0–11. */
-  h?: number;
-  /** Whether this tile has forest cover. */
-  f?: boolean;
-  /** Downstream neighbour tile index a river flows toward (toward the sea). */
-  rv?: number;
+// ─── Public type aliases (preserve the existing names callers use) ────────────
+
+/**
+ * A tile in the client's working copy. Extends the wire shape with a runtime
+ * `bridge` flag that is NOT part of the wire format — set by the client when
+ * a player engineer builds a bridge over a river hex.
+ */
+export interface TileData extends WireTile {
   /** Runtime flag: a player engineer has built a bridge on this river hex. */
   bridge?: boolean;
-  city?: string;
 }
 
-export interface CityData {
-  id: string;
-  label: string;
-  tileIndex: number;
-  neighbourCityIds: string[];
-  /** True if this is the player's home city. */
-  isPlayerHome?: boolean;
-}
+/** A unit in the client's working copy. Identical to the wire shape. */
+export type UnitData = WireUnit;
 
-export interface UnitData {
-  id: string;
-  label: string;
-  ownerId: string;
-  tileIndex: number;
-  segment: 0 | 1 | 2 | 3 | 4 | 5;
-  facing: 0 | 1 | 2 | 3 | 4 | 5;
-  attributes: UnitAttributes;
-  currentHealth: number;
-}
+/** A building in the client's working copy. Identical to the wire shape. */
+export type BuildingData = WireBuilding;
+
+/** A city in the client's working copy. Identical to the wire shape. */
+export type CityData = WireCity;
+
+// Re-export CompactSave with the same name callers expect
+export type CompactSave = WireCompactSave;
 
 export interface WorldData {
   seed: number;
@@ -79,6 +58,14 @@ export interface WorldData {
   cities: CityData[];
   tiles: TileData[];
   units: UnitData[];
+  /** Buildings constructed in cities. */
+  buildings: BuildingData[];
+  /**
+   * Planned (not-yet-built) buildings from the City Design planner. Runtime
+   * only — rendered greyed out. Persisted separately per seed via cityPlan.ts,
+   * not part of the authoritative save.
+   */
+  plannedBuildings?: BuildingData[];
   /** Player-chosen faction color (hex string). */
   playerColor?: string;
   /**
@@ -86,21 +73,6 @@ export interface WorldData {
    * Used by battle scenarios to focus on the gap between armies.
    */
   battleCentreTile?: number;
-}
-
-/**
- * Compact save format — omits tiles (regenerated from seed on load).
- * This is the only save format used by localStorage saves and bundled scenarios.
- */
-export interface CompactSave {
-  format: 'compact';
-  seed: number;
-  cities: CityData[];
-  units: UnitData[];
-  playerColor?: string;
-  battleCentreTile?: number;
-  /** Tile indices where the player has built bridges (re-applied after regen). */
-  bridges?: number[];
 }
 
 /**
@@ -153,7 +125,7 @@ async function expandCompactSave(data: CompactSave): Promise<WorldData> {
     }
   }
 
-  return {
+  const world: WorldData = {
     seed: data.seed,
     tileCount: regen.tileCount,
     pentagonCount: regen.pentagonCount,
@@ -162,9 +134,22 @@ async function expandCompactSave(data: CompactSave): Promise<WorldData> {
     cities: data.cities,
     tiles: regen.tiles,
     units: data.units,
+    buildings: data.buildings ?? [],
     playerColor: data.playerColor,
     battleCentreTile: data.battleCentreTile,
   };
+
+  // Mark city-owned hexes on the regenerated tiles, then ensure every city has
+  // its founding building (no-op for already-founded worlds).
+  for (const city of world.cities) {
+    for (const hex of city.ownedHexes ?? [city.tileIndex]) {
+      const tile = world.tiles[hex];
+      if (tile) tile.city = city.id;
+    }
+  }
+  ensureCitiesFounded(world);
+
+  return world;
 }
 
 let cachedWorld: WorldData | null = null;
@@ -189,6 +174,7 @@ export function getCompactSave(): CompactSave | null {
     seed: cachedWorld.seed,
     cities: cachedWorld.cities,
     units: cachedWorld.units,
+    buildings: cachedWorld.buildings,
     playerColor: cachedWorld.playerColor,
     battleCentreTile: cachedWorld.battleCentreTile,
     bridges: bridges.length > 0 ? bridges : undefined,

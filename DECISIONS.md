@@ -4,12 +4,642 @@ Append-only record of design decisions, gotchas, and known issues. The game's
 rules are invented as we go — this log is how that intent survives across
 sessions so agents stop re-discovering (or re-breaking) the same things.
 
+## 2026-06-20 — Rivers carved as a sine wave; guaranteed drainage helper
+
+**Decision:** Rivers are now shaped as a **sine wave with a little randomness**
+instead of a near-straight channel. At each step the heading is the seaward
+direction (the `oceanDist` gradient projected into the tile's tangent plane)
+swung side to side by `sin(phase)`; the river always advances toward the coast
+(at most one step away, for the wave crests), so it reads as a clean meander
+rather than a self-tangling knot. Amplitude, wavelength and phase are randomised
+per river, plus a small per-step jitter. Typical per-segment sinuosity ≈ 1.6–2.2.
+
+Tunables in `generate.ts`: `MEANDER_AMP` (swing width), `MEANDER_FREQ`
+(wavelength, rad/tile), `MEANDER_JITTER` (randomness), `MEANDER_CLIMB_TOLERANCE`.
+
+**Why:** The old carver wandered then beelined, so rivers read as straight
+lines. A literal "π-rule" sinuosity target was tried but self-intersects on the
+hex grid and gets straightened by drainage repair, so it was dropped for a
+clean, reliably-draining wave.
+
+**Gotcha (important):** Rivers carry `terrainType === 'ocean'`, so city
+sanitisation's ocean→plains doorstep clearing also strips `riverTo` from river
+tiles next to a city, orphaning the channel upstream (dead-end). Longer meanders
+hit this far more often. Fixed via `ensureRiverDrainage(tiles, forbidden?)`,
+which re-routes any river tile that no longer reaches the sea straight down the
+(strictly decreasing → acyclic) `oceanDist` gradient, skipping `forbidden`
+tiles. Runs inside `generateRivers`, then again after city placement with city
+hexes + doorsteps forbidden (rivers route around a city; one a city fully blocks
+is truncated cleanly). Terrain reconciled after: river tiles → 'ocean',
+truncated tiles → 'plains' (no stray inland ocean).
+
+**Impact:** All rivers drain to the sea (0 cycles, 0 dead-ends); `npm run
+validate` passes; 349 unit tests pass. World regenerates on `npm run build`.
+
+## 2026-06-20 — Doubled vertical terrain exaggeration (first-person)
+
+**Decision:** `ELEV_WORLD_SCALE` in `firstPersonView.ts` raised from
+`HEX_WORLD_RADIUS * 2.2` to `HEX_WORLD_RADIUS * 4.4` so elevation differences
+read as roughly twice as tall.
+
+**Why:** Mountains looked like small hills in the perspective view. The single
+scale constant drives all vertex heights, unit placement, cliff skirts and
+fallback tops, so changing it alone exaggerates the whole landform consistently.
+
+**Impact:** Client-only, refresh browser (Vite HMR). No data/world regen needed.
+
+## 2026-06-20 — Inland lakes & rivers stay flat with cliff banks (first-person)
+
+**Decision:** In the 3D first-person terrain, inland water (lakes and river
+hexes) is now treated as flat water exactly like open ocean: its surface stays
+horizontal at its own water level and the surrounding land slopes to the
+waterline (or drops as a cliff when the bank is tall) instead of the water being
+warped to tilt and blend into the land.
+
+**Why / how:** `firstPersonTerrain.ts` had a *local* `isWaterTile` that matched
+only open ocean (`terrain/elevType === 'ocean' && rv === undefined`), so lakes
+and rivers fell through to land averaging in `buildVertexHeight` and got warped.
+Extended that local helper to mirror `TerrainContext.isWaterTile` (ocean / water
+/ lake terrain or elevType, plus `rv !== undefined` river hexes, minus bridged
+crossings). This flows automatically into `cliffHeight` (water reads as the
+waterline 0, so a tall bank reads as a cliff) and the vertex-cluster water
+pinning. `elevationWorldHeight` keeps inland water at its own carved height
+(only open ocean drops to -0.25) so a lake on a plateau / a river descending a
+valley sits at its real level rather than collapsing to sea level.
+
+**Impact:** First-person view only (2D globe/local map already used the shared
+context `isWaterTile`). Cliff banks appear only where the land step exceeds
+`MAX_CLIMB_LIMB` (8); gentle shores still slope to the waterline, matching the
+existing coastal behaviour.
+
+## 2026-06-20 — "View" first-person available on every segment
+
+**Decision:** The segment right-click menu (no unit selected) now always offers
+**👁 View**, which enters the read-only first-person look-around at that segment
+— including empty segments with no unit or building. The two previously separate
+single-item menus (`CityContextMenu`, `BuildingContextMenu`) were unified into
+one `SegmentContextMenu` that conditionally adds **⚙ Refit Building** /
+**🏛 City Design** alongside View.
+
+**Why / how:** `FirstPersonView.open(unit)` was refactored into a shared
+`enterView(tileIndex, segment, facing, airHeight, selectUnitId)` helper. `open`
+derives those from the unit; the new `openAt(tileIndex, segment)` passes
+ground-level / facing-north / no-selection so look-around works without a unit.
+Wired via `MapViewInterface.onViewSegment` → `LocalMapView.onViewSegment` →
+`firstPerson.openAt` in `main.ts`.
+
+**Impact:** Pentagon tiles (no segment subdivision) pass `segment = -1`, which
+`openAt` clamps to 0. View is only on the no-unit-selected RMB path; with a unit
+selected, RMB still routes to move/attack/unit-context as before.
+
+## 2026-06-20 — Building equipment rendered at 50% relative to body
+
+**Decision:** In `buildBuildingModel`, mountable equipment (gun barrel, splash
+launcher, defence dishes, repair mast, anti-air) is grouped and scaled to
+`EQUIPMENT_SCALE = 0.5` about the roof surface (`y = BODY_H`). The base block,
+roof cap, and wall-bolted armour stay full size.
+
+**Why / how:** Equipment reused the unit-sized add-on builders and looked
+oversized on the plain building block. Scaling about the roof surface keeps
+roof-mounted bases seated (`equip.position.y = BODY_H * (1 - EQUIPMENT_SCALE)`)
+while gear above shrinks toward centre. Armour is excluded because its plates
+bolt flush to the walls — shrinking them would float them off the structure.
+
+**Impact:** Applies to both views (FP `place()` and the local-map sprite, both
+build from `buildBuildingModel`). Bumped `SPRITE_VERSION` to `bld-v2` in
+`buildingRenderer.ts` to invalidate cached sprites. Units are unaffected (shared
+add-on builders untouched). Tune `EQUIPMENT_SCALE` to rebalance.
+
+## 2026-06-20 — First-person buildings scale from base block, not full bbox
+
+**Decision:** In the 3D first-person view, buildings are now scaled to a
+consistent on-screen size using the bare base-block footprint
+(`BUILDING_BASE_FOOTPRINT`, exported from `buildingModel.ts`) instead of the
+model's full XZ bounding box.
+
+**Why:** `place()` in `firstPersonView.ts` divided the target footprint by
+`Math.max(size.x, size.z)` of the *whole* model. Horizontally-protruding
+equipment — long gun barrels (longer with `rangeAttack`) and anti-air dishes —
+inflated that extent, shrinking the entire structure so the protrusion fit
+inside the hex fraction. Buildings with only vertical gear (antenna, flag,
+defence) stayed large. Result: building size tracked loadout, not elevation —
+a building closer to the camera could look *smaller* than a farther one.
+
+**Impact:** Every building body now renders at the same size; equipment freely
+protrudes past the hex fraction. Units still normalise by full bbox (unchanged);
+apply the same fix there if the effect shows up on units. The local-map sprite
+renderer (`buildingRenderer.ts`) uses a fixed ortho frustum and is unaffected.
+
+## 2026-06-20 — Home key snaps to selected unit's shoulder (first-person)
+
+**Decision:** In the 3D first-person view, pressing **Home** moves the camera
+onto the selected unit's shoulder, looking horizontally (pitch = 0) in the
+direction the unit is facing — a quick over-the-shoulder reset.
+
+**Why / how:** Gives the player a one-key way to reorient the free-fly camera
+behind the unit it's commanding. Implemented in `client/firstPersonView.ts`:
+- `onKeyDown` adds a `Home` branch; it `preventDefault` + `stopImmediatePropagation`
+  in the capture phase so the 2D map's Home shortcut (centre on home city) does
+  not also fire while first-person owns the keyboard.
+- `snapToShoulderOfSelected()` reuses `shoulderWorldPos(unitId)` for the focal
+  point and `facingDirection(ft, unit.facing)` for the horizontal heading. It
+  sets `yaw` from the facing, `pitch = 0`, and places the eye slightly behind
+  and to the right of the shoulder (`back = 0.5·HEX_WORLD_RADIUS`,
+  `side = 0.28·HEX_WORLD_RADIUS`), then `applyLook()`.
+
+**Impact:** No-op when nothing is selected. `clampPos()` still bounds the eye to
+the field and minimum height.
+
+**Follow-up (same day):** The shoulder-snap leaves the camera *level* with the
+shoulder, which exposed an issue in the boom (wheel) zoom: it called
+`aimAt(shoulder)` every tick, so once level it re-snapped the pitch to horizontal
+on every zoom — and panning away then zooming yanked the view back onto the
+unit. Fixed with an explicit `boomFocus` flag: wheel-zoom only dollies toward +
+re-aims at the unit's shoulder while focus is armed. Focus is armed by the
+explicit framing actions (`open()` and the Home snap) and cleared the moment the
+player pans or looks (drag / Ctrl-drag). Once cleared, zoom is a plain forward
+dolly that keeps pointing where the player aimed until they re-focus (Home).
+
+## 2026-06-20 — Cliffs at unclimbable / water borders in first-person view
+
+**Decision:** In the 3D first-person view, a hex border renders as a vertical
+**cliff** (flat tops + visible skirt wall) when the height step exceeds the
+spider climb limit (`|Δheight| > MAX_CLIMB_LIMB`, i.e. a face no ground chassis
+can scale). Open water is treated as sea level (height 0) in this test, so a
+tall coastal drop becomes a cliff but an ordinary shoreline does not. Separately,
+**open water always stays dead flat**: shared vertices on a water cluster are
+pinned to the water level, so a lower land neighbour slopes down to the
+waterline instead of tilting the water up — no vertical wall for small shore
+steps.
+
+**Why / how:** Smooth tilting reads well for gentle grades but misrepresents
+sheer faces, and the first cut made *every* land-water border a full cliff —
+even a 1-level shore looked like a tall wall (made worse by the ocean's -0.25
+dip). The change is isolated to `client/firstPersonTerrain.ts`:
+- `isWaterTile` (open ocean, non-river), `cliffHeight` (water reads as 0), and
+  `isCliffEdge(a, b)` = `|cliffHeight Δ| > MAX_CLIMB_LIMB`.
+- `buildVertexHeight` is now **tile-aware**: it returns `(tileIndex, p) => height`.
+  At each shared vertex it clusters touching tiles via union-find, joining only
+  pairs that are *not* a cliff edge. A cluster's height is the average of its
+  tiles' elevation, **unless it contains water**, in which case it is pinned to
+  the water level (kept flat). Tiles split by a cliff resolve to different
+  heights at the same point, so the existing darker skirt becomes the cliff wall.
+- `buildTerrainMesh` and `sampleSurface` (in `firstPersonView.ts`) updated to
+  pass the querying tile index so unit placement samples the same surface.
+
+**Impact:** A single threshold (`MAX_CLIMB_LIMB`) governs all cliffs (land and
+coastal), so the visual cut-off tracks the movement rule and the 2D map's
+steep-border tiers in `client/terrainRelief.ts`. If coastal cliffs are wanted at
+smaller drops than the climb limit, add a separate water threshold.
+
+## 2026-06-20 — City hexes and built-on hexes are never forested
+
+**Decision:** A city's own hex is de-forested at world generation, and any hex
+gets its forest cleared the moment a building is placed on it.
+
+**Why / how:** A settled/built hex is a cleared site — leaving forest cover on
+it looked wrong and double-counted terrain. Three touch points kept in sync:
+- `src/world/generate.ts` (Step 6 city sanitisation) sets `tiles[city.tileIndex].forested = false`.
+- `src/world/buildings.ts` `constructBuilding` sets `tile.forested = false` on commit (server-authoritative).
+- `client/buildController.ts` `constructBuilding` sets `tile.f = false` (client mirror of compact wire format).
+
+`world.json` regenerated so existing capitals load de-forested.
+
+## 2026-06-20 — Forest scenery in first-person view
+
+**Decision:** Forested hexes (`tile.f`) now scatter low-poly 3D trees in the
+first-person view (`client/firstPersonView.ts` → `buildTrees()`), echoing the 2D
+map's `terrainFeatures.drawForestCornerTrees`.
+
+**Why / how:** Trees are static decoration, so they're built once on `open()`
+and disposed with the rest of the scene on `close()`. Each tree is a trunk
+(cylinder) + canopy (cone) drawn as two `InstancedMesh`es (one matrix per
+instance shared across both parts) for performance. Placement uses a per-tile
+seeded PRNG (`mulberry32(tileIndex)`) so a given forest looks identical each time
+the view is opened; trees stand upright (not slope-tilted) at surface-sampled
+heights. Tunables: `TREES_PER_HEX`, `TREE_HEX_FRACTION`.
+
+## 2026-06-20 — Player move glide overshot then snapped back to the destination
+
+**Bug:** Moving a player unit on the local map showed the sprite gliding *past*
+its destination, then snapping back to the selected segment.
+
+**Root cause:** The glide stored **fixed screen-space** positions in
+`unitScreenOverrides` (computed once from start/end centroids). But the move
+handler also calls `globe.panToTile(destTile)` to follow the unit; the globe
+pan emits view-centre changes that call `localMap.setCentre(...)`, which rebuilds
+the local-map projection and resets its pan offsets **mid-glide**. The sprite
+kept heading to the now-stale screen target (overshoot), then the override was
+removed and the unit was redrawn at the recentred segment centroid (snap-back).
+
+**Fix:** The glide is now driven by eased **progress (0–1)** instead of cached
+screen coords. `LocalMapView` stores the origin/destination tile+segment in
+`unitMoveAnims`, and `drawUnits` re-projects `lerp(originCentroid, destCentroid,
+progress)` through the *current* `worldToScreen` every frame. The path now
+follows any mid-glide recentre and lands exactly on the destination centroid.
+
+**Impact:** `CombatAnimator.playMove` now takes `(onStep: (progress) => void)`
+(no from/to). `LocalMapView.playMoveAnimation(unitId, fromTile, fromSeg,
+newFacing)` replaced the old `(unitId, fromPos, newFacing)`. Move overrides are
+world-space-relative now, not screen-space — keep any new glide code
+progress-based so it stays recentre-safe.
+
+## 2026-06-20 — End-turn "are you sure?" popup rows didn't select the unit
+
+**Bug:** Clicking a unit row in the end-turn confirmation popup recentred the
+camera but did not select/highlight that unit. The row handler called
+`localMap.setCentre()` + `setSelected(tileIndex)`, which only sets `selectedTile`
+— it never added the unit to `turnManager.selectedUnits`, set `selectedSegment`,
+or recomputed the movement-range overlay. So the on-map selection ring stayed on
+whatever was previously selected, and players misread which unit was active.
+
+**Fix:** Added `LocalMapView.focusUnit(unitId)`, which mirrors the real
+left-click selection path (centre → clear+add `selectedUnits` → set
+`selectedTile`/`selectedSegment` → `computeMovementRange()` → render). The popup
+row click now calls `focusUnit(unit.id)`. Canonical "select a unit by id"
+helper — prefer it over the `setCentre`+`setSelected` pair anywhere a unit
+(not just a tile) should become selected.
+
+## 2026-06-20 — First-person rotation cycled 3 facings instead of 6 (double-handled arrow keys)
+
+**Bug:** In first-person view, pressing ←/→ to rotate the selected unit only
+visited 3 of the 6 facings (it advanced by 2 each press, landing on even/odd
+only). The data was fine — facing genuinely cycled 0–5 — but two `window`
+keydown listeners both processed each arrow press: `FirstPersonView.onKeyDown`
+AND the 2D map's `MapInputHandler.onKeyDown` (still attached while the overlay
+is open). Each rotated the unit once → net +2 per press.
+
+**Fix:** `FirstPersonView` now registers its keydown listener in the **capture
+phase** (`addEventListener('keydown', fn, true)`) and calls
+`stopImmediatePropagation()` for all arrow keys, so the map's bubble-phase
+listener never sees them while first-person is open. ArrowDown is swallowed too
+(blocks the map) but is not a first-person command, so it does not rotate.
+
+**Why this approach:** Self-contained in `firstPersonView.ts` — no plumbing of
+"is first-person active" through `LocalMapView → MapInputHandler`. `preventDefault`
+alone was insufficient; it doesn't stop sibling listeners on the same target.
+
+**Gotcha for future agents:** Both views attach global `window` keydown
+listeners. Any new modal/overlay that handles keys must capture + stop
+propagation (or otherwise suppress the map handler), or it will double-handle.
+
+
 **How to use:** Add a new entry at the top whenever you (a) make a design or
 balance decision, (b) discover a non-obvious gotcha, or (c) find/fix a bug worth
 remembering. Keep entries short. Link to the authoritative doc if one exists
 (`COMBAT_RULES.md`, `ARCHITECTURE.md`).
 
 Format: `## YYYY-MM-DD — <short title>` then **Decision / Why / Impact**.
+
+---
+
+## 2026-06-20 — Enemy move indicator + red number for acted enemy units
+
+**Decision:** AI moves now draw an amber "move indicator" (origin ring + origin
+dot + dashed arrow to the unit's current position) via `drawMoveHighlight`
+(`localMapUnits.ts`), mirroring the existing red/cyan `drawCombatHighlight` used
+for attacks. Separately, an enemy unit's number label is drawn in red once it
+has moved/acted this AI turn (tracked in `LocalMapView.aiActedUnits`, fed by the
+new `markActed` / `highlightMove` AI callbacks in `aiTurn.ts` →
+`turnController.ts`).
+
+**Why:** Plain enemy moves had no persistent indicator, so it was hard to see
+what moved from where to where. And there was no way to tell at a glance which
+enemy units had already taken their action during playback.
+
+**Impact:**
+- `drawUnits` param `_actedUnits` is now used (renamed `actedUnits`): label is
+  red when `MP === 0 || actedUnits.has(id)`. `localMap.render()` passes
+  `aiActedUnits` (not `turnManager.actedUnits`), so **player** unit numbers are
+  unchanged (still red only on 0 MP).
+- Move/combat highlights are mutually exclusive (each setter clears the other);
+  `selectActingUnit` clears the move arrow when focus shifts.
+- Both indicators and the red flag are live-only and cleared in
+  `LocalMapView.endTurn()`. They do **not** rewind with the playback snapshots
+  (same transient behaviour as the pre-existing combat highlight).
+
+---
+
+## 2026-06-20 — First-person view renders buildings; 20v20 ships a player city
+
+**Decision:** `FirstPersonView` now renders buildings, not just terrain + units.
+A new `rebuildBuildings()` builds a `buildBuildingModel` per `world.buildings`
+entry (solid) and per `world.plannedBuildings` entry (translucent ghost,
+opacity 0.35), placed upright at the segment centroid on the sampled terrain
+surface, front facing the segment's outer edge. Buildings are scaled by
+`BUILDING_HEX_FRACTION` (0.42 of a hex radius) — far larger than the tiny unit
+models. Called from `open()` and `refresh()`; geometries AND materials are
+disposed on rebuild/close (unlike unit models, `buildBuildingModel` mints fresh
+materials per call). The 20v20 generator (`scripts/generate-battle-20v20.js`)
+now seeds 3 buildings on the player capital hex (segs 0/1/2, gun / EW-dish /
+repair loadouts) plus a garrison player unit on an open segment of that hex.
+
+**Why:** Buildings existed only as 2D sprites (`buildingRenderer.ts`); the 3D
+view had no wiring to place them. The 20v20 scenario had no player city cluster
+and no unit near the capital, so there was nothing to view quickly.
+
+**Impact:** Press Home → select the garrison unit → V to see the city in 3D.
+Ghost (planned) buildings from the City Design planner also show translucent in
+3D. The contiguous 3-seg arc leaves segs 3/4/5 open as a through-street.
+
+## 2026-06-20 — Polar ice caps are organic (latitude + noise), not pole-distance rings
+
+**Decision:** Replaced the old/new pole-distance terrain rules in
+`generateTerrain` (`src/world/generate.ts`) with an organic ice field. A tile is
+tundra when `polarPentagon || (|latitude| + low-freq-noise*ICE_EDGE_WAVE) >=
+ICE_LAT_EDGE` (`ICE_LAT_EDGE=0.90`, `ICE_EDGE_WAVE=0.20`). Pole pentagons are
+forced ice so a core always survives. The strong polar land bias (`polarLift`)
+was relaxed to `|lat|>0.95 ? 0.06 : 0` so the rank-selected ocean mask leaves
+organic sea inside the caps; ocean tiles in a cap simply stay ocean.
+
+**Why:** The prior code offered either rigid tundra rings at pole-distance ≤2
+plus a forced ocean buffer at distance 3–4 (old), or pentagon-only tundra with
+no polar sea (post-Goldberg100 refactor). Neither matched the desired look:
+organic ice blobs at both poles with some random sea around them.
+
+**Impact:** Both poles get a wavy ice cap. On the shipped G(100) world each cap
+(|lat|>0.85) is ~4.7k tundra + ~1k ocean tiles; zero equatorial tundra. Removed
+`POLE_TUNDRA_CAP`. `poleDistances` is still used for mountains/cities. The two
+old ring tests in `terrain.test.ts` were replaced by property-based polar tests
+(ice present at both poles, organic non-ring edge, polar sea across seeds) that
+build a small real Goldberg sphere via `generateGeodesicSphere`+`computeDual`.
+Also added `dist/**` to vitest `exclude` so stale compiled tests don't re-run.
+
+## 2026-06-20 — ESLint (typed) added; uses tsconfig.eslint.json
+
+**Decision:** Added flat-config ESLint (`eslint.config.js`) with typed rules:
+`no-explicit-any`, `no-unsafe-*`, `no-floating-promises`,
+`switch-exhaustiveness-check`, `complexity` (warn >10), `max-lines-per-function`
+(warn >60). Test files are exempt from the last two. Run with `npm run lint`.
+Type-aware linting points at a dedicated `tsconfig.eslint.json` (extends the base
+config, adds `server/**` + `node` types, `noEmit`) so `server/**` files get
+type info without changing the build's `tsconfig.json` include list.
+
+**Why:** The build's `tsconfig.json` only includes `src/` + `shared/`; without a
+lint-only project, every `server/**` file failed with a parser "not found in
+project" error.
+
+**Impact:** Lint is clean (0 errors). 37 complexity/length *warnings* remain on
+legitimately large functions (world gen, combat resolution) — left as warnings.
+
+## 2026-06-20 — Gotcha: validate.ts tile reconstruction was masked by `any`
+
+**Decision / Why:** `src/validate.ts` rebuilt `Tile[]` from `world.json` but
+omitted `boundary`, `elevationType`, `forested`. This compiled only because
+`JSON.parse` returned `any`, which silently satisfied `Tile[]`. Typing the parse
+as `WireWorld` exposed the gap. Now reconstructs the full Tile from the wire
+fields (`b`, `elevType`, `h`, `f`, `rv`).
+
+**Impact:** `validateWorld` now sees complete tiles. No behavior change to
+generation; this only affected the standalone `npm run validate` CLI.
+
+---
+
+## 2026-06-17 — Refactor: context menus extracted from MapInputHandler
+
+**Decision:** `showCityMenu` and `showBuildingMenu` (~100 lines of inline DOM
+construction) extracted from `MapInputHandler` into `client/cityContextMenus.ts`
+as `CityContextMenu` and `BuildingContextMenu` classes. Both share a
+`MenuLifecycle` helper for open/close/Escape lifecycle, following the same
+pattern as `UnitContextMenu` in `unitContextMenu.ts`.
+
+`MapInputHandler.closeContextMenu()` now calls `.close()` on all three menu
+instances; the three `show*` methods become one-liners.
+
+**Why:** Reduces `mapInput.ts` by ~100 lines and isolates the DOM construction so
+adding new menu items (or restyling) doesn't require reading input-routing code.
+
+**Impact:** No behaviour change. All three menus work identically.
+
+---
+
+## 2026-06-17 — Refactor: wire types unified, generate.ts split, pathfinding shared
+
+**Decision:**
+1. `shared/wireTypes.ts` — new single source of truth for compact wire shapes
+   (WireTile, WireUnit, WireBuilding, WireCity, WireWorld, CompactSave). Replaces
+   the hand-maintained parallel definitions in `src/world/compact.ts` and
+   `client/worldData.ts`. `TileData` in `client/worldData.ts` now extends
+   `WireTile` with client-only `bridge?: boolean`.
+
+2. `shared/pathfinding.ts` — graphDistance / tilesWithinRadius / findPath moved
+   here from `src/world/pathfinding.ts`. `src/world/pathfinding.ts` becomes a
+   thin adapter (Tile → PathTile). `client/aiTurn.ts` drops its local `bfsDistance`
+   / `findPath` duplicates (~80 lines) and imports from shared instead.
+
+3. `src/world/generate.ts` split: `mulberry32` → `rng.ts`, Goldberg geometry
+   (icosahedron, subdivision, dual) → `geodesic.ts`. `generate.ts` re-exports
+   these and imports from them, reducing how much an agent must read to touch
+   only terrain/rivers/cities (sections 2–4, ~1400 lines vs 1822).
+
+**Why:** Eliminate the two most documented drift risks (wire types, duplicated AI
+pathfinding) and reduce the single most expensive file to read (generate.ts).
+
+**Impact:** All existing importers still work — compact.ts re-exports old aliases,
+worldData.ts re-exports old type aliases, pathfinding.ts re-exports via adapter.
+No runtime change.
+
+---
+
+## 2026-06-17 — Boom zoom targets the selected unit's shoulder
+
+**Decision:** In first-person view (`firstPersonView.ts`), mouse-wheel zoom now
+dollies toward (and aims at) the selected unit's shoulder rather than along the
+camera's forward look vector. Shoulder = `unitWorldPos` mid-body lifted by
+`HEX_WORLD_RADIUS * UNIT_HEX_FRACTION * 0.35`. `SHOULDER_STANDOFF` is tiny
+(`HEX_WORLD_RADIUS * 0.05`) so the camera comes right up to the model, and the
+`clampPos` altitude floor was lowered from `EYE_HEIGHT` to `CAM_MIN_HEIGHT`
+(0.3) so the eye can descend to the unit instead of stopping high above it. With
+no unit selected it falls back to the old forward dolly.
+
+**Why:** Zooming used to drift along whatever direction you were looking, so the
+unit slid out of frame. Centring on the shoulder keeps the selected unit framed
+as you zoom in.
+
+**Impact:** `wheel` handler + new `shoulderWorldPos` / `aimAt` helpers. Zoom-out
+also follows the shoulder axis.
+
+---
+
+## 2026-06-17 — Wash out terrain textures
+
+**Decision:** Terrain textures are composited weakly instead of full strength.
+2D local map (`localMapTerrain.ts` `fillTileTexture`) draws each texture at
+`globalAlpha = 0.45` over the solid biome fill (hillsPlains at `0.45 * 0.8`).
+First-person 3D (`firstPersonView.ts` `getTerrainTextures`) bakes a 55% white
+overlay onto each texture on load.
+**Why:** The raw textures read too strong/saturated against the HUD.
+**Impact:** Base biome colours now show through; artwork is a subtle overlay.
+Tune via `TEXTURE_WASH_ALPHA` (2D) and `WASH_WHITE_ALPHA` (3D).
+
+---
+
+## 2026-06-17 — Building refit + building-attribute wire plumbing
+
+**Decision:** Buildings can now be **refitted** with equipment, mirroring the unit
+refit. Right-click a player-owned building (no unit selected) → **⚙ Refit Building**
+→ `client/buildingRefitModal.ts`. The seven equipment attributes
+(`kinetic, rangeAttack, splashAttack, antiAir, armour, defence, repair`) are
+redistributed within a **flat budget** `BUILDING_REFIT_BUDGET = 10` pts
+(`buildingRefitModal.ts`). Unlike units (whose budget = sum of current attrs), a
+building starts empty, so a fixed pool is used; budget = `max(10, currentSum)` so
+points are never lost on a re-refit. Refit re-renders the sprite via
+`rerenderBuildingSprite` and is gated on the player's turn.
+
+Building equipment is now **plumbed through the wire format**: `attributes?` added
+to `Building` (`src/world/types.ts`), `CompactBuilding` + `toCompactBuilding`
+(`src/world/compact.ts`), and the building map in `server/generateApi.ts`. Client
+saves already round-trip it (compact save copies `BuildingData`, which carries
+`attributes?`).
+
+**Why:** Requested. Buildings should be configurable defensive emplacements using
+the same equipment vocabulary as units, minus movement and engineering.
+
+**Impact:** Generated buildings still spawn empty (no attributes set at
+construction); refit is how a player equips them. No per-turn cap on refit (unlike
+the one-build-per-turn `C` rule). AI does not refit buildings yet.
+
+## 2026-06-17 — Buildings rendered as 3D model sprites (equipment-capable)
+
+**Decision:** Buildings now render from a procedural 3D model
+(`client/buildingModel.ts`) via an offscreen renderer (`client/buildingRenderer.ts`),
+mirroring the unit sprite pipeline. The base is a deliberately plain block + roof
+turret cap. The model reuses the unit attribute add-on builders, so a building can
+be equipped with the same gear as a unit — **all attributes except movement and
+engineering**: `kinetic`, `rangeAttack`, `splashAttack`, `antiAir`, `armour`,
+`defence`, `repair`. `ChassisType` gained a `'building'` member; each add-on in
+`unitModelAddons.ts` got a `'building'` placement case.
+
+**Why:** Asked for a basic, detail-free building model that can later be extended
+with unit-style equipment. Sharing the add-on builders keeps a single source of
+truth for equipment geometry.
+
+**Impact:** Buildings sprite-render at the same camera/scale as units (single
+facing — buildings are static). `BuildingData.attributes?` (client-only,
+`worldData.ts`) carries the optional loadout; when absent the building is a plain
+block. Server/compact wire format is **not yet plumbed** — to actually assign
+building equipment in-game, add `attributes` to `Building` (`src/world/types.ts`)
+and the compact format (`src/world/compact.ts`). `drawBuildings` falls back to the
+old vector block+roof while a sprite is still rendering.
+
+## 2026-06-17 — Capital hex exempt from through-street rule
+
+**Decision:** The **capital hex** of a city is exempt from the per-tile
+through-street invariant (Requirement 4). It may hold buildings on all six
+segments. The surrounding city hexes remain fully subject to the through-street
+and no-courtyard invariants, so the city stays traversable via the ring of hexes
+around the capital rather than through it.
+
+**Why:** The capital is the city's dense core; forcing a street through it is
+unnecessarily restrictive. Roads flowing around it preserve traversability.
+
+**Impact:** Founding (R1.4) and build-time validation (R4) skip the through-street
+check for the capital hex only. R5 (external reachability) is unaffected — a
+fully-built capital simply contributes no open segments to the network.
+
+
+
+**Decision:** Right-clicking the player's capital hex (with no unit selected)
+opens a **City Design** menu → modal planner. The planner shows the capital and
+its six neighbour hexes as a schematic segmented "flower"; clicking a segment
+toggles a **planned** building. Plans are persisted per world seed in
+localStorage (`dd-city-plans-<seed>`, `client/cityPlan.ts`) so they survive
+between invocations and sessions. Planned buildings render **greyed/dashed**
+(both in the modal and on the main map); real buildings render **solid** in the
+faction colour. Built/unit-occupied segments can't be planned.
+
+**Why:** Lets players lay out a city ahead of time without spending turns.
+
+**Mechanics / gotchas:**
+- The planner **honours the real placement rules**. Adding a planned building
+  validates it via `buildController.validatePlannedPlacement`, which runs the
+  shared `validateBuildingPlacement` against a context where the city's
+  *planned* buildings count as real ones (`makePlannedContext`). So planned
+  buildings must be contiguous, must keep every hex's through-street, and must
+  not orphan the street network — illegal plans are rejected with the reason
+  shown in the modal status line. Because buildings only shrink open segments,
+  validating each add against the current (legal) union keeps the whole plan
+  legal, so per-add validation suffices.
+- **Removal re-prunes** (`cityPlan.prunePlan`): deleting a planned building can
+  disconnect others that only extended off it, so the plan cascades to drop any
+  now-non-contiguous planned buildings. (Through-street/reachability can't break
+  on removal — fewer buildings = more open segments.)
+- Plans are a personal overlay, NOT part of the authoritative save. They sync
+  into `world.plannedBuildings` (runtime-only field) via
+  `cityPlan.syncPlannedToWorld`, which also prunes any planned segment once it
+  is actually built.
+- RMB is overloaded (move/attack need a selected unit), so the City Design menu
+  only triggers when **no unit is selected** — deselect, then RMB the capital.
+- The planner schematic rotates each neighbour hex so the segment facing the
+  capital points inward, keeping segment indices faithful to the real tiles.
+- `ensureCitiesFounded` (load fallback) can leave a very coastal capital
+  unfounded if it has <2 land neighbours (no through-street possible). Generated
+  worlds avoid this; only legacy/synthetic scenarios hit it.
+
+---
+
+## 2026-06-17 — Cities & buildings (city-buildings spec)
+
+**Decision:** Implemented the `city-buildings` spec. A `Building` is an immobile
+full-segment occupant `(tileIndex, segment)` owned by a faction. Founding places
+one free building on each city's capital hex; buildings then grow contiguously,
+one per faction per turn. Two traversability invariants are enforced at build
+time AND in `npm run validate`:
+- **Through-street (R4):** every city hex keeps a connected run of open (unbuilt)
+  segments with ≥2 external faces opening onto ground-passable neighbours.
+- **External reachability (R5):** the whole-city open-segment network must reach
+  the outside world — no sealed courtyard pockets.
+
+The pure rules live in `shared/buildings.ts` (single source of truth, client-
+importable). `src/world/buildings.ts` (server) and `client/buildController.ts`
+are thin adapters over it. Wire format carries `buildings[]` + `city.ownedHexes`
+(`src/world/compact.ts`, mirrored in `client/worldData.ts`). `validateWorld`
+gained two city-integrity checks. Per-turn cap lives on `TurnManager`
+(`builtFactions` set). Client build action: **C** key builds on the selected
+hex+segment.
+
+**Why:** Cities must never wall themselves off; the two invariants guarantee
+units can always traverse a city.
+
+**Gotchas / decisions resolved:**
+- **Ground-passable = "not ocean"** at tile granularity for the street invariant.
+  Steepness is an edge/chassis concern handled by the movement system; the street
+  rules use tile-level passability only (mountains are passable terrain here).
+- **Units don't block streets.** "Open/street segment" means *no building*; a
+  unit may sit on or pass through it. Through-street/reachability consider
+  buildings only.
+- **Founding happens after city filtering + unit spawn** in `server/generateApi.ts`
+  (and `src/generateCli.ts`), so removed cities don't leave stray buildings.
+- **Founding-on-load fallback:** `client/buildController.ensureCitiesFounded`
+  founds any city that loaded without a building, so pre-buildings saves/scenarios
+  still get a starting building.
+
+---
+
+## 2026-06-16 — Flat map orientation tracks the globe camera's screen-up
+
+**Decision:** `buildFlatView` (`client/localMapProjection.ts`) now accepts an
+optional `up` vector (the globe camera's screen-up direction in world space) and
+builds the tangent-plane basis from it: binormal (map screen-up) = `up` projected
+onto the tangent plane, tangent (screen-right) = `binormal × normal` (preserves
+`t × b = n`). `globe.ts` `emitViewCentre` extracts the camera's local +Y axis
+(`setFromMatrixColumn(matrixWorld, 1)`), passes it through the
+`onViewCentreChange(tileIndex, up)` callback, and now fires that callback on a
+meaningful **orientation** change (~2° threshold) too, not only on centre-tile
+change. `LocalMapView` stores the latest `up` (`viewUp`) and reuses it for
+map-drag recentres so orientation stays continuous. When no `up` is supplied
+(first-person view, battle centring, goHome), `buildFlatView` falls back to the
+old position-derived branch (canonical orientation).
+**Why:** The map basis was derived purely from the centre tile's position with a
+hard branch at `|ny| = 0.9`. A pure spin at a globe pole left the map static
+(tile index unchanged, position-only basis ignores spin), and dragging back
+toward the equator crossed the `0.9` threshold, switching tangent branches and
+producing a discontinuous "flip" to re-sync.
+**Impact:** Map now rotates in step with polar spin and there's no snap-back flip.
+At the equator with the default camera the new basis matches the old one, so the
+starting view is unchanged. Note: `client/mapProjection.ts` holds a dead,
+unimported duplicate of `buildFlatView` with the original branch — not on the
+live path, left untouched.
 
 ---
 

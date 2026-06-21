@@ -534,16 +534,76 @@ placeArmy(enemyArmy,  enemyFront,  ENEMY_CITY_ID,  enemyFacing);
 console.log(`Generated ${units.length} units total (${units.length / 2} per side)`);
 
 // ---------------------------------------------------------------------------
+// Player city buildings + a garrison unit on the capital
+//
+// Adds a small cluster of buildings on the player capital hex so the 3D /
+// first-person and 2D views show an actual city (the same layout the City
+// Design planner presents as ghost segments). The buildings form a contiguous
+// arc, leaving the remaining segments open as a through-street. Each gets a
+// different equipment loadout so the building model's add-ons (gun barrel,
+// EW dish, repair bay…) are visible.
+//
+// A spare player unit is parked on an open segment of the same hex so you can
+// jump straight into first-person there (Home → select it → press V) and see
+// the buildings immediately, without trekking from the battlefield.
+// ---------------------------------------------------------------------------
+const buildings = [];
+const playerCity = world.cities.find((c) => c.id === PLAYER_CITY_ID);
+if (playerCity) {
+  const capIdx = playerCity.tileIndex;
+  const capTile = tileByIndex.get(capIdx);
+  const sides = capTile?.s ?? 6;
+
+  const loadouts = [
+    { kinetic: 2, rangeAttack: 2 }, // a gun turret
+    { defence: 3 },                 // an EW / jamming dish
+    { repair: 3 },                  // a repair bay
+  ];
+  const buildSegs = [0, 1, 2].filter((seg) => seg < sides);
+  buildSegs.forEach((seg, i) => {
+    buildings.push({
+      id: `building_${i}`,
+      ownerId: PLAYER_CITY_ID,
+      tileIndex: capIdx,
+      segment: seg,
+      attributes: loadouts[i % loadouts.length],
+    });
+  });
+
+  // Garrison unit on the last (open) segment, clear of the building arc.
+  const garrisonSeg = sides - 1;
+  const garrisonAttrs = { wheeledMovement: 3, kinetic: 2, rangeAttack: 2, armour: 2, maxHealth: 3 };
+  units.push({
+    id:            `unit_${unitId++}`,
+    label:         generateUnitName(garrisonAttrs),
+    ownerId:       PLAYER_CITY_ID,
+    tileIndex:     capIdx,
+    segment:       garrisonSeg,
+    facing:        0,
+    attributes:    garrisonAttrs,
+    currentHealth: (garrisonAttrs.maxHealth ?? 1) * HP_PER_PT,
+  });
+
+  console.log(`Player capital ${capIdx}: ${buildings.length} buildings on segs [${buildSegs.join(', ')}], garrison unit on seg ${garrisonSeg}`);
+}
+
+// ---------------------------------------------------------------------------
 // Build the save payload (compact format)
 // ---------------------------------------------------------------------------
 const save = {
   format: 'compact',
   seed: world.seed,
-  cities: world.cities.map((c) => ({
-    ...c,
-    isPlayerHome: c.id === PLAYER_CITY_ID,
-  })),
+  cities: world.cities.map((c) => {
+    const isHome = c.id === PLAYER_CITY_ID;
+    return {
+      ...c,
+      isPlayerHome: isHome,
+      // Mark the player capital owned so its hex reads as a founded city.
+      ...(isHome ? { ownerId: PLAYER_CITY_ID, ownedHexes: [c.tileIndex] } : {}),
+    };
+  }),
   units,
+  buildings,
   playerColor: '#00e5ff',
   battleCentreTile: centreTile,
 };

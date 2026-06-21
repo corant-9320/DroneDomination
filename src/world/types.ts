@@ -69,12 +69,39 @@ export interface Tile {
   resourceType?: string;
 }
 
+/**
+ * A building — a full-segment occupant of a hex, like a unit but immobile.
+ * Buildings belong to a faction and sit on that faction's city hexes.
+ * In this session a building is a single generic occupant with no per-type
+ * stats (building types/upgrades are deferred — see the spec).
+ */
+export interface Building {
+  /** Globally unique identifier. */
+  id: string;
+  /** Owning faction id (equals the founding city's id). */
+  ownerId: string;
+  /** Tile this building sits on. */
+  tileIndex: number;
+  /** Triangular segment (0–5) the building occupies. */
+  segment: number;
+  /**
+   * Optional equipment loadout, mirroring units. Only the combat/support
+   * attributes apply (movement and engineering are ignored for buildings).
+   * Absent = a plain unequipped structure.
+   */
+  attributes?: import('../../shared/unitTypes.js').UnitAttributes;
+}
+
 /** City placed on the world */
 export interface City {
   id: string;
   label: string;
   tileIndex: number;
   neighbourCityIds: string[];
+  /** Owning faction id. Defaults to the city's own id. */
+  ownerId?: string;
+  /** Hex indices this city owns (capital + every built-on hex). */
+  ownedHexes?: number[];
 }
 
 /** The complete authoritative world */
@@ -82,6 +109,8 @@ export interface World {
   tiles: Tile[];
   cities: City[];
   units: import('./units.js').Unit[];
+  /** Buildings constructed in cities. */
+  buildings: Building[];
   seed: number;
   pentagonIndices: number[];
 }

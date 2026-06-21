@@ -98,6 +98,7 @@ function makeWorld(tiles: TileData[], units: UnitData[]): WorldData {
     cities: [],
     tiles,
     units,
+    buildings: [],
   };
 }
 

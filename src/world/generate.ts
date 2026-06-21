@@ -1,420 +1,40 @@
 /**
- * World generation — single-file pipeline.
+ * World generation — pipeline orchestrator + terrain/river/city logic.
  *
- * This module combines the full authoritative world-build pipeline that used to
- * live across five files (goldberg / terrain / rivers / cities / generate):
+ * ── Section map ──────────────────────────────────────────────────────────────
+ *   PRNG          mulberry32 — re-exported from rng.ts for convenience
+ *   SECTION 1     Goldberg geometry — re-exported from geodesic.ts
+ *   SECTION 2     Terrain generation — noise, continents, mountains, deserts
+ *   SECTION 3     River generation — downhill channels to the sea
+ *   SECTION 4     City placement — 12 evenly-distributed settlements
+ *   SECTION 5     generateWorld() — orchestrates all of the above
  *
- *   1. Goldberg geometry   — subdivide an icosahedron, project to the sphere,
- *                            and take the dual to get the Goldberg tiles.
- *   2. Terrain             — continents/ocean, mountain ranges, deserts, a
- *                            smooth height field, and forest cover.
- *   3. Rivers              — carve downhill water channels to the sea.
- *   4. Cities              — place 12 evenly-distributed settlements.
- *   5. generateWorld()     — orchestrates the above into a `World`.
- *
- * Sections are separated by banner comments below.
+ * ── Key invariants ───────────────────────────────────────────────────────────
+ * - FREQUENCY controls globe size (tile count = 10·F²+2). Currently 100.
+ * - Segment N of every tile faces neighbours[N] — enforced by geodesic.ts:
+ *   alignBoundaryToNeighbours(). The movement system relies on this.
+ * - CITY_COUNT = 12, cities never placed on ocean/tundra/desert/mountain.
+ * - Rivers mark tiles with riverTo = downstream index; terrain becomes 'ocean'
+ *   post-generation so river hexes are impassable to ground units.
+ * - All randomness flows through mulberry32(seed) sub-sequences so the same
+ *   seed always produces the same world.
  */
 
 import { World, Tile, City, Vec3, TerrainType, ElevationType } from './types.js';
 import * as v from './vec3.js';
 import { graphDistance } from './pathfinding.js';
 
-// ===========================================================================
-// PRNG
-// ===========================================================================
+// Re-export PRNG and geometry from their focused modules
+export { mulberry32 } from './rng.js';
+export {
+  generateGeodesicSphere,
+  computeDual,
+  type SubdividedMesh,
+  type DualTile,
+} from './geodesic.js';
 
-/** Simple seeded PRNG (mulberry32) */
-export function mulberry32(seed: number): () => number {
-  let s = seed | 0;
-  return () => {
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-// ===========================================================================
-// SECTION 1 — Goldberg G(36,0) polyhedron generation
-// ===========================================================================
-
-/**
- * Goldberg G(36,0) polyhedron generation.
- *
- * Approach: Subdivide icosahedron faces into a frequency-36 triangular grid,
- * project vertices to the unit sphere, then compute the dual polyhedron.
- * The dual of a subdivided icosahedron gives us the Goldberg polyhedron:
- * - 12 pentagonal faces (at original icosahedron vertices)
- * - 12950 hexagonal faces
- * - Total: 12962 tiles
- *
- * Formula: F = 10*T^2 + 2 where T=36 → 10*1296+2 = 12962
- */
-
-const PHI = (1 + Math.sqrt(5)) / 2;
-
-/** 12 vertices of the base icosahedron (normalized to unit sphere) */
-function icosahedronVertices(): Vec3[] {
-  const verts: Vec3[] = [];
-  // Top vertex
-  verts.push(v.normalize({ x: 0, y: 1, z: 0 }));
-  // Upper ring (5 vertices)
-  const upperAngle = Math.atan(0.5);
-  for (let i = 0; i < 5; i++) {
-    const theta = (2 * Math.PI * i) / 5;
-    verts.push(
-      v.normalize({
-        x: Math.cos(upperAngle) * Math.cos(theta),
-        y: Math.sin(upperAngle),
-        z: Math.cos(upperAngle) * Math.sin(theta),
-      })
-    );
-  }
-  // Lower ring (5 vertices)
-  const lowerAngle = -Math.atan(0.5);
-  for (let i = 0; i < 5; i++) {
-    const theta = (2 * Math.PI * i) / 5 + Math.PI / 5;
-    verts.push(
-      v.normalize({
-        x: Math.cos(lowerAngle) * Math.cos(theta),
-        y: Math.sin(lowerAngle),
-        z: Math.cos(lowerAngle) * Math.sin(theta),
-      })
-    );
-  }
-  // Bottom vertex
-  verts.push(v.normalize({ x: 0, y: -1, z: 0 }));
-  return verts;
-}
-
-/** 20 triangular faces of the icosahedron (vertex index triples) */
-function icosahedronFaces(): [number, number, number][] {
-  return [
-    // Top cap
-    [0, 1, 2],
-    [0, 2, 3],
-    [0, 3, 4],
-    [0, 4, 5],
-    [0, 5, 1],
-    // Middle band
-    [1, 6, 2],
-    [2, 7, 3],
-    [3, 8, 4],
-    [4, 9, 5],
-    [5, 10, 1],
-    [6, 7, 2],
-    [7, 8, 3],
-    [8, 9, 4],
-    [9, 10, 5],
-    [10, 6, 1],
-    // Bottom cap
-    [11, 7, 6],
-    [11, 8, 7],
-    [11, 9, 8],
-    [11, 10, 9],
-    [11, 6, 10],
-  ];
-}
-
-/**
- * For a given frequency T, subdivide one triangular face into T^2 sub-triangles.
- * Returns indices of the vertices in the global vertex array.
- * We create (T+1)(T+2)/2 vertices per face, but many are shared between faces.
- */
-
-interface SubdividedMesh {
-  vertices: Vec3[];
-  triangles: [number, number, number][];
-}
-
-/**
- * Generate the Class I geodesic sphere by subdividing an icosahedron at frequency T
- * and projecting all vertices onto the unit sphere.
- */
-export function generateGeodesicSphere(T: number): SubdividedMesh {
-  const icoVerts = icosahedronVertices();
-  const icoFaces = icosahedronFaces();
-
-  // We'll use a map to deduplicate vertices shared between faces
-  const vertexMap = new Map<string, number>();
-  const vertices: Vec3[] = [];
-  const triangles: [number, number, number][] = [];
-
-  function vertexKey(pos: Vec3): string {
-    // Round to avoid floating-point duplicates
-    const precision = 1e-8;
-    const rx = Math.round(pos.x / precision) * precision;
-    const ry = Math.round(pos.y / precision) * precision;
-    const rz = Math.round(pos.z / precision) * precision;
-    return `${rx.toFixed(9)},${ry.toFixed(9)},${rz.toFixed(9)}`;
-  }
-
-  function getOrAddVertex(pos: Vec3): number {
-    const projected = v.normalize(pos);
-    const key = vertexKey(projected);
-    const existing = vertexMap.get(key);
-    if (existing !== undefined) return existing;
-    const idx = vertices.length;
-    vertices.push(projected);
-    vertexMap.set(key, idx);
-    return idx;
-  }
-
-  // For each icosahedron face, create T^2 sub-triangles
-  for (const [ai, bi, ci] of icoFaces) {
-    const a = icoVerts[ai];
-    const b = icoVerts[bi];
-    const c = icoVerts[ci];
-
-    // Create a grid of vertices for this face
-    // Row i has (T - i + 1) vertices, going from edge AB toward C
-    const faceVerts: number[][] = [];
-
-    for (let i = 0; i <= T; i++) {
-      const row: number[] = [];
-      for (let j = 0; j <= T - i; j++) {
-        // Barycentric-like interpolation
-        const u = i / T;
-        const vv = j / T;
-        // Point = a + u*(c-a) + v*(b-a)
-        const pos: Vec3 = {
-          x: a.x + u * (c.x - a.x) + vv * (b.x - a.x),
-          y: a.y + u * (c.y - a.y) + vv * (b.y - a.y),
-          z: a.z + u * (c.z - a.z) + vv * (b.z - a.z),
-        };
-        row.push(getOrAddVertex(pos));
-      }
-      faceVerts.push(row);
-    }
-
-    // Create triangles from the grid
-    for (let i = 0; i < T; i++) {
-      for (let j = 0; j < T - i; j++) {
-        // Upward triangle
-        const v0 = faceVerts[i][j];
-        const v1 = faceVerts[i][j + 1];
-        const v2 = faceVerts[i + 1][j];
-        triangles.push([v0, v1, v2]);
-
-        // Downward triangle (if exists)
-        if (j < T - i - 1) {
-          const v3 = faceVerts[i + 1][j];
-          const v4 = faceVerts[i][j + 1];
-          const v5 = faceVerts[i + 1][j + 1];
-          triangles.push([v3, v4, v5]);
-        }
-      }
-    }
-  }
-
-  return { vertices, triangles };
-}
-
-/**
- * Compute the dual of the geodesic sphere.
- * Each vertex in the original mesh becomes a face (tile) in the dual.
- * Each face in the original mesh becomes a vertex in the dual (face centroid).
- * Adjacency: two dual faces are adjacent if they share an edge in the original,
- * i.e., their corresponding original vertices are connected by an edge.
- */
-export interface DualTile {
-  index: number;
-  sides: 5 | 6;
-  neighbours: number[];
-  position3d: Vec3;
-  /** Vertices of the polygon boundary (ordered, on unit sphere) */
-  boundary: Vec3[];
-}
-
-export function computeDual(mesh: SubdividedMesh): DualTile[] {
-  const { vertices, triangles } = mesh;
-  const vertexCount = vertices.length;
-
-  // Build adjacency: for each vertex, find all vertices connected by an edge
-  const adjacency: Set<number>[] = Array.from({ length: vertexCount }, () => new Set());
-
-  // For each vertex, collect the triangles that include it
-  const vertexTriangles: number[][] = Array.from({ length: vertexCount }, () => []);
-
-  for (let ti = 0; ti < triangles.length; ti++) {
-    const [a, b, c] = triangles[ti];
-    adjacency[a].add(b);
-    adjacency[a].add(c);
-    adjacency[b].add(a);
-    adjacency[b].add(c);
-    adjacency[c].add(a);
-    adjacency[c].add(b);
-
-    vertexTriangles[a].push(ti);
-    vertexTriangles[b].push(ti);
-    vertexTriangles[c].push(ti);
-  }
-
-  // Compute triangle centroids (projected to unit sphere)
-  const triCentroids: Vec3[] = triangles.map(([a, b, c]) => {
-    return v.normalize({
-      x: (vertices[a].x + vertices[b].x + vertices[c].x) / 3,
-      y: (vertices[a].y + vertices[b].y + vertices[c].y) / 3,
-      z: (vertices[a].z + vertices[b].z + vertices[c].z) / 3,
-    });
-  });
-
-  const tiles: DualTile[] = [];
-
-  for (let i = 0; i < vertexCount; i++) {
-    const neighSet = adjacency[i];
-    const sides = neighSet.size as 5 | 6;
-
-    // Sort neighbours in angular order around the vertex normal
-    const centre = vertices[i];
-    const neighArray = Array.from(neighSet);
-    const sortedNeighbours = sortNeighboursAngular(centre, neighArray, vertices);
-
-    // Compute boundary polygon: centroids of surrounding triangles, ordered
-    const tris = vertexTriangles[i];
-    const boundaryCentroids = tris.map((ti) => triCentroids[ti]);
-
-    // Sort boundary vertices angularly around the tile centre
-    const sortedBoundary = sortPointsAngular(centre, boundaryCentroids);
-
-    // Phase-align the boundary to the neighbour array so that segment N
-    // (the triangle centre→boundary[N]→boundary[N+1]) has its outer edge
-    // facing neighbour N. The two angular sorts above are independent and
-    // can land out of phase by one slot; the segment-based movement model
-    // (and all its consumers) require segment index == neighbour index.
-    const alignedBoundary = alignBoundaryToNeighbours(
-      centre,
-      sortedBoundary,
-      sortedNeighbours,
-      vertices
-    );
-
-    tiles.push({
-      index: i,
-      sides,
-      neighbours: sortedNeighbours,
-      position3d: centre,
-      boundary: alignedBoundary,
-    });
-  }
-
-  return tiles;
-}
-
-/** Sort a set of 3D points by their angular position around a centre normal */
-function sortPointsAngular(centre: Vec3, points: Vec3[]): Vec3[] {
-  const normal = v.normalize(centre);
-
-  let ref: Vec3;
-  if (Math.abs(normal.y) < 0.9) {
-    ref = v.normalize(v.cross(normal, { x: 0, y: 1, z: 0 }));
-  } else {
-    ref = v.normalize(v.cross(normal, { x: 1, y: 0, z: 0 }));
-  }
-  const tangentY = v.normalize(v.cross(normal, ref));
-
-  const withAngle = points.map((pos) => {
-    const diff = v.sub(pos, centre);
-    const projX = v.dot(diff, ref);
-    const projY = v.dot(diff, tangentY);
-    const angle = Math.atan2(projY, projX);
-    return { pos, angle };
-  });
-
-  withAngle.sort((a, b) => a.angle - b.angle);
-  return withAngle.map((w) => w.pos);
-}
-
-/**
- * Rotate the (already angularly sorted) boundary array so that segment N —
- * the triangle (centre, boundary[N], boundary[N+1]) — has its outer edge
- * midpoint pointing toward neighbour N.
- *
- * Both `boundary` and `neighbours` are sorted by the same angular convention
- * around the tile centre, so they share an orientation but may differ by a
- * constant rotational offset (0 or 1 slot in practice). This finds that offset
- * by matching segment 0's edge-midpoint direction to the nearest neighbour
- * direction, then rotates the boundary so the offset becomes zero.
- *
- * Returns a new array; does not mutate the input.
- */
-function alignBoundaryToNeighbours(
-  centre: Vec3,
-  boundary: Vec3[],
-  neighbours: number[],
-  allVertices: Vec3[]
-): Vec3[] {
-  const sides = boundary.length;
-  if (sides === 0 || neighbours.length === 0) return boundary;
-
-  const normal = v.normalize(centre);
-
-  // Tangent-plane direction from the centre toward a point on the sphere.
-  function tangentDir(p: Vec3): Vec3 {
-    const diff = v.sub(p, centre);
-    const radial = v.dot(diff, normal);
-    return v.normalize({
-      x: diff.x - radial * normal.x,
-      y: diff.y - radial * normal.y,
-      z: diff.z - radial * normal.z,
-    });
-  }
-
-  // Direction toward neighbour 0.
-  const neighbour0Dir = tangentDir(allVertices[neighbours[0]]);
-
-  // Find which segment's outer-edge midpoint best matches neighbour 0's direction.
-  let bestSeg = 0;
-  let bestDot = -Infinity;
-  for (let seg = 0; seg < sides; seg++) {
-    const mid = v.scale(v.add(boundary[seg], boundary[(seg + 1) % sides]), 0.5);
-    const dp = v.dot(tangentDir(mid), neighbour0Dir);
-    if (dp > bestDot) {
-      bestDot = dp;
-      bestSeg = seg;
-    }
-  }
-
-  if (bestSeg === 0) return boundary;
-
-  // Rotate boundary left by bestSeg so segment 0 aligns with neighbour 0.
-  const rotated: Vec3[] = [];
-  for (let k = 0; k < sides; k++) {
-    rotated.push(boundary[(k + bestSeg) % sides]);
-  }
-  return rotated;
-}
-function sortNeighboursAngular(
-  centre: Vec3,
-  neighbours: number[],
-  allVertices: Vec3[]
-): number[] {
-  // Build a local tangent frame
-  const normal = v.normalize(centre);
-
-  // Pick a reference direction in the tangent plane
-  let ref: Vec3;
-  if (Math.abs(normal.y) < 0.9) {
-    ref = v.normalize(v.cross(normal, { x: 0, y: 1, z: 0 }));
-  } else {
-    ref = v.normalize(v.cross(normal, { x: 1, y: 0, z: 0 }));
-  }
-  const tangentY = v.normalize(v.cross(normal, ref));
-
-  // Compute angle for each neighbour
-  const withAngle = neighbours.map((ni) => {
-    const pos = allVertices[ni];
-    const diff = v.sub(pos, centre);
-    // Project onto tangent plane
-    const projX = v.dot(diff, ref);
-    const projY = v.dot(diff, tangentY);
-    const angle = Math.atan2(projY, projX);
-    return { index: ni, angle };
-  });
-
-  withAngle.sort((a, b) => a.angle - b.angle);
-  return withAngle.map((w) => w.index);
-}
+import { mulberry32 } from './rng.js';
+import { generateGeodesicSphere, computeDual } from './geodesic.js';
 
 // ===========================================================================
 // SECTION 2 — Terrain generation
@@ -585,9 +205,9 @@ function growMountainRanges(
   rng: () => number,
   poleMin: number,
   isLand: boolean[],
+  positions: Vec3[],
 ): Set<number> {
   const mountains = new Set<number>();
-  const positions = (growMountainRanges as any)._positions as Vec3[];
   const eligible = (i: number): boolean => isLand[i] && poleDistances[i] > poleMin;
 
   // A range is a single meandering CENTRELINE about SPINE_LEN hexes long, walked
@@ -1007,9 +627,11 @@ export function generateTerrain(
       gradientNoise3D(pos, 6.80, gradients, permutation) * 0.13 +
       gradientNoise3D(pos, 13.6, gradients, permutation) * 0.07;
 
-    // Slightly favour polar land so the required polar pentagons sit in small
-    // polar caps, but do not let the world become tundra-heavy.
-    const polarLift = latAbs > 0.88 ? 0.16 : latAbs > 0.74 ? 0.05 : 0;
+    // Only a gentle pull toward land at the very poles, so an ice core always
+    // survives. Mid-polar latitudes are left neutral so the rank-selected ocean
+    // mask can carve organic, random sea around the caps instead of a solid
+    // land collar.
+    const polarLift = latAbs > 0.95 ? 0.06 : 0;
     return land - ocean + broadNoise + polarLift;
   });
 
@@ -1204,15 +826,12 @@ export function generateTerrain(
 
   const isOceanMap = isLandMap.map((land) => !land);
 
-  const POLE_TUNDRA_CAP   = 0; // only the two polar pentagons are guaranteed tundra
   const POLE_MOUNTAIN_MIN = Math.round(8  * poleScale);
   const POLE_CITY_MIN     = Math.round(16 * poleScale);
 
-  (growMountainRanges as any)._positions = positions;
   const mountainSet = growMountainRanges(
-    numTiles, neighbours, poleDistances, rng, POLE_MOUNTAIN_MIN, isLandMap
+    numTiles, neighbours, poleDistances, rng, POLE_MOUNTAIN_MIN, isLandMap, positions
   );
-  delete (growMountainRanges as any)._positions;
 
   const APRON_R = 7;
   const distToMountain = new Array<number>(numTiles).fill(Infinity);
@@ -1301,6 +920,26 @@ export function generateTerrain(
   }
   smoothMountainPeakHeights(heights, mountainSet, neighbours);
 
+  // ── Organic polar ice caps ─────────────────────────────────────────────────
+  // Ice is latitude-driven, but the cap EDGE is perturbed by low-frequency noise
+  // so each pole gets a wavy, organic blob instead of a clean parallel ring.
+  // Both poles are covered because latitude is symmetric (|y|). The pole
+  // pentagons are forced to ice so a core always survives even when the noise
+  // shrinks a cap. Ocean tiles that fall inside a cap simply stay ocean — that
+  // is what gives the organic, random polar sea interspersed with the ice.
+  const ICE_LAT_EDGE  = 0.90; // base |latitude| where ice begins (~64°)
+  const ICE_EDGE_WAVE = 0.20; // how far the noise pushes the cap edge in/out
+  const iceField = positions.map((pos) => {
+    const len = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z) || 1;
+    const latAbs = Math.abs(pos.y / len);
+    const wave =
+      gradientNoise3D(pos, 2.2, gradients, permutation) * 0.62 +
+      gradientNoise3D(pos, 4.6, gradients, permutation) * 0.38;
+    return latAbs + wave * ICE_EDGE_WAVE;
+  });
+  const isPolarIce = (i: number): boolean =>
+    polarPentagons.has(i) || iceField[i] >= ICE_LAT_EDGE;
+
   return positions.map((pos, i) => {
     if (isOceanMap[i]) {
       return { terrainType: 'ocean', elevationType: 'flat', height: 0, forested: false };
@@ -1321,7 +960,7 @@ export function generateTerrain(
     const isMountain = mountainSet.has(i) || elevationType === 'mountain';
 
     let terrainType: TerrainType;
-    if (polarPentagons.has(i) || poleDistances[i] <= POLE_TUNDRA_CAP || latAbs > 0.992) {
+    if (isPolarIce(i)) {
       terrainType = 'tundra';
     } else if (!isMountain && temp > 0.45 && subtropical > 0.35 && moisture < 0.36 && height <= 5) {
       terrainType = 'desert';
@@ -1459,6 +1098,119 @@ export const ESTUARY_REACH = 2;
 export const MAX_RIVER_LEN = 400;
 
 /**
+ * River meander shape. Rivers are carved as a sine wave: the seaward heading is
+ * swung from side to side by sin(phase), advancing to the coast.
+ */
+/** Sideways swing of the sine wave (higher = wider meanders). */
+const MEANDER_AMP = 2.6;
+/** Phase advance per tile — sets the wave's wavelength (radians per tile). */
+const MEANDER_FREQ = 0.5;
+/** Random jitter added to the sine swing each step (0 = a perfect sine). */
+const MEANDER_JITTER = 0.5;
+/** A river may climb at most this many height levels on a sideways step. */
+const MEANDER_CLIMB_TOLERANCE = 1;
+
+/**
+ * Guarantee every river tile drains to the sea. Any river tile whose `riverTo`
+ * chain does not reach open ocean (it dead-ended inland, was orphaned by a city
+ * clearing its doorstep, or formed a loop) is re-routed straight down the
+ * oceanDist gradient to the coast — which strictly decreases to 0, so the tail
+ * is acyclic and always reaches the sea. Tiles in `forbidden` (e.g. city hexes
+ * and their doorsteps) are never carved through; a river a city fully blocks is
+ * truncated cleanly rather than left dangling. Sea-reaching rivers are left
+ * untouched, so existing meanders are preserved.
+ *
+ * "Sea" means real open ocean (`terrainType === 'ocean'` with no `riverTo`);
+ * river tiles (which also carry terrain 'ocean' once converted) are not sinks.
+ */
+function ensureRiverDrainage(tiles: Tile[], forbidden?: Set<number>): void {
+  const n = tiles.length;
+  const isSea = (i: number) => tiles[i].terrainType === 'ocean' && tiles[i].riverTo === undefined;
+  const heightOf = (i: number) => tiles[i].height ?? 0;
+
+  // oceanDist: BFS hops to the nearest sea tile.
+  const oceanDist = new Array<number>(n).fill(Infinity);
+  const queue: number[] = [];
+  let head = 0;
+  for (let i = 0; i < n; i++) if (isSea(i)) { oceanDist[i] = 0; queue.push(i); }
+  while (head < queue.length) {
+    const c = queue[head++];
+    for (const nb of tiles[c].neighbours) {
+      if (oceanDist[nb] === Infinity) { oceanDist[nb] = oceanDist[c] + 1; queue.push(nb); }
+    }
+  }
+
+  // down[i]: neighbour with the smallest (strictly lower) oceanDist, skipping
+  // forbidden tiles. Following down[] always reaches a sea tile.
+  const down = new Int32Array(n).fill(-1);
+  for (let i = 0; i < n; i++) {
+    if (isSea(i)) continue;
+    let bestNb = -1, bestDist = oceanDist[i], bestH = Infinity;
+    for (const nb of tiles[i].neighbours) {
+      if (forbidden && forbidden.has(nb)) continue;
+      const d = oceanDist[nb];
+      if (!Number.isFinite(d) || d >= oceanDist[i]) continue;
+      const h = heightOf(nb);
+      if (d < bestDist || (d === bestDist && h < bestH)) { bestDist = d; bestH = h; bestNb = nb; }
+    }
+    down[i] = bestNb;
+  }
+
+  const reachesSea = (start: number): boolean => {
+    let c = start, guard = 0;
+    const seen = new Set<number>();
+    while (guard++ < n) {
+      const nx = tiles[c].riverTo;
+      if (nx === undefined) return false;
+      if (isSea(nx)) return true;
+      if (seen.has(nx)) return false;        // cycle
+      seen.add(nx);
+      c = nx;
+    }
+    return false;
+  };
+
+  // Dry-run: does following down[] from `start` reach the sea without hitting a
+  // dead end (a tile whose only descents are forbidden)?
+  const downReachesSea = (start: number): boolean => {
+    let c = start, guard = 0;
+    while (guard++ < n) {
+      if (isSea(c)) return true;
+      const nb = down[c];
+      if (nb < 0) return false;
+      c = nb;
+    }
+    return false;
+  };
+
+  for (let pass = 0; pass < 200; pass++) {
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      if (tiles[i].riverTo === undefined) continue;   // not a river tile
+      if (reachesSea(i)) continue;
+      changed = true;
+      if (downReachesSea(i)) {
+        // Commit a steepest-descent tail down to the sea.
+        let c = i, guard = 0;
+        while (guard++ < n) {
+          if (isSea(c)) break;
+          const nb = down[c];
+          if (nb < 0) break;
+          tiles[c].riverTo = nb;
+          if (isSea(nb)) break;
+          c = nb;
+        }
+      } else {
+        // Blocked from the sea (e.g. a city walls off the only outlet) — end the
+        // river here cleanly instead of leaving a dangling pointer.
+        tiles[i].riverTo = undefined;
+      }
+    }
+    if (!changed) break;
+  }
+}
+
+/**
  * Carve rivers into `tiles`, mutating each river tile's `riverTo`.
  * Deterministic for a given seed.
  */
@@ -1500,92 +1252,83 @@ export function generateRivers(tiles: Tile[], seed: number): void {
   }
 
   // --- Carve main channels --------------------------------------------------
-  // River meander is intentionally measured against the direct coast distance:
-  // before a river reaches about PI times the shortest path length, lateral
-  // moves are favoured; after that it tightens and heads for the sea. This gives
-  // sinuous rivers without letting them wander forever.
-  const riverNoise = tiles.map((t) =>
-    Math.sin(t.position3d.x * 37.13 + seed * 0.17) +
-    Math.sin(t.position3d.y * 41.91 - seed * 0.11) +
-    Math.sin(t.position3d.z * 33.77 + seed * 0.07) +
-    Math.sin((t.position3d.x + t.position3d.z) * 71.0 + seed * 0.03) * 0.5
-  );
-
+  // Rivers are shaped as a sine wave with a little randomness. At each step the
+  // heading is the seaward direction swung from side to side by sin(phase); the
+  // river always advances toward the coast (it never steps away from the sea),
+  // so the channel reads as a clean meandering wave that reliably reaches the
+  // sea instead of tangling and cornering itself. Amplitude, wavelength and
+  // phase are randomised per river, plus a small per-step jitter, so no two
+  // rivers wave identically. The drainage-repair pass below is a safety net for
+  // the rare tile that still corners.
   let made = 0;
   for (const src of sources) {
     if (made >= targetCount) break;
     if (tiles[src].riverTo !== undefined) continue;
 
-    const directLen = Math.max(1, oceanDist[src]);
-    const targetMeanderLen = Math.min(MAX_RIVER_LEN - 8, Math.ceil(directLen * Math.PI));
     const visited = new Set<number>();
     let cur = src;
     let carved = false;
     let lastDir: Vec3 | undefined;
+    // Randomise the wave per river (deterministic via the seeded rng).
+    let phase = rng() * Math.PI * 2;
+    const amp = MEANDER_AMP * (0.7 + 0.6 * rng());
+    const freq = MEANDER_FREQ * (0.8 + 0.4 * rng());
 
     while (visited.size < MAX_RIVER_LEN) {
       visited.add(cur);
-      const remainingMeander = visited.size < targetMeanderLen;
 
-      const candidates: { idx: number; score: number; progress: number }[] = [];
+      // Local tangent frame: `up` is the surface normal, `seaDir` points down
+      // the oceanDist gradient (toward the coast) within the tangent plane, and
+      // `lateral` is perpendicular to it (the meander axis).
+      const up = v.normalize(tiles[cur].position3d);
+      let grad: Vec3 = { x: 0, y: 0, z: 0 };
+      for (const nb of tiles[cur].neighbours) {
+        const d = oceanDist[nb];
+        if (!Number.isFinite(d)) continue;
+        const w = oceanDist[cur] - d;          // +ve toward the sea
+        grad = v.add(grad, v.scale(v.sub(tiles[nb].position3d, tiles[cur].position3d), w));
+      }
+      grad = v.sub(grad, v.scale(up, v.dot(grad, up)));   // project into tangent plane
+      const seaDir = v.length(grad) > 1e-9 ? v.normalize(grad) : (lastDir ?? up);
+      const lateral = v.normalize(v.cross(up, seaDir));
+
+      // Sine-wave heading: seaward, swung sideways by sin(phase) with a touch of
+      // randomness on the swing amount.
+      const swing = Math.sin(phase) + (rng() - 0.5) * MEANDER_JITTER;
+      const desired = v.normalize(v.add(seaDir, v.scale(lateral, amp * swing)));
+
+      // Pick the unvisited neighbour that best matches the desired heading,
+      // among those that still head toward the sea (progress >= 0) and don't
+      // climb steeply. Argmax with a small jitter keeps the wave clean while
+      // adding a little natural variation.
+      let best = -1;
+      let bestScore = -Infinity;
       for (const nb of tiles[cur].neighbours) {
         if (visited.has(nb)) continue;
         const d = oceanDist[nb];
         if (!Number.isFinite(d)) continue;
-
-        const progress = oceanDist[cur] - d;
-        // During the meander phase the river may move sideways, or one tile away
-        // from the sea if it is not climbing above the current cell. Once the
-        // PI-length budget is spent, every step must reduce ocean distance.
-        if (remainingMeander) {
-          if (progress < -1) continue;
-          if (progress < 0 && heightOf(nb) > heightOf(cur)) continue;
-        } else if (progress <= 0) {
-          continue;
-        }
-
+        if (oceanDist[cur] - d < -1) continue;                // at most one step away from the sea (wave crest)
+        if (heightOf(nb) > heightOf(cur) + MEANDER_CLIMB_TOLERANCE) continue;
         const stepDir = v.normalize(v.sub(tiles[nb].position3d, tiles[cur].position3d));
-        const inertia = lastDir ? Math.max(-0.45, v.dot(stepDir, lastDir)) : 0;
-        const downhill = Math.max(-2, heightOf(cur) - heightOf(nb));
-        const wiggle = riverNoise[nb] * 0.75 + (rng() - 0.5) * 0.30;
-        const meanderBias = remainingMeander
-          ? (progress === 0 ? 3.4 : progress < 0 ? 2.1 : 0.9)
-          : progress * 5.5;
-
-        const score =
-          1.0 +
-          meanderBias +
-          Math.max(0, downhill) * 0.65 +
-          Math.max(0, inertia) * 1.55 +
-          wiggle;
-        candidates.push({ idx: nb, score: Math.max(0.01, score), progress });
+        const score = v.dot(stepDir, desired) + (rng() - 0.5) * 0.15;
+        if (score > bestScore) { bestScore = score; best = nb; }
       }
 
-      if (candidates.length === 0) {
-        // Hard fallback: always preserve drainage to the ocean.
+      if (best < 0) {
+        // Cornered: fall back to the steepest seaward neighbour to keep moving.
+        let bestD = oceanDist[cur];
         for (const nb of tiles[cur].neighbours) {
           if (visited.has(nb)) continue;
           const d = oceanDist[nb];
-          if (Number.isFinite(d) && d < oceanDist[cur]) {
-            candidates.push({ idx: nb, score: 1 + (heightOf(cur) - heightOf(nb)) * 0.5, progress: oceanDist[cur] - d });
-          }
+          if (Number.isFinite(d) && d < bestD) { bestD = d; best = nb; }
         }
       }
-      if (candidates.length === 0) break;
+      if (best < 0) break;   // truly stuck — drainage-repair will rescue it
 
-      let total = 0;
-      for (const c of candidates) total += c.score;
-      let pick = rng() * total;
-      let chosen = candidates[candidates.length - 1];
-      for (const c of candidates) {
-        pick -= c.score;
-        if (pick <= 0) { chosen = c; break; }
-      }
-
-      const best = chosen.idx;
       tiles[cur].riverTo = best;
       carved = true;
       lastDir = v.normalize(v.sub(tiles[best].position3d, tiles[cur].position3d));
+      phase += freq;
 
       if (isOcean(best)) break;
       if (tiles[best].riverTo !== undefined) break;
@@ -1594,6 +1337,13 @@ export function generateRivers(tiles: Tile[], seed: number): void {
 
     if (carved) made++;
   }
+
+  // --- Guarantee drainage to the sea ----------------------------------------
+  // A meander can corner itself in a pocket (dead-ending inland) or, via a
+  // merge, form a loop. ensureRiverDrainage re-routes any river tile that does
+  // not reach the sea straight down the oceanDist gradient (acyclic, always
+  // reaches the coast). Naturally sea-reaching meanders are left untouched.
+  ensureRiverDrainage(tiles);
 
   // --- Channel width --------------------------------------------------------
   // Rivers are intentionally a single hex wide the whole way to the sea (no
@@ -1709,7 +1459,7 @@ export function placeCities(tiles: Tile[], seed: number): City[] {
   }));
 
   const distances: number[][] = Array.from({ length: CITY_COUNT }, () =>
-    Array(CITY_COUNT).fill(0)
+    Array<number>(CITY_COUNT).fill(0)
   );
   for (let i = 0; i < CITY_COUNT; i++) {
     for (let j = i + 1; j < CITY_COUNT; j++) {
@@ -2007,6 +1757,8 @@ export function generateWorld(seed: number): World {
   // Tiles adjacent to a city must not be mountain or ocean — they would block
   // unit movement and look wrong next to a settlement.
   for (const city of cities) {
+    // A city's own hex is a settled, cleared site — never forested.
+    tiles[city.tileIndex].forested = false;
     for (const ni of tiles[city.tileIndex].neighbours) {
       const t = tiles[ni];
       if (t.terrainType === 'ocean') {
@@ -2020,6 +1772,42 @@ export function generateWorld(seed: number): World {
         // Demote mountain → hills, keep terrain type (already 'plains' for mountains)
         t.elevationType = 'hills';
         t.height        = 7;
+      }
+    }
+  }
+
+  // City sanitisation can clear a river tile on a city's doorstep (rivers carry
+  // terrain 'ocean', so the ocean→plains branch above also strips their
+  // riverTo), orphaning the river upstream. Re-guarantee drainage, routing the
+  // orphaned channels around the city (its hex + doorsteps are off-limits) to
+  // the sea — or truncating cleanly where a city fully blocks the outlet. Then
+  // reconcile terrain so every river tile reads as water and any truncated tile
+  // reverts to land (no stray inland ocean).
+  {
+    const wasRiver = new Set<number>();
+    for (let i = 0; i < tiles.length; i++) if (tiles[i].riverTo !== undefined) wasRiver.add(i);
+
+    const forbidden = new Set<number>();
+    for (const city of cities) {
+      forbidden.add(city.tileIndex);
+      for (const ni of tiles[city.tileIndex].neighbours) forbidden.add(ni);
+    }
+    ensureRiverDrainage(tiles, forbidden);
+
+    const band = (h: number): Tile['elevationType'] =>
+      h >= 9 ? 'mountain' : h >= 6 ? 'hills' : h >= 3 ? 'rolling' : 'flat';
+    for (let i = 0; i < tiles.length; i++) {
+      const t = tiles[i];
+      if (t.riverTo !== undefined) {
+        // Active river tile — water, same as ocean for movement.
+        t.terrainType = 'ocean';
+        t.elevationType = band(t.height ?? 0);
+        t.forested = false;
+      } else if (wasRiver.has(i)) {
+        // Truncated channel — return it to passable land.
+        t.terrainType = 'plains';
+        t.elevationType = band(t.height ?? 0);
+        t.forested = false;
       }
     }
   }
@@ -2055,6 +1843,7 @@ export function generateWorld(seed: number): World {
     tiles,
     cities,
     units: [],
+    buildings: [],
     seed,
     pentagonIndices,
   };

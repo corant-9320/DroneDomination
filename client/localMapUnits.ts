@@ -22,6 +22,7 @@
 import { WorldData, UnitData, TileData } from './worldData.js';
 import { factionColor } from './colors.js';
 import { drawUnitIcon } from './unitIcons.js';
+import { getBuildingSprite } from './buildingRenderer.js';
 import { FlatTile } from './localMapProjection.js';
 import { getMaxMovement as sharedGetMaxMovement } from '../shared/movementConstants.js';
 import { spriteFacingForRender } from './facing.js';
@@ -119,10 +120,15 @@ function pointToEdgeDist(
  * @param movementPoints Map of unit id → remaining MP
  * @param hiddenUnits    Set of unit ids to skip (e.g. mid-animation)
  * @param wts            worldToScreen bound to current view params
- * @param _actedUnits    Units that have used their action this turn
- * @param screenOverrides Optional map of unit id → {x,y} screen position overrides
- *                        (used during movement animation to draw the unit at its
- *                        interpolated position rather than its tile centroid)
+ * @param actedUnits     Units that have used their action/move this turn. Their
+ *                       unit number is drawn in red (also used for enemy units
+ *                       that have already moved during the AI turn).
+ * @param moveAnims      Optional map of unit id → in-flight glide state
+ *                       (origin/destination tile+segment and eased progress).
+ *                       When present for a unit, its sprite is drawn at the
+ *                       interpolated origin→destination point, re-projected with
+ *                       the current view transform so the glide survives a map
+ *                       recentre mid-animation.
  */
 export function drawUnits(
   ctx: CanvasRenderingContext2D,
@@ -132,8 +138,11 @@ export function drawUnits(
   movementPoints: Map<string, number>,
   hiddenUnits: Set<string>,
   wts: (wx: number, wy: number) => [number, number],
-  _actedUnits: Set<string> = new Set(),
-  screenOverrides: Map<string, { x: number; y: number }> = new Map(),
+  actedUnits: Set<string> = new Set(),
+  moveAnims: Map<
+    string,
+    { fromTile: number; fromSeg: number; toTile: number; toSeg: number; progress: number }
+  > = new Map(),
 ): void {
   const units = world.units;
   if (!units || units.length === 0) return;
@@ -152,9 +161,27 @@ export function drawUnits(
 
     const segPos = getSegmentCentroid(ft, unit.segment);
     if (!segPos) continue;
-    // Allow an animated override position (e.g. during movement animation)
-    const override = screenOverrides.get(unit.id);
-    const [sx, sy] = override ? [override.x, override.y] : wts(segPos.x, segPos.y);
+    // During a move glide, re-project the interpolated origin→destination point
+    // using the *current* transform so the sprite tracks any mid-glide recentre
+    // and lands exactly on the destination centroid (no overshoot/snap-back).
+    const anim = moveAnims.get(unit.id);
+    let sx: number;
+    let sy: number;
+    if (anim) {
+      const ftFrom = ftByTile.get(anim.fromTile);
+      const ftTo = ftByTile.get(anim.toTile);
+      const cFrom = ftFrom ? getSegmentCentroid(ftFrom, anim.fromSeg) : null;
+      const cTo = ftTo ? getSegmentCentroid(ftTo, anim.toSeg) : null;
+      if (cFrom && cTo) {
+        const wx = cFrom.x + (cTo.x - cFrom.x) * anim.progress;
+        const wy = cFrom.y + (cTo.y - cFrom.y) * anim.progress;
+        [sx, sy] = wts(wx, wy);
+      } else {
+        [sx, sy] = wts(segPos.x, segPos.y);
+      }
+    } else {
+      [sx, sy] = wts(segPos.x, segPos.y);
+    }
 
     const size  = getSegmentIconSize(ft, unit.segment, wts);
     const color = factionColor(world, unit.ownerId);
@@ -169,19 +196,20 @@ export function drawUnits(
     drawUnitIcon(ctx, unit, sx, sy, size, color, correctedFacing, currentMP, maxMP);
 
     // Unit number label — same id suffix as the detail panel (#N)
-    // Rendered in red when the unit has already used its attack this turn.
+    // Rendered in red when the unit has already used its move/action this turn
+    // (no MP left, or marked as acted — e.g. an enemy unit during the AI turn).
     const idSuffix = unit.id.replace(/^unit_/, '');
     const fontSize = Math.max(6, size * 0.75);
     const labelX = sx + size * 0.5;
     const labelY = sy + size * 0.9 + fontSize;
-    const noMP = (movementPoints.get(unit.id) ?? 0) === 0;
+    const showRed = (movementPoints.get(unit.id) ?? 0) === 0 || actedUnits.has(unit.id);
     ctx.save();
     ctx.font = `${fontSize}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillText(`#${idSuffix}`, labelX + 1, labelY + 1);
-    ctx.fillStyle = noMP ? 'rgba(255,80,80,0.95)' : 'rgba(220,220,220,0.85)';
+    ctx.fillStyle = showRed ? 'rgba(255,80,80,0.95)' : 'rgba(220,220,220,0.85)';
     ctx.fillText(`#${idSuffix}`, labelX, labelY);
     ctx.restore();
 
@@ -196,8 +224,124 @@ export function drawUnits(
   }
 }
 
-// ─── Combat highlight drawing ─────────────────────────────────────────────────
+// ─── Building drawing ─────────────────────────────────────────────────────────
 
+/**
+ * Draw buildings in their segment triangles. A building is rendered from its
+ * cached 3D model sprite (a faction-tinted block, optionally equipped). While
+ * the sprite is still rendering we fall back to a simple "block with a roof"
+ * vector shape so the structure is always visible.
+ */
+export function drawBuildings(
+  ctx: CanvasRenderingContext2D,
+  world: WorldData,
+  flatTiles: FlatTile[],
+  wts: (wx: number, wy: number) => [number, number],
+): void {
+  const buildings = world.buildings;
+  if (!buildings || buildings.length === 0) return;
+
+  const ftByTile = new Map<number, FlatTile>();
+  for (const ft of flatTiles) ftByTile.set(ft.tileIndex, ft);
+
+  for (const b of buildings) {
+    const ft = ftByTile.get(b.tileIndex);
+    if (!ft) continue;
+    const segPos = getSegmentCentroid(ft, b.segment);
+    if (!segPos) continue;
+
+    const [sx, sy] = wts(segPos.x, segPos.y);
+    const size = getSegmentIconSize(ft, b.segment, wts);
+    const color = factionColor(world, b.ownerId);
+
+    const sprite = getBuildingSprite(b, color);
+    if (sprite) {
+      // Same sprite-to-screen scale as units (see unitIcons.ts) for a
+      // consistent footprint within the segment triangle.
+      const spriteSize = size * 7.058;
+      ctx.save();
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(sprite, sx - spriteSize / 2, sy - spriteSize / 2, spriteSize, spriteSize);
+      ctx.restore();
+      continue;
+    }
+
+    // Fallback: vector block + roof while the sprite renders.
+    const w = size * 1.3;
+    const h = size * 1.1;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.rect(sx - w / 2, sy - h / 2, w, h);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath();
+    ctx.moveTo(sx - w / 2, sy - h / 2);
+    ctx.lineTo(sx, sy - h);
+    ctx.lineTo(sx + w / 2, sy - h / 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/**
+ * Draw planned (not-yet-built) buildings as translucent grey "ghost" blocks so
+ * the player can see their City Design overlaid on the map. Drawn beneath the
+ * solid real buildings. Any planned segment that coincides with a real building
+ * is skipped (the real one wins).
+ */
+export function drawPlannedBuildings(
+  ctx: CanvasRenderingContext2D,
+  world: WorldData,
+  flatTiles: FlatTile[],
+  wts: (wx: number, wy: number) => [number, number],
+): void {
+  const planned = world.plannedBuildings;
+  if (!planned || planned.length === 0) return;
+
+  const actual = new Set(world.buildings.map((b) => `${b.tileIndex}:${b.segment}`));
+  const ftByTile = new Map<number, FlatTile>();
+  for (const ft of flatTiles) ftByTile.set(ft.tileIndex, ft);
+
+  for (const b of planned) {
+    if (actual.has(`${b.tileIndex}:${b.segment}`)) continue;
+    const ft = ftByTile.get(b.tileIndex);
+    if (!ft) continue;
+    const segPos = getSegmentCentroid(ft, b.segment);
+    if (!segPos) continue;
+
+    const [sx, sy] = wts(segPos.x, segPos.y);
+    const size = getSegmentIconSize(ft, b.segment, wts);
+    const w = size * 1.3;
+    const h = size * 1.1;
+
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    ctx.fillStyle = 'rgba(180,180,180,0.6)';
+    ctx.strokeStyle = 'rgba(230,230,230,0.7)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 2]);
+    ctx.beginPath();
+    ctx.rect(sx - w / 2, sy - h / 2, w, h);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(sx - w / 2, sy - h / 2);
+    ctx.lineTo(sx, sy - h);
+    ctx.lineTo(sx + w / 2, sy - h / 2);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ─── Combat highlight drawing ─────────────────────────────────────────────────
 /**
  * Draw pulsing rings on the attacker (red) and target (cyan) plus an
  * arrow line between them during AI combat actions.
@@ -275,6 +419,99 @@ export function drawCombatHighlight(
   ctx.moveTo(tx, ty);
   ctx.lineTo(tx - headLen * Math.cos(angle + 0.4), ty - headLen * Math.sin(angle + 0.4));
   ctx.strokeStyle = '#f66';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// ─── Move highlight drawing ───────────────────────────────────────────────────
+/**
+ * Draw a movement indicator for an enemy move: a hollow circle at the origin
+ * segment (where the unit started) and a dashed arrow line to the unit's
+ * current position. Mirrors drawCombatHighlight but uses an amber palette so
+ * a plain move is visually distinct from an attack (red attacker / cyan target).
+ *
+ * @param ctx        Canvas 2D context
+ * @param world      Current world data
+ * @param flatTiles  Visible flat tile list
+ * @param unitId     Unit id that moved (or null if none)
+ * @param fromTile   Tile index the unit started on (or null if none)
+ * @param fromSeg    Segment the unit started on
+ * @param wts        worldToScreen bound to current view params
+ */
+export function drawMoveHighlight(
+  ctx: CanvasRenderingContext2D,
+  world: WorldData,
+  flatTiles: FlatTile[],
+  unitId: string | null,
+  fromTile: number | null,
+  fromSeg: number,
+  wts: (wx: number, wy: number) => [number, number],
+): void {
+  if (!unitId || fromTile == null) return;
+
+  const unit = world.units.find((u) => u.id === unitId);
+  if (!unit) return;
+
+  const ftByTile = new Map<number, FlatTile>();
+  for (const ft of flatTiles) ftByTile.set(ft.tileIndex, ft);
+
+  const ftFrom = ftByTile.get(fromTile);
+  const ftTo   = ftByTile.get(unit.tileIndex);
+  if (!ftFrom || !ftTo) return;
+
+  const segFrom = getSegmentCentroid(ftFrom, fromSeg);
+  const segTo   = getSegmentCentroid(ftTo, unit.segment);
+  if (!segFrom || !segTo) return;
+
+  const [fx, fy] = wts(segFrom.x, segFrom.y);
+  const [tx, ty] = wts(segTo.x, segTo.y);
+  const sizeFrom = getSegmentIconSize(ftFrom, fromSeg, wts);
+
+  // Skip degenerate (no real displacement) indicators.
+  const dx = tx - fx;
+  const dy = ty - fy;
+  if (dx * dx + dy * dy < 4) return;
+
+  const AMBER = '#ffb347';
+
+  ctx.save();
+
+  // Origin ring — where the unit moved from
+  ctx.beginPath();
+  ctx.arc(fx, fy, sizeFrom * 2.0, 0, Math.PI * 2);
+  ctx.strokeStyle = AMBER;
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([5, 4]);
+  ctx.stroke();
+
+  // Origin dot at the exact start point
+  ctx.beginPath();
+  ctx.arc(fx, fy, 3, 0, Math.PI * 2);
+  ctx.setLineDash([]);
+  ctx.fillStyle = AMBER;
+  ctx.fill();
+
+  // Dashed travel line from origin to current position
+  ctx.beginPath();
+  ctx.moveTo(fx, fy);
+  ctx.lineTo(tx, ty);
+  ctx.strokeStyle = 'rgba(255, 179, 71, 0.7)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 6]);
+  ctx.stroke();
+
+  // Arrowhead at the destination end
+  const angle   = Math.atan2(ty - fy, tx - fx);
+  const headLen = 12;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(tx, ty);
+  ctx.lineTo(tx - headLen * Math.cos(angle - 0.4), ty - headLen * Math.sin(angle - 0.4));
+  ctx.moveTo(tx, ty);
+  ctx.lineTo(tx - headLen * Math.cos(angle + 0.4), ty - headLen * Math.sin(angle + 0.4));
+  ctx.strokeStyle = AMBER;
   ctx.lineWidth = 2.5;
   ctx.stroke();
 

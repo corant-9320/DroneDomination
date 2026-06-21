@@ -180,6 +180,10 @@ export function addSplashAttack(
       baseY = turretY + 0.12;
       baseZ = turretFrontZ + 0.08;
       break;
+    case 'building':
+      baseY = turretY + 0.18;
+      baseZ = turretFrontZ + 0.08;
+      break;
   }
   const pedestalHeight = 0.16 + tPower * 0.1;
   const pedestalRadius = 0.045 + tPower * 0.035;
@@ -243,6 +247,32 @@ export function addSplashAttack(
 
 export function addArmour(group: THREE.Group, level: number, chassisType: ChassisType, factionHex?: string): void {
   if (level === 0) return;
+
+  // Building armour — flat reinforcement plates bolted to the four walls.
+  // Thickness scales with level; deliberately plain to match the basic block.
+  if (chassisType === 'building') {
+    const t = level / 5;
+    const bodyW = 1.5, bodyH = 1.2, bodyD = 1.5;
+    const plateThick = 0.05 + t * 0.12;
+    const plateH = bodyH * 0.82;
+    const plateY = bodyH * 0.5;
+    const plateColor = factionHex ? hexToColor(factionHex) : new THREE.Color(0x7a8a6a);
+    const plateMat = new THREE.MeshStandardMaterial({ color: plateColor, roughness: 0.55, metalness: 0.45 });
+
+    // Front + back plates (span X)
+    for (const z of [-(bodyD / 2 + plateThick / 2), bodyD / 2 + plateThick / 2]) {
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(bodyW * 0.92, plateH, plateThick), plateMat);
+      plate.position.set(0, plateY, z);
+      group.add(plate);
+    }
+    // Left + right plates (span Z)
+    for (const x of [-(bodyW / 2 + plateThick / 2), bodyW / 2 + plateThick / 2]) {
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(plateThick, plateH, bodyD * 0.92), plateMat);
+      plate.position.set(x, plateY, 0);
+      group.add(plate);
+    }
+    return;
+  }
 
   // Cage armour is handled inside each chassis builder (wheeled/limbed/flight).
   // The fallback spike armour below is only reached if chassisType is unrecognised.
@@ -345,6 +375,10 @@ export function addDefence(group: THREE.Group, level: number, turretY: number, c
       rearCorners = [{ x: -0.28, z: 0.22 }, { x: 0.28, z: 0.22 }];
       baseY = 0.75;
       break;
+    case 'building':
+      rearCorners = [{ x: -0.6, z: 0.6 }, { x: 0.6, z: 0.6 }];
+      baseY = 1.2;
+      break;
   }
 
   const fixedEW3T = 3 / 5;
@@ -409,12 +443,12 @@ export function addDefence(group: THREE.Group, level: number, turretY: number, c
 
 export function addRepair(group: THREE.Group, level: number, chassisType: ChassisType, bom: BoltOnMaterials): void {
   if (level === 0) return;
-  const yBase = chassisType === 'limbed' ? 0.7 : chassisType === 'flight' ? 0.8 : 0.35;
+  const yBase = chassisType === 'limbed' ? 0.7 : chassisType === 'flight' ? 0.8 : chassisType === 'building' ? 1.2 : 0.35;
   const t = level / 5;
 
-  const hullRearZ = chassisType === 'limbed' ? 0.55 : chassisType === 'flight' ? 0.35 : 0.95;
+  const hullRearZ = chassisType === 'limbed' ? 0.55 : chassisType === 'flight' ? 0.35 : chassisType === 'building' ? 0.5 : 0.95;
 
-  const targetPoleTopY = chassisType === 'limbed' ? 1.45 : chassisType === 'flight' ? 1.12 : 1.24;
+  const targetPoleTopY = chassisType === 'limbed' ? 1.45 : chassisType === 'flight' ? 1.12 : chassisType === 'building' ? 2.0 : 1.24;
   const poleRadius = 0.026;
   const poleX = 0;
   const poleZ = chassisType === 'flight' ? 0.72 : hullRearZ;
@@ -485,6 +519,10 @@ export function addAntiAir(
       break;
     case 'flight':
       baseY = 0.95;
+      baseZ = 0;
+      break;
+    case 'building':
+      baseY = 1.2;
       baseZ = 0;
       break;
   }

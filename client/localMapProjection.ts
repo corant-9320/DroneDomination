@@ -23,6 +23,7 @@ export function buildFlatView(
   world: WorldData,
   centreIdx: number,
   radius: number,
+  up?: [number, number, number] | null,
 ): FlatTile[] {
   // BFS
   const distances = new Map<number, number>();
@@ -49,22 +50,56 @@ export function buildFlatView(
   // Normal = centre position (unit sphere)
   const nx = cx, ny = cy, nz = cz;
 
-  // Tangent vector
-  let tx: number, ty: number, tz: number;
-  if (Math.abs(ny) < 0.9) {
-    tx = nz; ty = 0; tz = -nx;
-  } else {
-    tx = 0; ty = -nz; tz = ny;
-  }
-  const tLen = Math.sqrt(tx * tx + ty * ty + tz * tz);
-  tx /= tLen; ty /= tLen; tz /= tLen;
+  let tx: number, ty: number, tz: number; // tangent  → screen-right (+x)
+  let bx: number, by: number, bz: number; // binormal → screen-up    (+y)
 
-  // Binormal = cross(normal, tangent)
-  let bx = ny * tz - nz * ty;
-  let by = nz * tx - nx * tz;
-  let bz = nx * ty - ny * tx;
-  const bLen = Math.sqrt(bx * bx + by * by + bz * bz);
-  bx /= bLen; by /= bLen; bz /= bLen;
+  // Preferred path: derive the basis from the globe camera's screen-up vector
+  // so the flat map's orientation tracks the globe continuously — including a
+  // pure spin at the poles. The binormal (map screen-up) is the camera up
+  // projected onto the tangent plane; the tangent (screen-right) is
+  // binormal × normal, which keeps t × b = n (a right-handed, non-mirrored
+  // view with the normal pointing toward the viewer).
+  //
+  // This avoids the old position-only tangent, whose hard branch at |ny| = 0.9
+  // caused a discontinuous "flip" when dragging back from a pole, and which
+  // ignored the globe's spin entirely.
+  let usedUp = false;
+  if (up) {
+    const dot = up[0] * nx + up[1] * ny + up[2] * nz;
+    let ux = up[0] - dot * nx;
+    let uy = up[1] - dot * ny;
+    let uz = up[2] - dot * nz;
+    const uLen = Math.sqrt(ux * ux + uy * uy + uz * uz);
+    if (uLen > 1e-6) {
+      ux /= uLen; uy /= uLen; uz /= uLen;
+      bx = ux; by = uy; bz = uz;
+      // tangent = binormal × normal (already unit length: b ⊥ n, both unit)
+      tx = by * nz - bz * ny;
+      ty = bz * nx - bx * nz;
+      tz = bx * ny - by * nx;
+      usedUp = true;
+    }
+  }
+
+  if (!usedUp) {
+    // Fallback (no live camera orientation: first-person view, battle
+    // centring, goHome). Pick an arbitrary tangent from position, branching
+    // near the poles to avoid a degenerate cross product.
+    if (Math.abs(ny) < 0.9) {
+      tx = nz; ty = 0; tz = -nx;
+    } else {
+      tx = 0; ty = -nz; tz = ny;
+    }
+    const tLen = Math.sqrt(tx * tx + ty * ty + tz * tz);
+    tx /= tLen; ty /= tLen; tz /= tLen;
+
+    // Binormal = cross(normal, tangent)
+    bx = ny * tz - nz * ty;
+    by = nz * tx - nx * tz;
+    bz = nx * ty - ny * tx;
+    const bLen = Math.sqrt(bx * bx + by * by + bz * bz);
+    bx /= bLen; by /= bLen; bz /= bLen;
+  }
 
   const project = (p: [number, number, number]): { x: number; y: number } => {
     const dx = p[0] - cx;

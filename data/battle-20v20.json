@@ -1,172 +1,220 @@
 {
   "format": "compact",
-  "seed": 817587,
+  "seed": 913800,
   "cities": [
     {
       "id": "city_0",
       "label": "C01",
-      "tileIndex": 50,
+      "tileIndex": 2201,
       "neighbourCityIds": [
-        "city_5",
         "city_3",
-        "city_2",
-        "city_8"
+        "city_5",
+        "city_6",
+        "city_8",
+        "city_10",
+        "city_11"
+      ],
+      "ownerId": "city_0",
+      "ownedHexes": [
+        2201
       ],
       "isPlayerHome": true
     },
     {
       "id": "city_1",
       "label": "C02",
-      "tileIndex": 9579,
+      "tileIndex": 10021,
       "neighbourCityIds": [
         "city_6",
         "city_4",
-        "city_3",
-        "city_9",
-        "city_11"
+        "city_9"
+      ],
+      "ownerId": "city_1",
+      "ownedHexes": [
+        10021
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_2",
       "label": "C03",
-      "tileIndex": 19970,
+      "tileIndex": 45158,
       "neighbourCityIds": [
-        "city_0",
         "city_7",
         "city_5",
+        "city_10",
         "city_4",
-        "city_10"
+        "city_11"
+      ],
+      "ownerId": "city_2",
+      "ownedHexes": [
+        45158
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_3",
       "label": "C04",
-      "tileIndex": 29983,
+      "tileIndex": 29502,
       "neighbourCityIds": [
         "city_0",
-        "city_1",
         "city_6",
         "city_8",
-        "city_5",
         "city_11"
+      ],
+      "ownerId": "city_3",
+      "ownedHexes": [
+        29502
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_4",
       "label": "C05",
-      "tileIndex": 38902,
+      "tileIndex": 39001,
       "neighbourCityIds": [
         "city_1",
-        "city_2",
         "city_9",
         "city_7",
+        "city_2",
         "city_6",
         "city_10"
+      ],
+      "ownerId": "city_4",
+      "ownedHexes": [
+        39001
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_5",
       "label": "C06",
-      "tileIndex": 49435,
+      "tileIndex": 48122,
       "neighbourCityIds": [
         "city_0",
         "city_2",
-        "city_3",
-        "city_8",
         "city_10",
+        "city_8",
         "city_11",
         "city_7"
+      ],
+      "ownerId": "city_5",
+      "ownedHexes": [
+        48122
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_6",
       "label": "C07",
-      "tileIndex": 31918,
+      "tileIndex": 31469,
       "neighbourCityIds": [
+        "city_0",
         "city_1",
         "city_3",
-        "city_4",
-        "city_11",
         "city_9",
-        "city_8"
+        "city_11",
+        "city_4"
+      ],
+      "ownerId": "city_6",
+      "ownedHexes": [
+        31469
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_7",
       "label": "C08",
-      "tileIndex": 62494,
+      "tileIndex": 40856,
       "neighbourCityIds": [
         "city_2",
         "city_4",
         "city_10",
-        "city_9",
         "city_5",
+        "city_9",
         "city_11"
+      ],
+      "ownerId": "city_7",
+      "ownedHexes": [
+        40856
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_8",
       "label": "C09",
-      "tileIndex": 71578,
+      "tileIndex": 70647,
       "neighbourCityIds": [
         "city_3",
         "city_5",
-        "city_6",
         "city_11",
         "city_10",
-        "city_0"
+        "city_0",
+        "city_9"
+      ],
+      "ownerId": "city_8",
+      "ownedHexes": [
+        70647
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_9",
       "label": "C10",
-      "tileIndex": 83037,
+      "tileIndex": 56367,
       "neighbourCityIds": [
+        "city_1",
         "city_4",
         "city_6",
         "city_7",
         "city_11",
-        "city_1",
-        "city_10"
+        "city_10",
+        "city_8"
+      ],
+      "ownerId": "city_9",
+      "ownedHexes": [
+        56367
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_10",
       "label": "C11",
-      "tileIndex": 91722,
+      "tileIndex": 93496,
       "neighbourCityIds": [
+        "city_2",
         "city_5",
         "city_7",
         "city_8",
         "city_9",
         "city_11",
-        "city_2",
+        "city_0",
         "city_4"
+      ],
+      "ownerId": "city_10",
+      "ownedHexes": [
+        93496
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_11",
       "label": "C12",
-      "tileIndex": 78372,
+      "tileIndex": 95784,
       "neighbourCityIds": [
+        "city_3",
         "city_5",
         "city_6",
         "city_8",
         "city_9",
         "city_10",
-        "city_3",
-        "city_7",
-        "city_1"
+        "city_0",
+        "city_2",
+        "city_7"
+      ],
+      "ownerId": "city_11",
+      "ownedHexes": [
+        95784
       ],
       "isPlayerHome": false
     }
@@ -174,38 +222,38 @@
   "units": [
     {
       "id": "unit_0",
-      "label": "Executioner Heavyweight Runner Tank (Mov 4, Kin 5, Rng 2, Spl 0, AA 5, Arm 5, EW 4, Rep 0, Eng 2)",
+      "label": "Executioner Devastator Plodder Tank (Mov 2, Kin 5, Rng 5, Spl 5, AA 5, Arm 2, EW 0, Rep 0, Eng 2)",
       "ownerId": "city_0",
-      "tileIndex": 1630,
+      "tileIndex": 1235,
       "segment": 0,
       "facing": 0,
       "attributes": {
-        "wheeledMovement": 4,
-        "maxHealth": 2,
+        "wheeledMovement": 2,
+        "maxHealth": 3,
         "kinetic": 5,
-        "armour": 5,
         "antiAir": 5,
-        "defence": 4,
-        "rangeAttack": 2,
+        "splashAttack": 5,
+        "rangeAttack": 5,
+        "armour": 2,
         "engineer": 2
       },
-      "currentHealth": 20
+      "currentHealth": 30
     },
     {
       "id": "unit_1",
-      "label": "Executioner Annihilator Walker Tank (Mov 3, Kin 5, Rng 3, Spl 3, AA 5, Arm 4, EW 3, Rep 0, Eng 2)",
+      "label": "Executioner Heavyweight Walker Tank (Mov 3, Kin 5, Rng 4, Spl 1, AA 5, Arm 5, EW 3, Rep 0, Eng 2)",
       "ownerId": "city_0",
-      "tileIndex": 1630,
+      "tileIndex": 1235,
       "segment": 1,
       "facing": 0,
       "attributes": {
         "wheeledMovement": 3,
         "maxHealth": 1,
-        "armour": 4,
-        "antiAir": 5,
+        "armour": 5,
         "kinetic": 5,
-        "rangeAttack": 3,
-        "splashAttack": 3,
+        "antiAir": 5,
+        "rangeAttack": 4,
+        "splashAttack": 1,
         "defence": 3,
         "engineer": 2
       },
@@ -213,701 +261,752 @@
     },
     {
       "id": "unit_2",
-      "label": "Executioner Nullifier Plodder Tank (Mov 2, Kin 5, Rng 0, Spl 5, AA 5, Arm 2, EW 5, Rep 0, Eng 0)",
+      "label": "Executioner Devastator Runner Tank (Mov 4, Kin 5, Rng 2, Spl 5, AA 5, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 1630,
+      "tileIndex": 1235,
       "segment": 2,
       "facing": 0,
       "attributes": {
-        "wheeledMovement": 2,
+        "wheeledMovement": 4,
+        "maxHealth": 4,
+        "armour": 1,
+        "antiAir": 5,
+        "kinetic": 5,
+        "splashAttack": 5,
+        "rangeAttack": 2,
+        "defence": 1
+      },
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_3",
+      "label": "Executioner Nullifier Loitering Tank (Mov 1, Kin 5, Rng 1, Spl 5, AA 5, Arm 2, EW 5, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1235,
+      "segment": 3,
+      "facing": 0,
+      "attributes": {
+        "wheeledMovement": 1,
         "maxHealth": 3,
         "armour": 2,
-        "defence": 5,
         "splashAttack": 5,
+        "defence": 5,
         "antiAir": 5,
-        "kinetic": 5
+        "kinetic": 5,
+        "rangeAttack": 1
       },
       "currentHealth": 30
     },
     {
-      "id": "unit_3",
-      "label": "Heavyweight Nullifier Loitering Tank (Mov 1, Kin 1, Rng 5, Spl 5, AA 1, Arm 5, EW 5, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1630,
-      "segment": 3,
-      "facing": 0,
-      "attributes": {
-        "wheeledMovement": 1,
-        "maxHealth": 4,
-        "armour": 5,
-        "splashAttack": 5,
-        "defence": 5,
-        "rangeAttack": 5,
-        "kinetic": 1,
-        "antiAir": 1
-      },
-      "currentHealth": 40
-    },
-    {
       "id": "unit_4",
-      "label": "Executioner Heavyweight Walker Tank (Mov 3, Kin 5, Rng 3, Spl 1, AA 5, Arm 5, EW 4, Rep 0, Eng 0)",
+      "label": "Nullifier Devastator Plodder Tank (Mov 2, Kin 3, Rng 2, Spl 5, AA 3, Arm 4, EW 5, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 1631,
+      "tileIndex": 1323,
       "segment": 0,
       "facing": 0,
       "attributes": {
-        "wheeledMovement": 3,
+        "wheeledMovement": 2,
+        "maxHealth": 3,
+        "armour": 4,
+        "defence": 5,
+        "splashAttack": 5,
+        "kinetic": 3,
+        "antiAir": 3,
+        "rangeAttack": 2
+      },
+      "currentHealth": 30
+    },
+    {
+      "id": "unit_5",
+      "label": "Heavyweight Nullifier Runner Tank (Mov 4, Kin 3, Rng 2, Spl 2, AA 3, Arm 5, EW 5, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1323,
+      "segment": 1,
+      "facing": 0,
+      "attributes": {
+        "wheeledMovement": 4,
+        "maxHealth": 3,
+        "armour": 5,
+        "defence": 5,
+        "antiAir": 3,
+        "rangeAttack": 2,
+        "kinetic": 3,
+        "splashAttack": 2
+      },
+      "currentHealth": 30
+    },
+    {
+      "id": "unit_6",
+      "label": "Executioner Heavyweight Runner Spider (Mov 4, Kin 5, Rng 5, Spl 2, AA 5, Arm 5, EW 0, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 6830,
+      "segment": 0,
+      "facing": 0,
+      "attributes": {
+        "limbMovement": 4,
         "maxHealth": 1,
         "armour": 5,
-        "antiAir": 5,
+        "rangeAttack": 5,
         "kinetic": 5,
-        "defence": 4,
-        "splashAttack": 1,
-        "rangeAttack": 3
+        "antiAir": 5,
+        "splashAttack": 2
       },
       "currentHealth": 10
     },
     {
-      "id": "unit_5",
-      "label": "Executioner Nullifier Loitering Tank (Mov 1, Kin 5, Rng 4, Spl 0, AA 5, Arm 3, EW 5, Rep 0, Eng 0)",
+      "id": "unit_7",
+      "label": "Executioner Heavyweight Loitering Spider (Mov 1, Kin 5, Rng 2, Spl 5, AA 5, Arm 5, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 1631,
+      "tileIndex": 6830,
       "segment": 1,
       "facing": 0,
       "attributes": {
-        "wheeledMovement": 1,
-        "maxHealth": 4,
-        "defence": 5,
-        "antiAir": 5,
+        "limbMovement": 1,
+        "maxHealth": 2,
         "kinetic": 5,
-        "armour": 3,
-        "rangeAttack": 4
-      },
-      "currentHealth": 40
-    },
-    {
-      "id": "unit_6",
-      "label": "Executioner Heavyweight Runner Spider (Mov 4, Kin 5, Rng 0, Spl 4, AA 0, Arm 5, EW 5, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1110,
-      "segment": 2,
-      "facing": 0,
-      "attributes": {
-        "limbMovement": 4,
-        "maxHealth": 4,
         "armour": 5,
-        "kinetic": 5,
-        "defence": 5,
-        "splashAttack": 4
-      },
-      "currentHealth": 40
-    },
-    {
-      "id": "unit_7",
-      "label": "Heavyweight Nullifier Walker Spider (Mov 3, Kin 0, Rng 5, Spl 5, AA 0, Arm 5, EW 5, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1110,
-      "segment": 3,
-      "facing": 0,
-      "attributes": {
-        "limbMovement": 3,
-        "maxHealth": 4,
+        "antiAir": 5,
         "splashAttack": 5,
-        "rangeAttack": 5,
-        "defence": 5,
-        "armour": 5
+        "rangeAttack": 2,
+        "defence": 2
       },
-      "currentHealth": 40
+      "currentHealth": 20
     },
     {
       "id": "unit_8",
-      "label": "Nullifier Devastator Runner Spider (Mov 4, Kin 4, Rng 5, Spl 5, AA 2, Arm 1, EW 5, Rep 0, Eng 0)",
+      "label": "Executioner Heavyweight Walker Spider (Mov 3, Kin 5, Rng 5, Spl 1, AA 5, Arm 5, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 1199,
-      "segment": 0,
+      "tileIndex": 6830,
+      "segment": 2,
       "facing": 0,
       "attributes": {
-        "limbMovement": 4,
+        "limbMovement": 3,
         "maxHealth": 1,
-        "armour": 1,
+        "armour": 5,
         "rangeAttack": 5,
-        "splashAttack": 5,
-        "defence": 5,
-        "antiAir": 2,
-        "kinetic": 4
+        "kinetic": 5,
+        "antiAir": 5,
+        "defence": 2,
+        "splashAttack": 1
       },
       "currentHealth": 10
     },
     {
       "id": "unit_9",
-      "label": "Heavyweight Nullifier Walker Spider (Mov 3, Kin 1, Rng 1, Spl 5, AA 5, Arm 5, EW 5, Rep 0, Eng 0)",
+      "label": "Executioner Heavyweight Loitering Spider (Mov 1, Kin 5, Rng 2, Spl 2, AA 5, Arm 5, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 1199,
-      "segment": 1,
-      "facing": 0,
-      "attributes": {
-        "limbMovement": 3,
-        "maxHealth": 2,
-        "splashAttack": 5,
-        "antiAir": 5,
-        "defence": 5,
-        "armour": 5,
-        "kinetic": 1,
-        "rangeAttack": 1
-      },
-      "currentHealth": 20
-    },
-    {
-      "id": "unit_10",
-      "label": "Executioner Heavyweight Loitering Spider (Mov 1, Kin 5, Rng 5, Spl 1, AA 5, Arm 5, EW 1, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1199,
-      "segment": 2,
+      "tileIndex": 6830,
+      "segment": 3,
       "facing": 0,
       "attributes": {
         "limbMovement": 1,
         "maxHealth": 4,
         "armour": 5,
-        "rangeAttack": 5,
-        "kinetic": 5,
         "antiAir": 5,
-        "defence": 1,
+        "kinetic": 5,
+        "defence": 3,
+        "rangeAttack": 2,
+        "splashAttack": 2
+      },
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_10",
+      "label": "Executioner Heavyweight Plodder Spider (Mov 2, Kin 5, Rng 2, Spl 1, AA 3, Arm 5, EW 5, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 4258,
+      "segment": 0,
+      "facing": 0,
+      "attributes": {
+        "limbMovement": 2,
+        "maxHealth": 4,
+        "armour": 5,
+        "kinetic": 5,
+        "defence": 5,
+        "rangeAttack": 2,
+        "antiAir": 3,
         "splashAttack": 1
       },
       "currentHealth": 40
     },
     {
       "id": "unit_11",
-      "label": "Executioner Devastator Walker Spider (Mov 3, Kin 5, Rng 2, Spl 5, AA 4, Arm 2, EW 4, Rep 0, Eng 0)",
+      "label": "Executioner Heavyweight Loitering Spider (Mov 1, Kin 5, Rng 5, Spl 2, AA 1, Arm 5, EW 5, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 1199,
-      "segment": 3,
-      "facing": 0,
-      "attributes": {
-        "limbMovement": 3,
-        "maxHealth": 2,
-        "kinetic": 5,
-        "splashAttack": 5,
-        "defence": 4,
-        "armour": 2,
-        "antiAir": 4,
-        "rangeAttack": 2
-      },
-      "currentHealth": 20
-    },
-    {
-      "id": "unit_12",
-      "label": "Heavyweight Nullifier Loitering Spider (Mov 1, Kin 3, Rng 5, Spl 5, AA 2, Arm 5, EW 5, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1288,
-      "segment": 0,
-      "facing": 0,
-      "attributes": {
-        "limbMovement": 1,
-        "maxHealth": 1,
-        "armour": 5,
-        "defence": 5,
-        "splashAttack": 5,
-        "rangeAttack": 5,
-        "kinetic": 3,
-        "antiAir": 2
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_13",
-      "label": "Executioner Nullifier Loitering Drone (Mov 1, Kin 5, Rng 5, Spl 2, AA 5, Arm 0, EW 5, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1288,
+      "tileIndex": 4258,
       "segment": 1,
       "facing": 0,
       "attributes": {
-        "flightMovement": 1,
-        "maxHealth": 4,
-        "antiAir": 5,
-        "rangeAttack": 5,
-        "defence": 5,
-        "kinetic": 5,
-        "splashAttack": 2
-      },
-      "currentHealth": 40
-    },
-    {
-      "id": "unit_14",
-      "label": "Executioner Nullifier Runner Drone (Mov 4, Kin 5, Rng 1, Spl 5, AA 5, Arm 0, EW 5, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1288,
-      "segment": 2,
-      "facing": 0,
-      "attributes": {
-        "flightMovement": 4,
-        "maxHealth": 2,
-        "splashAttack": 5,
-        "defence": 5,
-        "kinetic": 5,
-        "antiAir": 5,
-        "rangeAttack": 1
-      },
-      "currentHealth": 20
-    },
-    {
-      "id": "unit_15",
-      "label": "Nullifier Devastator Plodder Drone (Mov 2, Kin 4, Rng 5, Spl 5, AA 5, Arm 0, EW 5, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1288,
-      "segment": 3,
-      "facing": 0,
-      "attributes": {
-        "flightMovement": 2,
-        "maxHealth": 1,
-        "antiAir": 5,
-        "rangeAttack": 5,
-        "splashAttack": 5,
-        "defence": 5,
-        "kinetic": 4
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_16",
-      "label": "Nullifier Devastator Plodder Drone (Mov 2, Kin 2, Rng 5, Spl 5, AA 5, Arm 0, EW 5, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1289,
-      "segment": 0,
-      "facing": 0,
-      "attributes": {
-        "flightMovement": 2,
+        "limbMovement": 1,
         "maxHealth": 3,
-        "rangeAttack": 5,
-        "antiAir": 5,
-        "splashAttack": 5,
+        "armour": 5,
+        "kinetic": 5,
         "defence": 5,
-        "kinetic": 2
+        "rangeAttack": 5,
+        "splashAttack": 2,
+        "antiAir": 1
       },
       "currentHealth": 30
     },
     {
-      "id": "unit_17",
-      "label": "Executioner Distance Runner Drone (Mov 4, Kin 5, Rng 5, Spl 0, AA 5, Arm 0, EW 4, Rep 0, Eng 0)",
+      "id": "unit_12",
+      "label": "Devastator Distance Loitering Spider (Mov 1, Kin 4, Rng 5, Spl 5, AA 2, Arm 2, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 1289,
+      "tileIndex": 4258,
+      "segment": 2,
+      "facing": 0,
+      "attributes": {
+        "limbMovement": 1,
+        "maxHealth": 4,
+        "armour": 2,
+        "rangeAttack": 5,
+        "splashAttack": 5,
+        "antiAir": 2,
+        "defence": 4,
+        "kinetic": 4
+      },
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_13",
+      "label": "Distance Annihilator Runner Drone (Mov 4, Kin 4, Rng 5, Spl 1, AA 5, Arm 0, EW 4, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1147,
       "segment": 1,
       "facing": 0,
       "attributes": {
         "flightMovement": 4,
         "maxHealth": 4,
-        "kinetic": 5,
-        "rangeAttack": 5,
-        "antiAir": 5,
-        "defence": 4
-      },
-      "currentHealth": 40
-    },
-    {
-      "id": "unit_18",
-      "label": "Nullifier Devastator Walker Drone (Mov 3, Kin 0, Rng 5, Spl 5, AA 5, Arm 0, EW 5, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1289,
-      "segment": 2,
-      "facing": 0,
-      "attributes": {
-        "flightMovement": 3,
-        "maxHealth": 4,
         "antiAir": 5,
         "rangeAttack": 5,
-        "splashAttack": 5,
-        "defence": 5
-      },
-      "currentHealth": 40
-    },
-    {
-      "id": "unit_19",
-      "label": "Executioner Nullifier Plodder Drone (Mov 2, Kin 5, Rng 5, Spl 1, AA 5, Arm 0, EW 5, Rep 0, Eng 0)",
-      "ownerId": "city_0",
-      "tileIndex": 1289,
-      "segment": 3,
-      "facing": 0,
-      "attributes": {
-        "flightMovement": 2,
-        "maxHealth": 4,
-        "rangeAttack": 5,
-        "kinetic": 5,
-        "defence": 5,
-        "antiAir": 5,
+        "defence": 4,
+        "kinetic": 4,
         "splashAttack": 1
       },
       "currentHealth": 40
     },
     {
+      "id": "unit_14",
+      "label": "Executioner Devastator Runner Drone (Mov 4, Kin 5, Rng 5, Spl 5, AA 2, Arm 0, EW 4, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1147,
+      "segment": 2,
+      "facing": 0,
+      "attributes": {
+        "flightMovement": 4,
+        "maxHealth": 2,
+        "rangeAttack": 5,
+        "splashAttack": 5,
+        "defence": 4,
+        "kinetic": 5,
+        "antiAir": 2
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_15",
+      "label": "Nullifier Devastator Plodder Drone (Mov 2, Kin 1, Rng 5, Spl 5, AA 5, Arm 0, EW 5, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1147,
+      "segment": 3,
+      "facing": 0,
+      "attributes": {
+        "flightMovement": 2,
+        "maxHealth": 4,
+        "splashAttack": 5,
+        "defence": 5,
+        "antiAir": 5,
+        "rangeAttack": 5,
+        "kinetic": 1
+      },
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_16",
+      "label": "Executioner Nullifier Loitering Drone (Mov 1, Kin 5, Rng 2, Spl 5, AA 5, Arm 0, EW 5, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1146,
+      "segment": 0,
+      "facing": 0,
+      "attributes": {
+        "flightMovement": 1,
+        "maxHealth": 4,
+        "antiAir": 5,
+        "defence": 5,
+        "splashAttack": 5,
+        "kinetic": 5,
+        "rangeAttack": 2
+      },
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_17",
+      "label": "Executioner Nullifier Runner Drone (Mov 4, Kin 5, Rng 5, Spl 5, AA 0, Arm 0, EW 5, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1146,
+      "segment": 1,
+      "facing": 0,
+      "attributes": {
+        "flightMovement": 4,
+        "maxHealth": 3,
+        "kinetic": 5,
+        "defence": 5,
+        "rangeAttack": 5,
+        "splashAttack": 5
+      },
+      "currentHealth": 30
+    },
+    {
+      "id": "unit_18",
+      "label": "Nullifier Devastator Runner Drone (Mov 4, Kin 0, Rng 5, Spl 5, AA 5, Arm 0, EW 5, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1146,
+      "segment": 2,
+      "facing": 0,
+      "attributes": {
+        "flightMovement": 4,
+        "maxHealth": 3,
+        "antiAir": 5,
+        "rangeAttack": 5,
+        "splashAttack": 5,
+        "defence": 5
+      },
+      "currentHealth": 30
+    },
+    {
+      "id": "unit_19",
+      "label": "Executioner Nullifier Plodder Drone (Mov 2, Kin 5, Rng 3, Spl 3, AA 5, Arm 0, EW 5, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 1146,
+      "segment": 3,
+      "facing": 0,
+      "attributes": {
+        "flightMovement": 2,
+        "maxHealth": 4,
+        "kinetic": 5,
+        "defence": 5,
+        "antiAir": 5,
+        "splashAttack": 3,
+        "rangeAttack": 3
+      },
+      "currentHealth": 40
+    },
+    {
       "id": "unit_20",
-      "label": "Heavyweight Nullifier Plodder Tank (Mov 2, Kin 2, Rng 2, Spl 5, AA 3, Arm 5, EW 5, Rep 0, Eng 2)",
+      "label": "Executioner Heavyweight Loitering Tank (Mov 1, Kin 5, Rng 3, Spl 5, AA 2, Arm 5, EW 3, Rep 0, Eng 2)",
       "ownerId": "city_6",
-      "tileIndex": 260,
+      "tileIndex": 1665,
       "segment": 0,
       "facing": 3,
       "attributes": {
-        "wheeledMovement": 2,
+        "wheeledMovement": 1,
         "maxHealth": 3,
         "armour": 5,
-        "defence": 5,
+        "kinetic": 5,
+        "rangeAttack": 3,
+        "defence": 3,
         "splashAttack": 5,
-        "antiAir": 3,
-        "kinetic": 2,
-        "rangeAttack": 2,
+        "antiAir": 2,
         "engineer": 2
       },
       "currentHealth": 30
     },
     {
       "id": "unit_21",
-      "label": "Heavyweight Nullifier Walker Tank (Mov 3, Kin 0, Rng 5, Spl 3, AA 3, Arm 5, EW 5, Rep 0, Eng 2)",
+      "label": "Executioner Heavyweight Walker Tank (Mov 3, Kin 5, Rng 1, Spl 1, AA 5, Arm 5, EW 5, Rep 0, Eng 2)",
       "ownerId": "city_6",
-      "tileIndex": 260,
+      "tileIndex": 1665,
       "segment": 1,
       "facing": 3,
       "attributes": {
         "wheeledMovement": 3,
-        "maxHealth": 3,
+        "maxHealth": 2,
         "armour": 5,
+        "kinetic": 5,
         "defence": 5,
-        "rangeAttack": 5,
-        "antiAir": 3,
-        "splashAttack": 3,
+        "antiAir": 5,
+        "splashAttack": 1,
+        "rangeAttack": 1,
         "engineer": 2
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_22",
+      "label": "Executioner Heavyweight Loitering Tank (Mov 1, Kin 5, Rng 4, Spl 2, AA 3, Arm 5, EW 4, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1665,
+      "segment": 2,
+      "facing": 3,
+      "attributes": {
+        "wheeledMovement": 1,
+        "maxHealth": 3,
+        "kinetic": 5,
+        "armour": 5,
+        "defence": 4,
+        "rangeAttack": 4,
+        "antiAir": 3,
+        "splashAttack": 2
       },
       "currentHealth": 30
     },
     {
-      "id": "unit_22",
-      "label": "Heavyweight Devastator Plodder Tank (Mov 2, Kin 1, Rng 4, Spl 5, AA 5, Arm 5, EW 2, Rep 0, Eng 0)",
+      "id": "unit_23",
+      "label": "Executioner Heavyweight Plodder Tank (Mov 2, Kin 5, Rng 0, Spl 5, AA 5, Arm 5, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 260,
-      "segment": 2,
+      "tileIndex": 1665,
+      "segment": 3,
       "facing": 3,
       "attributes": {
         "wheeledMovement": 2,
         "maxHealth": 3,
         "armour": 5,
         "antiAir": 5,
+        "kinetic": 5,
         "splashAttack": 5,
-        "rangeAttack": 4,
-        "defence": 2,
-        "kinetic": 1
+        "defence": 2
       },
       "currentHealth": 30
     },
     {
-      "id": "unit_23",
-      "label": "Nullifier Distance Walker Tank (Mov 3, Kin 1, Rng 5, Spl 2, AA 5, Arm 4, EW 5, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 260,
-      "segment": 3,
-      "facing": 3,
-      "attributes": {
-        "wheeledMovement": 3,
-        "maxHealth": 2,
-        "armour": 4,
-        "defence": 5,
-        "antiAir": 5,
-        "rangeAttack": 5,
-        "splashAttack": 2,
-        "kinetic": 1
-      },
-      "currentHealth": 20
-    },
-    {
       "id": "unit_24",
-      "label": "Executioner Heavyweight Runner Tank (Mov 4, Kin 5, Rng 3, Spl 5, AA 1, Arm 5, EW 3, Rep 0, Eng 0)",
+      "label": "Devastator Distance Runner Tank (Mov 4, Kin 1, Rng 5, Spl 5, AA 5, Arm 2, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 261,
+      "tileIndex": 1582,
       "segment": 0,
       "facing": 3,
       "attributes": {
         "wheeledMovement": 4,
-        "maxHealth": 1,
-        "armour": 5,
-        "kinetic": 5,
+        "maxHealth": 4,
+        "armour": 2,
+        "rangeAttack": 5,
+        "antiAir": 5,
         "splashAttack": 5,
-        "defence": 3,
+        "kinetic": 1,
+        "defence": 1
+      },
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_25",
+      "label": "Executioner Nullifier Walker Tank (Mov 3, Kin 5, Rng 3, Spl 5, AA 1, Arm 4, EW 5, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1582,
+      "segment": 1,
+      "facing": 3,
+      "attributes": {
+        "wheeledMovement": 3,
+        "maxHealth": 1,
+        "armour": 4,
+        "defence": 5,
+        "splashAttack": 5,
+        "kinetic": 5,
         "rangeAttack": 3,
         "antiAir": 1
       },
       "currentHealth": 10
     },
     {
-      "id": "unit_25",
-      "label": "Executioner Heavyweight Loitering Tank (Mov 1, Kin 5, Rng 5, Spl 2, AA 5, Arm 5, EW 0, Rep 0, Eng 0)",
+      "id": "unit_26",
+      "label": "Heavyweight Nullifier Plodder Spider (Mov 2, Kin 2, Rng 3, Spl 3, AA 3, Arm 5, EW 5, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 261,
-      "segment": 1,
+      "tileIndex": 4258,
+      "segment": 3,
       "facing": 3,
       "attributes": {
-        "wheeledMovement": 1,
+        "limbMovement": 2,
         "maxHealth": 4,
         "armour": 5,
-        "antiAir": 5,
-        "rangeAttack": 5,
-        "kinetic": 5,
-        "splashAttack": 2
+        "defence": 5,
+        "rangeAttack": 3,
+        "antiAir": 3,
+        "splashAttack": 3,
+        "kinetic": 2
       },
       "currentHealth": 40
-    },
-    {
-      "id": "unit_26",
-      "label": "Executioner Annihilator Runner Spider (Mov 4, Kin 5, Rng 4, Spl 2, AA 5, Arm 2, EW 2, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 833,
-      "segment": 2,
-      "facing": 3,
-      "attributes": {
-        "limbMovement": 4,
-        "maxHealth": 3,
-        "armour": 2,
-        "antiAir": 5,
-        "kinetic": 5,
-        "splashAttack": 2,
-        "rangeAttack": 4,
-        "defence": 2
-      },
-      "currentHealth": 30
     },
     {
       "id": "unit_27",
-      "label": "Executioner Distance Runner Spider (Mov 4, Kin 5, Rng 5, Spl 2, AA 5, Arm 2, EW 3, Rep 0, Eng 0)",
+      "label": "Heavyweight Devastator Runner Spider (Mov 4, Kin 1, Rng 1, Spl 5, AA 5, Arm 5, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 833,
-      "segment": 3,
-      "facing": 3,
-      "attributes": {
-        "limbMovement": 4,
-        "maxHealth": 1,
-        "rangeAttack": 5,
-        "kinetic": 5,
-        "antiAir": 5,
-        "splashAttack": 2,
-        "armour": 2,
-        "defence": 3
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_28",
-      "label": "Executioner Heavyweight Runner Spider (Mov 4, Kin 5, Rng 5, Spl 1, AA 5, Arm 5, EW 1, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 741,
+      "tileIndex": 4216,
       "segment": 0,
       "facing": 3,
       "attributes": {
         "limbMovement": 4,
-        "maxHealth": 1,
-        "armour": 5,
-        "kinetic": 5,
-        "antiAir": 5,
-        "rangeAttack": 5,
-        "defence": 1,
-        "splashAttack": 1
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_29",
-      "label": "Nullifier Devastator Plodder Spider (Mov 2, Kin 1, Rng 5, Spl 5, AA 5, Arm 0, EW 5, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 741,
-      "segment": 1,
-      "facing": 3,
-      "attributes": {
-        "limbMovement": 2,
         "maxHealth": 4,
+        "armour": 5,
         "splashAttack": 5,
-        "defence": 5,
         "antiAir": 5,
-        "rangeAttack": 5,
-        "kinetic": 1
+        "kinetic": 1,
+        "defence": 2,
+        "rangeAttack": 1
       },
       "currentHealth": 40
     },
     {
-      "id": "unit_30",
-      "label": "Heavyweight Nullifier Plodder Spider (Mov 2, Kin 3, Rng 3, Spl 1, AA 5, Arm 5, EW 5, Rep 0, Eng 0)",
+      "id": "unit_28",
+      "label": "Executioner Heavyweight Plodder Spider (Mov 2, Kin 5, Rng 1, Spl 2, AA 5, Arm 5, EW 5, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 741,
-      "segment": 2,
-      "facing": 3,
-      "attributes": {
-        "limbMovement": 2,
-        "maxHealth": 3,
-        "armour": 5,
-        "defence": 5,
-        "antiAir": 5,
-        "rangeAttack": 3,
-        "kinetic": 3,
-        "splashAttack": 1
-      },
-      "currentHealth": 30
-    },
-    {
-      "id": "unit_31",
-      "label": "Heavyweight Nullifier Plodder Spider (Mov 2, Kin 2, Rng 0, Spl 5, AA 5, Arm 5, EW 5, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 741,
-      "segment": 3,
-      "facing": 3,
-      "attributes": {
-        "limbMovement": 2,
-        "maxHealth": 3,
-        "armour": 5,
-        "splashAttack": 5,
-        "defence": 5,
-        "antiAir": 5,
-        "kinetic": 2
-      },
-      "currentHealth": 30
-    },
-    {
-      "id": "unit_32",
-      "label": "Executioner Heavyweight Plodder Spider (Mov 2, Kin 5, Rng 5, Spl 0, AA 5, Arm 5, EW 3, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 925,
-      "segment": 0,
+      "tileIndex": 4216,
+      "segment": 1,
       "facing": 3,
       "attributes": {
         "limbMovement": 2,
         "maxHealth": 2,
         "armour": 5,
         "kinetic": 5,
+        "defence": 5,
+        "antiAir": 5,
+        "rangeAttack": 1,
+        "splashAttack": 2
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_29",
+      "label": "Nullifier Devastator Plodder Spider (Mov 2, Kin 0, Rng 5, Spl 5, AA 5, Arm 3, EW 5, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 4216,
+      "segment": 2,
+      "facing": 3,
+      "attributes": {
+        "limbMovement": 2,
+        "maxHealth": 2,
+        "armour": 3,
         "antiAir": 5,
         "rangeAttack": 5,
-        "defence": 3
+        "splashAttack": 5,
+        "defence": 5
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_30",
+      "label": "Heavyweight Devastator Loitering Spider (Mov 1, Kin 2, Rng 5, Spl 5, AA 2, Arm 5, EW 4, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 4216,
+      "segment": 3,
+      "facing": 3,
+      "attributes": {
+        "limbMovement": 1,
+        "maxHealth": 3,
+        "armour": 5,
+        "splashAttack": 5,
+        "rangeAttack": 5,
+        "kinetic": 2,
+        "antiAir": 2,
+        "defence": 4
+      },
+      "currentHealth": 30
+    },
+    {
+      "id": "unit_31",
+      "label": "Heavyweight Annihilator Runner Spider (Mov 4, Kin 0, Rng 2, Spl 4, AA 5, Arm 5, EW 4, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 4173,
+      "segment": 0,
+      "facing": 3,
+      "attributes": {
+        "limbMovement": 4,
+        "maxHealth": 3,
+        "armour": 5,
+        "antiAir": 5,
+        "splashAttack": 4,
+        "defence": 4,
+        "rangeAttack": 2
+      },
+      "currentHealth": 30
+    },
+    {
+      "id": "unit_32",
+      "label": "Heavyweight Nullifier Runner Spider (Mov 4, Kin 1, Rng 5, Spl 5, AA 0, Arm 5, EW 5, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 4173,
+      "segment": 1,
+      "facing": 3,
+      "attributes": {
+        "limbMovement": 4,
+        "maxHealth": 2,
+        "defence": 5,
+        "splashAttack": 5,
+        "rangeAttack": 5,
+        "armour": 5,
+        "kinetic": 1
       },
       "currentHealth": 20
     },
     {
       "id": "unit_33",
-      "label": "Executioner Nullifier Walker Drone (Mov 3, Kin 5, Rng 5, Spl 5, AA 0, Arm 0, EW 5, Rep 0, Eng 0)",
+      "label": "Distance Annihilator Walker Drone (Mov 3, Kin 2, Rng 5, Spl 4, AA 5, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 925,
+      "tileIndex": 1498,
       "segment": 1,
       "facing": 3,
       "attributes": {
         "flightMovement": 3,
         "maxHealth": 4,
+        "antiAir": 5,
         "rangeAttack": 5,
+        "defence": 4,
+        "kinetic": 2,
+        "splashAttack": 4
+      },
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_34",
+      "label": "Executioner Devastator Loitering Drone (Mov 1, Kin 5, Rng 5, Spl 5, AA 5, Arm 0, EW 4, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1498,
+      "segment": 2,
+      "facing": 3,
+      "attributes": {
+        "flightMovement": 1,
+        "maxHealth": 2,
+        "rangeAttack": 5,
+        "antiAir": 5,
         "kinetic": 5,
+        "defence": 4,
+        "splashAttack": 5
+      },
+      "currentHealth": 20
+    },
+    {
+      "id": "unit_35",
+      "label": "Executioner Nullifier Walker Drone (Mov 3, Kin 5, Rng 5, Spl 0, AA 5, Arm 0, EW 5, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 1498,
+      "segment": 3,
+      "facing": 3,
+      "attributes": {
+        "flightMovement": 3,
+        "maxHealth": 4,
+        "rangeAttack": 5,
+        "antiAir": 5,
+        "defence": 5,
+        "kinetic": 5
+      },
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_36",
+      "label": "Executioner Nullifier Loitering Drone (Mov 1, Kin 5, Rng 5, Spl 5, AA 2, Arm 0, EW 5, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 5267,
+      "segment": 0,
+      "facing": 3,
+      "attributes": {
+        "flightMovement": 1,
+        "maxHealth": 4,
+        "kinetic": 5,
+        "defence": 5,
+        "splashAttack": 5,
+        "rangeAttack": 5,
+        "antiAir": 2
+      },
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_37",
+      "label": "Nullifier Devastator Walker Drone (Mov 3, Kin 0, Rng 5, Spl 5, AA 5, Arm 0, EW 5, Rep 0, Eng 0)",
+      "ownerId": "city_6",
+      "tileIndex": 5267,
+      "segment": 1,
+      "facing": 3,
+      "attributes": {
+        "flightMovement": 3,
+        "maxHealth": 4,
+        "antiAir": 5,
+        "rangeAttack": 5,
         "splashAttack": 5,
         "defence": 5
       },
       "currentHealth": 40
     },
     {
-      "id": "unit_34",
-      "label": "Nullifier Devastator Runner Drone (Mov 4, Kin 2, Rng 3, Spl 5, AA 5, Arm 0, EW 5, Rep 0, Eng 0)",
+      "id": "unit_38",
+      "label": "Executioner Devastator Loitering Drone (Mov 1, Kin 5, Rng 5, Spl 5, AA 5, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 925,
+      "tileIndex": 5267,
       "segment": 2,
-      "facing": 3,
-      "attributes": {
-        "flightMovement": 4,
-        "maxHealth": 3,
-        "antiAir": 5,
-        "splashAttack": 5,
-        "defence": 5,
-        "rangeAttack": 3,
-        "kinetic": 2
-      },
-      "currentHealth": 30
-    },
-    {
-      "id": "unit_35",
-      "label": "Nullifier Devastator Walker Drone (Mov 3, Kin 4, Rng 3, Spl 5, AA 5, Arm 0, EW 5, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 925,
-      "segment": 3,
-      "facing": 3,
-      "attributes": {
-        "flightMovement": 3,
-        "maxHealth": 2,
-        "splashAttack": 5,
-        "defence": 5,
-        "antiAir": 5,
-        "rangeAttack": 3,
-        "kinetic": 4
-      },
-      "currentHealth": 20
-    },
-    {
-      "id": "unit_36",
-      "label": "Executioner Nullifier Loitering Drone (Mov 1, Kin 5, Rng 5, Spl 4, AA 5, Arm 0, EW 5, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 742,
-      "segment": 0,
       "facing": 3,
       "attributes": {
         "flightMovement": 1,
         "maxHealth": 2,
-        "defence": 5,
+        "splashAttack": 5,
         "rangeAttack": 5,
         "kinetic": 5,
-        "antiAir": 5,
-        "splashAttack": 4
+        "defence": 4,
+        "antiAir": 5
       },
       "currentHealth": 20
-    },
-    {
-      "id": "unit_37",
-      "label": "Executioner Nullifier Plodder Drone (Mov 2, Kin 5, Rng 5, Spl 5, AA 4, Arm 0, EW 5, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 742,
-      "segment": 1,
-      "facing": 3,
-      "attributes": {
-        "flightMovement": 2,
-        "maxHealth": 1,
-        "kinetic": 5,
-        "rangeAttack": 5,
-        "splashAttack": 5,
-        "defence": 5,
-        "antiAir": 4
-      },
-      "currentHealth": 10
-    },
-    {
-      "id": "unit_38",
-      "label": "Executioner Devastator Plodder Drone (Mov 2, Kin 5, Rng 4, Spl 5, AA 5, Arm 0, EW 3, Rep 0, Eng 0)",
-      "ownerId": "city_6",
-      "tileIndex": 742,
-      "segment": 2,
-      "facing": 3,
-      "attributes": {
-        "flightMovement": 2,
-        "maxHealth": 3,
-        "kinetic": 5,
-        "splashAttack": 5,
-        "antiAir": 5,
-        "rangeAttack": 4,
-        "defence": 3
-      },
-      "currentHealth": 30
     },
     {
       "id": "unit_39",
-      "label": "Executioner Devastator Walker Drone (Mov 3, Kin 5, Rng 5, Spl 5, AA 5, Arm 0, EW 2, Rep 0, Eng 0)",
+      "label": "Executioner Annihilator Runner Drone (Mov 4, Kin 5, Rng 2, Spl 4, AA 5, Arm 0, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 742,
+      "tileIndex": 5267,
       "segment": 3,
       "facing": 3,
       "attributes": {
-        "flightMovement": 3,
-        "maxHealth": 2,
-        "antiAir": 5,
-        "rangeAttack": 5,
-        "splashAttack": 5,
+        "flightMovement": 4,
+        "maxHealth": 4,
         "kinetic": 5,
-        "defence": 2
+        "antiAir": 5,
+        "rangeAttack": 2,
+        "defence": 3,
+        "splashAttack": 4
       },
-      "currentHealth": 20
+      "currentHealth": 40
+    },
+    {
+      "id": "unit_40",
+      "label": "Raider Bantamweight Walker Tank (Mov 3, Kin 2, Rng 2, Spl 0, AA 0, Arm 2, EW 0, Rep 0, Eng 0)",
+      "ownerId": "city_0",
+      "tileIndex": 2201,
+      "segment": 5,
+      "facing": 0,
+      "attributes": {
+        "wheeledMovement": 3,
+        "kinetic": 2,
+        "rangeAttack": 2,
+        "armour": 2,
+        "maxHealth": 3
+      },
+      "currentHealth": 30
+    }
+  ],
+  "buildings": [
+    {
+      "id": "building_0",
+      "ownerId": "city_0",
+      "tileIndex": 2201,
+      "segment": 0,
+      "attributes": {
+        "kinetic": 2,
+        "rangeAttack": 2
+      }
+    },
+    {
+      "id": "building_1",
+      "ownerId": "city_0",
+      "tileIndex": 2201,
+      "segment": 1,
+      "attributes": {
+        "defence": 3
+      }
+    },
+    {
+      "id": "building_2",
+      "ownerId": "city_0",
+      "tileIndex": 2201,
+      "segment": 2,
+      "attributes": {
+        "repair": 3
+      }
     }
   ],
   "playerColor": "#00e5ff",
-  "battleCentreTile": 834
+  "battleCentreTile": 1581
 }

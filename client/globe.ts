@@ -26,14 +26,16 @@ export class GlobeView {
   private overlayCanvas: HTMLCanvasElement;
   private overlayCtx: CanvasRenderingContext2D;
   private onTileSelect: (tileIndex: number) => void;
-  private onViewCentreChange: ((tileIndex: number) => void) | null = null;
+  private onViewCentreChange: ((tileIndex: number, up: [number, number, number]) => void) | null = null;
   private tileIdByFace: Uint32Array; // maps triangle index -> tile index (Uint32: supports >65k tiles)
   private lastViewCentreTile: number = -1;
+  private lastUp: THREE.Vector3 = new THREE.Vector3(0, 1, 0);
   private isProgrammaticPan: boolean = false;
   private panTarget: THREE.Vector3 | null = null;
   private panStart: THREE.Vector3 | null = null;
   private panProgress: number = 1; // 1 = done
   private mouseDownPos: { x: number; y: number } | null = null;
+  private renderPaused: boolean = false;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -472,7 +474,7 @@ export class GlobeView {
   }
 
   /** Register a callback for when the globe's view centre tile changes (orbit/rotate). */
-  setOnViewCentreChange(cb: (tileIndex: number) => void) {
+  setOnViewCentreChange(cb: (tileIndex: number, up: [number, number, number]) => void) {
     this.onViewCentreChange = cb;
   }
 
@@ -481,19 +483,31 @@ export class GlobeView {
     if (!this.onViewCentreChange) return;
     if (this.isProgrammaticPan) return;
 
+    // Screen-up direction in world space = the camera's local +Y axis.
+    // Passed to the flat map so its orientation tracks the globe exactly.
+    this.camera.updateMatrixWorld();
+    const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1).normalize();
+
     // Cast a ray from the centre of the viewport toward the sphere
     this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
     const intersects = this.raycaster.intersectObject(this.tileMesh);
+    if (intersects.length === 0) return;
 
-    if (intersects.length > 0) {
-      const faceIndex = intersects[0].faceIndex;
-      if (faceIndex !== undefined && faceIndex !== null) {
-        const tileIndex = this.tileIdByFace[faceIndex];
-        if (tileIndex !== this.lastViewCentreTile) {
-          this.lastViewCentreTile = tileIndex;
-          this.onViewCentreChange(tileIndex);
-        }
-      }
+    const faceIndex = intersects[0].faceIndex;
+    if (faceIndex === undefined || faceIndex === null) return;
+    const tileIndex = this.tileIdByFace[faceIndex];
+
+    const tileChanged = tileIndex !== this.lastViewCentreTile;
+    // A pure spin at a pole keeps the centre tile fixed but rotates the
+    // screen-up direction. Emit on a meaningful orientation change too, so the
+    // flat map rotates in step and there's no snap-back flip when leaving the
+    // pole. Threshold ≈ 2° (cos 2° ≈ 0.9994) to limit rebuild frequency.
+    const upChanged = up.dot(this.lastUp) < 0.9994;
+
+    if (tileChanged || upChanged) {
+      this.lastViewCentreTile = tileIndex;
+      this.lastUp.copy(up);
+      this.onViewCentreChange(tileIndex, [up.x, up.y, up.z]);
     }
   }
 
@@ -601,8 +615,15 @@ export class GlobeView {
     ctx.restore();
   }
 
+  /** Pause the render loop (e.g. while a blocking modal is open). */
+  pauseRender(): void { this.renderPaused = true; }
+
+  /** Resume the render loop after pauseRender(). */
+  resumeRender(): void { this.renderPaused = false; }
+
   private animate() {
     requestAnimationFrame(() => this.animate());
+    if (this.renderPaused) return;
     if (this.panTarget && this.panStart && this.panProgress < 1) {
       this.panProgress = Math.min(1, this.panProgress + 0.15);
       // Slerp on unit sphere, then scale to correct distance

@@ -2,3 +2,8 @@ node_modules/
 dist/
 *.js.map
 artifacts/sessions/
+
+# Transient test output
+test-results/
+e2e-results.txt
+e2e-endturn.txt

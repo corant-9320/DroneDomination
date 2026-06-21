@@ -35,11 +35,9 @@
  */
 
 import * as THREE from 'three';
-import type { WorldData, UnitData, TileData } from './worldData.js';
+import type { WorldData, UnitData, TileData, BuildingData } from './worldData.js';
 import { buildFlatView, FlatTile, pointInPoly } from './localMapProjection.js';
 import {
-  tileHeight,
-  HEIGHT_LEVELS,
   getMovementMode,
   isImpassableTerrain,
   getMaxMovement,
@@ -61,9 +59,17 @@ import {
 import type { TurnManager } from './turnManager.js';
 import { buildUnitModel } from './unitModel.js';
 import { unitDataToModelAttrs } from './unitRenderer.js';
+import { buildBuildingModel, BUILDING_BASE_FOOTPRINT } from './buildingModel.js';
+import { buildingDataToModelAttrs } from './buildingRenderer.js';
 import { tileColorRGB, factionColor } from './colors.js';
 import { TerrainTextures } from './terrainTextures.js';
 import { dbg } from './debug.js';
+import {
+  buildTerrainMesh,
+  buildVertexHeight as buildVertexHeightFn,
+  elevationWorldHeight,
+  avgHexRadius,
+} from './firstPersonTerrain.js';
 
 /**
  * Command wiring injected by main.ts so first-person can issue the same
@@ -86,26 +92,6 @@ export interface FpCommandContext {
   onCommit: () => void;
 }
 
-import oceanUrl from '../artifacts/ocean.webp';
-import grassUrl from '../artifacts/grass.webp';
-import plainsUrl from '../artifacts/plains.webp';
-import desertUrl from '../artifacts/desert.webp';
-import tundraUrl from '../artifacts/tundra.webp';
-import hillsUrl from '../artifacts/hills.webp';
-import hillsPlainsUrl from '../artifacts/HillsPlains.webp';
-import mountainUrl from '../artifacts/mountain.webp';
-
-/** Texture key → source URL, mirroring TerrainTextures.SOURCES so the 3D view shares the same artwork. */
-const TEXTURE_SOURCES: Record<string, string> = {
-  ocean: oceanUrl,
-  grassland: grassUrl,
-  plains: plainsUrl,
-  desert: desertUrl,
-  tundra: tundraUrl,
-  hills: hillsUrl,
-  hillsPlains: hillsPlainsUrl,
-  mountain: mountainUrl,
-};
 
 /**
  * How many hex rings around the unit to render as the visible environment.
@@ -121,8 +107,10 @@ const HEX_WORLD_RADIUS = 6;
  * World-space vertical scale for terrain elevation. The shared elevation height
  * scale (see terrainContext.elevationHeight) runs 0 (flat) → 1 (mountain), so a
  * mountain rises ELEV_WORLD_SCALE world units above flat ground.
+ * Vertically exaggerated (~2x real proportion) so mountains read as mountains
+ * rather than gentle hills in the perspective view.
  */
-const ELEV_WORLD_SCALE = HEX_WORLD_RADIUS * 2.2;
+const ELEV_WORLD_SCALE = HEX_WORLD_RADIUS * 4.4;
 
 /** Camera eye height above the ground plane (world units). */
 const EYE_HEIGHT = 2.4;
@@ -142,8 +130,22 @@ const FIELD_EXTENT = HEX_WORLD_RADIUS * VIEW_RADIUS;
  */
 const BOOM_MAX = FIELD_EXTENT * 3.0;
 
-/** Forward/back travel per wheel notch (world units) when zooming. */
-const BOOM_STEP = BOOM_MAX / 90;
+/**
+ * Zoom sensitivity: step = camY * BOOM_STEP_FACTOR, clamped to [BOOM_STEP_MIN, BOOM_STEP_MAX].
+ * This gives fine control near the ground and fast travel when high up.
+ */
+const BOOM_STEP_FACTOR = 0.12;
+const BOOM_STEP_MIN = 0.15;
+const BOOM_STEP_MAX = BOOM_MAX / 8;
+
+/**
+ * Closest the boom zoom will dolly toward a unit's shoulder — small so the
+ * camera can come right up to the model without clipping through it.
+ */
+const SHOULDER_STANDOFF = HEX_WORLD_RADIUS * 0.05;
+
+/** Hard floor for the camera eye when zooming right up to a unit. */
+const CAM_MIN_HEIGHT = 0.3;
 
 /**
  * Pan distance per pixel of drag, per world unit of altitude. Scaling by height
@@ -156,12 +158,30 @@ const PAN_FACTOR = 0.0016;
 const DRONE_AIR_HEIGHT = HEX_WORLD_RADIUS * 0.5;
 
 /**
+ * Forest scenery: how many trees to scatter across each forested hex in view.
+ * Trees are static decoration (the 3D echo of the 2D map's forest tree icons),
+ * instanced for performance.
+ */
+const TREES_PER_HEX = 22;
+
+/** Base tree height as a fraction of a hex radius (canopy tip above ground). */
+const TREE_HEX_FRACTION = 0.15;
+
+/**
  * Unit model footprint as a fraction of a hex radius. Units are deliberately
  * tiny relative to the terrain (a tank is a handful of metres; a hex now reads
  * as a swathe of ground hundreds of metres across, with a formation spread out
  * inside it). Bump this to make units larger.
  */
-const UNIT_HEX_FRACTION = 0.055;
+const UNIT_HEX_FRACTION = 0.0825;
+
+/**
+ * Building model footprint as a fraction of a hex radius. Buildings are large
+ * static structures — far bigger than the tiny unit models — so a clustered
+ * city reads as a city from across the field. Sized so a full segment's worth
+ * of structure sits comfortably inside the hex.
+ */
+const BUILDING_HEX_FRACTION = 0.315;
 
 /** Radius (world units) of the selection ring under the player's own unit.
  *  Decoupled from unit size so the (now small) selected unit stays findable. */
@@ -183,7 +203,7 @@ export class FirstPersonView {
   private world: WorldData;
 
   /** Lazily-built THREE textures keyed like TerrainTextures.keyForTile. Loaded once, reused across opens. */
-  private terrainTextures: Map<string, THREE.Texture> | null = null;
+  private terrainTextureCache: Map<string, THREE.Texture> = new Map();
   /** Shared instance used purely for its tile→texture-key mapping. */
   private readonly textureKeys = new TerrainTextures();
 
@@ -202,6 +222,13 @@ export class FirstPersonView {
   /** View direction (radians). yaw 0 = looking toward -Z; pitch +up / -down. */
   private yaw = 0;
   private pitch = 0;
+  /**
+   * Whether wheel-zoom should "boom" toward the selected unit's shoulder (dolly
+   * in + re-aim). Armed by explicit focus actions (open + Home) and cleared the
+   * moment the player pans or looks, so once you move the camera yourself, zoom
+   * stays a plain dolly pointing where you aimed until you re-focus.
+   */
+  private boomFocus = false;
   private dragging = false;
   private lastX = 0;
   private lastY = 0;
@@ -218,7 +245,7 @@ export class FirstPersonView {
   private tileById = new Map<number, FlatTile>();
   private projScale = 1;
   private toWorld: (px: number, py: number) => [number, number, number] = (px, py) => [px, 0, -py];
-  private heightOf: (p: { x: number; y: number }) => number = () => 0;
+  private heightOf: (tileIndex: number, p: { x: number; y: number }) => number = () => 0;
 
   /** Terrain top meshes — raycast targets for click picking. */
   private pickMeshes: THREE.Mesh[] = [];
@@ -228,6 +255,14 @@ export class FirstPersonView {
   private unitGeoms: THREE.BufferGeometry[] = [];
   /** Unique materials owned by the units group (selection rings) — disposed on rebuild/close. */
   private unitMats: THREE.Material[] = [];
+  /** Group holding all building models (real structures + planned ghosts). */
+  private buildingsGroup: THREE.Group | null = null;
+  /** Geometries owned by the buildings group (disposed on rebuild/close). */
+  private buildingGeoms: THREE.BufferGeometry[] = [];
+  /** Materials owned by the buildings group. Unlike unit models (shared
+   *  singletons), buildBuildingModel mints fresh materials per call, so these
+   *  must be disposed on rebuild/close too. */
+  private buildingMats: THREE.Material[] = [];
   /** Movement-range fill overlay (rebuilt on selection change). */
   private rangeGroup: THREE.Group | null = null;
   /** Hover route line overlay (rebuilt on hover). */
@@ -267,10 +302,29 @@ export class FirstPersonView {
       return;
     }
 
-    // Rotation / re-positioning of the selected unit (mirrors the 2D map).
-    if (this.contextMenuOpen) return;
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp') {
-      if (this.handleRotateKey(e)) e.preventDefault();
+    // Home: snap onto the selected unit's shoulder, looking along its facing.
+    // Swallow in the capture phase so the 2D map's Home handler (centre on home
+    // city) doesn't also fire while first-person owns the keyboard.
+    if (e.key === 'Home') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (this.contextMenuOpen) return;
+      this.snapToShoulderOfSelected();
+      return;
+    }
+
+    // The first-person overlay owns keyboard input while open. The 2D map's
+    // own window keydown listener is still attached, so unless we stop the
+    // event here BOTH handlers would rotate the same unit on every arrow press
+    // (facing advancing by 2 → only 3 of the 6 facings ever land). Swallow the
+    // rotation keys in the capture phase so the map never sees them.
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (this.contextMenuOpen) return;
+      // ArrowDown is swallowed (so the 2D map can't act on it) but is not a
+      // first-person command, so it does not rotate.
+      if (e.key !== 'ArrowDown') this.handleRotateKey(e);
     }
   };
 
@@ -312,6 +366,7 @@ export class FirstPersonView {
    */
   refresh(): void {
     if (!this.active) return;
+    this.rebuildBuildings();
     this.rebuildUnits();
     this.rebuildRangeOverlay();
     this.clearRouteOverlay();
@@ -361,12 +416,72 @@ export class FirstPersonView {
     if (!ft) return null;
     const cen = segmentCentroid(ft, unit.segment);
     const [wx, , wz] = this.toWorld(cen.x, cen.y);
-    const fallbackTop = elevationWorldHeight(this.world.tiles[unit.tileIndex]);
+    const fallbackTop = elevationWorldHeight(this.world.tiles[unit.tileIndex], ELEV_WORLD_SCALE);
     const { height: groundY } = sampleSurface(ft, cen.x, cen.y, this.toWorld, this.heightOf, fallbackTop);
     const air = isDrone(unit) ? DRONE_AIR_HEIGHT : 0;
     // Aim at roughly the unit's mid-body so missiles fly between models, not feet.
     const bodyLift = HEX_WORLD_RADIUS * UNIT_HEX_FRACTION * 0.5 + HEX_WORLD_RADIUS * 0.12;
     return new THREE.Vector3(wx, groundY + air + bodyLift, wz);
+  }
+
+  /**
+   * Point roughly at a unit's shoulder — its mid-body lifted toward the top of
+   * the torso. Used as the focal point for the boom zoom.
+   */
+  private shoulderWorldPos(unitId: string): THREE.Vector3 | null {
+    const mid = this.unitWorldPos(unitId);
+    if (!mid) return null;
+    mid.y += HEX_WORLD_RADIUS * UNIT_HEX_FRACTION * 0.35;
+    return mid;
+  }
+
+  /**
+   * Snap the camera onto the selected unit's shoulder, looking horizontally in
+   * the direction the unit faces. Bound to the Home key in first-person view.
+   * No-op when nothing is selected or the unit can't be located.
+   */
+  private snapToShoulderOfSelected(): void {
+    const unitId = this.selectedUnitId;
+    if (!unitId) return;
+    const unit = this.world.units.find((u) => u.id === unitId);
+    if (!unit) return;
+    const ft = this.tileById.get(unit.tileIndex);
+    if (!ft) return;
+    const shoulder = this.shoulderWorldPos(unitId);
+    if (!shoulder) return;
+
+    // Horizontal facing direction → yaw; pitch level so we look straight ahead.
+    const dir = facingDirection(ft, unit.facing);
+    const fLen = Math.hypot(dir.x, dir.z) || 1;
+    const fx = dir.x / fLen;
+    const fz = dir.z / fLen;
+    this.yaw = Math.atan2(fx, -fz);
+    this.pitch = 0;
+
+    // Sit just behind and slightly to the side of the shoulder so the unit
+    // reads in the lower frame (over-the-shoulder), looking forward along its
+    // facing. Right-hand perpendicular of the horizontal forward is (fz, -fx).
+    const back = HEX_WORLD_RADIUS * 0.5;
+    const side = HEX_WORLD_RADIUS * 0.28;
+    this.camPos.set(
+      shoulder.x - fx * back + fz * side,
+      shoulder.y,
+      shoulder.z - fz * back - fx * side,
+    );
+    // Re-frames the unit, so re-arm boom-zoom focus until the next pan/look.
+    this.boomFocus = true;
+    this.applyLook();
+  }
+
+  /** Aim the camera's yaw/pitch at a world target (does not move the eye). */
+  private aimAt(target: THREE.Vector3): void {
+    const dx = target.x - this.camPos.x;
+    const dy = target.y - this.camPos.y;
+    const dz = target.z - this.camPos.z;
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 1e-6) return;
+    this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, Math.asin(dy / len)));
+    this.yaw = Math.atan2(dx, -dz);
   }
 
   /**
@@ -501,13 +616,47 @@ export class FirstPersonView {
    * Builds the scene, environment and unit models, then starts the render loop.
    */
   open(unit: UnitData): void {
+    const selectId = this.cmd && unit.ownerId === this.cmd.getActiveFaction() ? unit.id : null;
+    const airHeight = isDrone(unit) ? DRONE_AIR_HEIGHT : 0;
+    if (this.enterView(unit.tileIndex, unit.segment, unit.facing, airHeight, selectId)) {
+      dbg.localMap.log('FirstPersonView opened for unit', unit.id, 'at tile', unit.tileIndex);
+    }
+  }
+
+  /**
+   * Enter first-person view at an arbitrary hex segment, with no unit required.
+   * Used by the segment right-click "View" menu so the player can look around
+   * from any tile, occupied or not. Read-only: no unit is selected and the
+   * camera sits at ground level facing north.
+   */
+  openAt(tileIndex: number, segment: number): void {
+    const seg = (segment >= 0 ? segment : 0) as 0 | 1 | 2 | 3 | 4 | 5;
+    if (this.enterView(tileIndex, seg, 0, 0, null)) {
+      dbg.localMap.log('FirstPersonView opened at tile', tileIndex, 'segment', seg);
+    }
+  }
+
+  /**
+   * Shared scene-entry used by both {@link open} and {@link openAt}. Builds the
+   * flat view, terrain, units and buildings around `centreTileIndex`, then poses
+   * the free-fly camera at the given `segment`/`facing`. When `selectUnitId` is
+   * provided it selects that unit (command overlays). Returns false (and logs)
+   * if the centre tile is not in the flat view.
+   */
+  private enterView(
+    centreTileIndex: number,
+    segment: 0 | 1 | 2 | 3 | 4 | 5,
+    facing: 0 | 1 | 2 | 3 | 4 | 5,
+    airHeight: number,
+    selectUnitId: string | null,
+  ): boolean {
     if (this.active) this.close();
 
-    const flatTiles = buildFlatView(this.world, unit.tileIndex, VIEW_RADIUS);
-    const centre = flatTiles.find((ft) => ft.tileIndex === unit.tileIndex);
+    const flatTiles = buildFlatView(this.world, centreTileIndex, VIEW_RADIUS);
+    const centre = flatTiles.find((ft) => ft.tileIndex === centreTileIndex);
     if (!centre) {
       dbg.localMap.warn('FirstPersonView: centre tile not in flat view, aborting');
-      return;
+      return false;
     }
 
     // Derive a projection scale so the centre hex has a comfortable world size.
@@ -518,7 +667,7 @@ export class FirstPersonView {
     // Shared, neighbour-averaged height for every boundary vertex — defines the
     // single continuous tilted surface that both the terrain mesh and the units
     // sit on. Built once and reused so units conform to exactly what's drawn.
-    const heightOf = this.buildVertexHeight(flatTiles);
+    const heightOf = buildVertexHeightFn(flatTiles, this.world, ELEV_WORLD_SCALE);
 
     // Capture projection state for picking + overlays.
     this.flatTiles = flatTiles;
@@ -531,30 +680,46 @@ export class FirstPersonView {
 
     this.buildOverlay();
     this.buildScene();
-    this.buildEnvironment(flatTiles, toWorld, heightOf);
+    const terrainResult = buildTerrainMesh(
+      flatTiles,
+      this.world,
+      toWorld,
+      heightOf,
+      this.terrainTextureCache,
+      this.textureKeys,
+      HEX_WORLD_RADIUS,
+      FIELD_EXTENT,
+      ELEV_WORLD_SCALE,
+      this.scene!,
+    );
+    this.pickMeshes = terrainResult.pickMeshes;
+    this.disposables.push(...terrainResult.disposables);
 
     // Groups for units + command overlays, rebuilt independently as state changes.
     this.unitsGroup = new THREE.Group();
     this.rangeGroup = new THREE.Group();
     this.routeGroup = new THREE.Group();
-    this.scene!.add(this.unitsGroup, this.rangeGroup, this.routeGroup);
+    this.buildingsGroup = new THREE.Group();
+    this.scene!.add(this.unitsGroup, this.rangeGroup, this.routeGroup, this.buildingsGroup);
+    this.rebuildBuildings();
     this.rebuildUnits();
 
-    // Auto-select the entry unit if it belongs to the commandable faction.
-    if (this.cmd && unit.ownerId === this.cmd.getActiveFaction()) {
-      this.selectUnit(unit.id);
+    // Scatter static forest scenery across forested hexes (built once per open).
+    this.buildTrees();
+    if (selectUnitId) {
+      this.selectUnit(selectUnitId);
     }
 
-    // Initial camera: sit at the selected unit's eye, looking along its facing,
-    // then pull back and lift a little so the unit (and its ring) is in frame —
+    // Initial camera: sit at the segment's eye, looking along `facing`, then
+    // pull back and lift a little so the spot (and any unit there) is in frame —
     // a gentle starting pose for the free-fly camera.
-    const eye = segmentCentroid(centre, unit.segment);
+    const eye = segmentCentroid(centre, segment);
     const [ex, , ez] = toWorld(eye.x, eye.y);
     const centreGround = sampleSurface(centre, eye.x, eye.y, toWorld, heightOf,
-      elevationWorldHeight(this.world.tiles[unit.tileIndex])).height;
-    const centreAir = isDrone(unit) ? DRONE_AIR_HEIGHT : 0;
+      elevationWorldHeight(this.world.tiles[centreTileIndex], ELEV_WORLD_SCALE)).height;
+    const centreAir = airHeight;
 
-    const dir = facingDirection(centre, unit.facing);
+    const dir = facingDirection(centre, facing);
     this.yaw = Math.atan2(dir.x, -dir.z);
     this.pitch = -0.12;
 
@@ -565,6 +730,9 @@ export class FirstPersonView {
       .addScaledVector(forward, -back)
       .add(new THREE.Vector3(0, back * 0.35, 0));
     this.clampPos();
+    // Initial pose frames the unit, so arm boom-zoom focus until the player
+    // takes manual control (pan/look).
+    this.boomFocus = true;
 
     this.active = true;
     this.resize();
@@ -572,9 +740,12 @@ export class FirstPersonView {
     this.loop();
 
     window.addEventListener('resize', this.onResize);
-    window.addEventListener('keydown', this.onKeyDown);
+    // Capture phase + stopImmediatePropagation in the handler ensures the 2D
+    // map's window keydown listener (also on window) does NOT also process
+    // arrow keys while first-person is open.
+    window.addEventListener('keydown', this.onKeyDown, true);
 
-    dbg.localMap.log('FirstPersonView opened for unit', unit.id, 'at tile', unit.tileIndex);
+    return true;
   }
 
   /** Exit first-person view and release all GPU resources. */
@@ -584,7 +755,7 @@ export class FirstPersonView {
 
     cancelAnimationFrame(this.rafId);
     window.removeEventListener('resize', this.onResize);
-    window.removeEventListener('keydown', this.onKeyDown);
+    window.removeEventListener('keydown', this.onKeyDown, true);
     window.removeEventListener('mouseup', this.onMouseUp);
     this.contextMenu.close();
     this.contextMenuOpen = false;
@@ -604,11 +775,21 @@ export class FirstPersonView {
       try { m.dispose(); } catch { /* best-effort */ }
     }
     this.unitMats = [];
+    // Building models own both their geometries AND materials (fresh per build).
+    for (const g of this.buildingGeoms) {
+      try { g.dispose(); } catch { /* best-effort */ }
+    }
+    this.buildingGeoms = [];
+    for (const m of this.buildingMats) {
+      try { m.dispose(); } catch { /* best-effort */ }
+    }
+    this.buildingMats = [];
     this.clearGroup(this.rangeGroup);
     this.clearGroup(this.routeGroup);
     this.unitsGroup = null;
     this.rangeGroup = null;
     this.routeGroup = null;
+    this.buildingsGroup = null;
     this.pickMeshes = [];
     this.flatTiles = [];
     this.tileById.clear();
@@ -671,203 +852,6 @@ export class FirstPersonView {
     this.renderer = renderer;
   }
 
-  /**
-   * Lazily build (and cache) the THREE textures for terrain tops. Created from
-   * the same `artifacts/*.webp` artwork the 2D map uses. THREE.TextureLoader
-   * returns each Texture immediately and flips `needsUpdate` once the image
-   * arrives, so the first render never blocks on the network.
-   */
-  private getTerrainTextures(): Map<string, THREE.Texture> {
-    if (this.terrainTextures) return this.terrainTextures;
-    const loader = new THREE.TextureLoader();
-    const map = new Map<string, THREE.Texture>();
-    for (const [key, url] of Object.entries(TEXTURE_SOURCES)) {
-      const tex = loader.load(url);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.wrapS = THREE.ClampToEdgeWrapping;
-      tex.wrapT = THREE.ClampToEdgeWrapping;
-      tex.anisotropy = 4;
-      map.set(key, tex);
-    }
-    this.terrainTextures = map;
-    return map;
-  }
-
-  /**
-   * Build the shared "continuous surface" height lookup: average each boundary
-   * vertex's plateau height across every tile that touches it. Because adjacent
-   * hexes share the same projected vertices, they resolve to identical heights —
-   * so the plateau tops tilt to meet their neighbours and the terrain reads as
-   * one smooth, sloping landform rather than stepped plateaus. The unit-placement
-   * pass samples this exact surface so models conform to what's drawn.
-   */
-  private buildVertexHeight(flatTiles: FlatTile[]): (p: { x: number; y: number }) => number {
-    const vKey = (p: { x: number; y: number }): string =>
-      `${Math.round(p.x * 1e4)}:${Math.round(p.y * 1e4)}`;
-    const vAccum = new Map<string, { sum: number; count: number }>();
-    for (const ft of flatTiles) {
-      const tTop = elevationWorldHeight(this.world.tiles[ft.tileIndex]);
-      for (const p of ft.poly) {
-        const k = vKey(p);
-        const acc = vAccum.get(k);
-        if (acc) { acc.sum += tTop; acc.count++; }
-        else vAccum.set(k, { sum: tTop, count: 1 });
-      }
-    }
-    return (p: { x: number; y: number }): number => {
-      const acc = vAccum.get(vKey(p));
-      return acc ? acc.sum / acc.count : 0;
-    };
-  }
-
-  /** Build the ground hexes (raised to terrain elevation) and a far horizon disc. */
-  private buildEnvironment(
-    flatTiles: FlatTile[],
-    toWorld: (px: number, py: number) => [number, number, number],
-    vertexHeight: (p: { x: number; y: number }) => number,
-  ): void {
-    const scene = this.scene!;
-    const textures = this.getTerrainTextures();
-
-    // Determine the lowest terrain top so cliff skirts can drop to a common
-    // floor below everything — this closes the vertical gaps that open up
-    // between hexes at different elevations.
-    let minTop = Infinity;
-    for (const ft of flatTiles) {
-      minTop = Math.min(minTop, elevationWorldHeight(this.world.tiles[ft.tileIndex]));
-    }
-    if (!isFinite(minTop)) minTop = 0;
-    const floorY = minTop - HEX_WORLD_RADIUS * 1.5;
-
-    // Far horizon ground so there's no void beyond the rendered hexes.
-    const horizonGeo = new THREE.CircleGeometry(FIELD_EXTENT * 5, 48);
-    const horizonMat = new THREE.MeshBasicMaterial({ color: 0x6f7d54 });
-    const horizon = new THREE.Mesh(horizonGeo, horizonMat);
-    horizon.rotation.x = -Math.PI / 2;
-    horizon.position.y = floorY + 0.05;
-    scene.add(horizon);
-    this.disposables.push(horizonGeo, horizonMat);
-
-    // Hex tops are grouped by texture key — one textured mesh per terrain type
-    // — so each plateau shows the same artwork as the 2D map, tinted by the
-    // tile's biome colour (vertex colours multiply the texture).
-    type TopGroup = { positions: number[]; colors: number[]; uvs: number[] };
-    const topGroups = new Map<string, TopGroup>();
-
-    // Cliff skirts stay vertex-coloured (a darker wall, no texture needed) and
-    // the rim outline is drawn as line segments.
-    const skirtPositions: number[] = [];
-    const skirtColors: number[] = [];
-    const edgePositions: number[] = [];
-
-    for (const ft of flatTiles) {
-      const tile = this.world.tiles[ft.tileIndex];
-      const [r, g, b] = tileColorRGB(tile);
-      const n = ft.poly.length;
-
-      // World positions of the boundary vertices, each lifted to its shared
-      // (averaged) height so neighbouring tiles meet seamlessly.
-      const tv = ft.poly.map((p) => {
-        const w = toWorld(p.x, p.y);
-        return [w[0], vertexHeight(p), w[2]] as [number, number, number];
-      });
-
-      // Per-tile UVs: map the hex's flat bounding box onto the full texture so
-      // each hex shows the whole image (matching the 2D fillTileTexture look).
-      let minX = Infinity, maxX = -Infinity, minPy = Infinity, maxPy = -Infinity;
-      for (const p of ft.poly) {
-        if (p.x < minX) minX = p.x;
-        if (p.x > maxX) maxX = p.x;
-        if (p.y < minPy) minPy = p.y;
-        if (p.y > maxPy) maxPy = p.y;
-      }
-      const wX = maxX - minX || 1;
-      const wY = maxPy - minPy || 1;
-      const uvOf = (i: number): [number, number] => [
-        (ft.poly[i].x - minX) / wX,
-        1 - (ft.poly[i].y - minPy) / wY,
-      ];
-
-      const key = this.textureKeys.keyForTile(tile) ?? 'grassland';
-      let grp = topGroups.get(key);
-      if (!grp) {
-        grp = { positions: [], colors: [], uvs: [] };
-        topGroups.set(key, grp);
-      }
-
-      // Plateau top — triangle fan from poly[0].
-      for (let i = 1; i < n - 1; i++) {
-        for (const idx of [0, i, i + 1]) {
-          grp.positions.push(tv[idx][0], tv[idx][1], tv[idx][2]);
-          grp.colors.push(r, g, b);
-          const [u, v] = uvOf(idx);
-          grp.uvs.push(u, v);
-        }
-      }
-
-      // Cliff skirts — a darker vertical wall from each edge down to the floor.
-      const sr = r * 0.55, sg = g * 0.55, sb = b * 0.55;
-      for (let i = 0; i < n; i++) {
-        const a = tv[i];
-        const c = tv[(i + 1) % n];
-        // Two triangles forming the quad [a_top, c_top, c_floor, a_floor].
-        const pushSkirt = (x: number, y: number, z: number) => {
-          skirtPositions.push(x, y, z);
-          skirtColors.push(sr, sg, sb);
-        };
-        pushSkirt(a[0], a[1], a[2]);
-        pushSkirt(c[0], c[1], c[2]);
-        pushSkirt(c[0], floorY, c[2]);
-        pushSkirt(a[0], a[1], a[2]);
-        pushSkirt(c[0], floorY, c[2]);
-        pushSkirt(a[0], floorY, a[2]);
-      }
-
-      // Hex outline along the plateau rim (slightly raised to avoid z-fighting).
-      for (let i = 0; i < n; i++) {
-        const v0 = tv[i];
-        const v1 = tv[(i + 1) % n];
-        edgePositions.push(v0[0], v0[1] + 0.02, v0[2], v1[0], v1[1] + 0.02, v1[2]);
-      }
-    }
-
-    // One textured mesh per terrain key for the plateau tops.
-    this.pickMeshes = [];
-    for (const [key, grp] of topGroups) {
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(grp.positions), 3));
-      geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(grp.colors), 3));
-      geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(grp.uvs), 2));
-      geo.computeVertexNormals();
-      const mat = new THREE.MeshStandardMaterial({
-        map: textures.get(key) ?? null,
-        vertexColors: true,
-        roughness: 0.95,
-        metalness: 0.0,
-        side: THREE.DoubleSide,
-      });
-      const topMesh = new THREE.Mesh(geo, mat);
-      scene.add(topMesh);
-      this.pickMeshes.push(topMesh);
-      this.disposables.push(geo, mat);
-    }
-
-    // Vertex-coloured cliff skirts (no texture).
-    const skirtGeo = new THREE.BufferGeometry();
-    skirtGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(skirtPositions), 3));
-    skirtGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(skirtColors), 3));
-    skirtGeo.computeVertexNormals();
-    const skirtMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0.0, side: THREE.DoubleSide });
-    scene.add(new THREE.Mesh(skirtGeo, skirtMat));
-    this.disposables.push(skirtGeo, skirtMat);
-
-    const edgeGeo = new THREE.BufferGeometry();
-    edgeGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(edgePositions), 3));
-    const edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.15 });
-    scene.add(new THREE.LineSegments(edgeGeo, edgeMat));
-    this.disposables.push(edgeGeo, edgeMat);
-  }
-
   /** (Re)build a 3D model for every unit in view, into the units group. */
   private rebuildUnits(): void {
     const scene = this.scene;
@@ -916,7 +900,7 @@ export class FirstPersonView {
       // it sits on the slope rather than floating at the flat plateau height.
       const cen = segmentCentroid(ft, unit.segment);
       const [wx, , wz] = toWorld(cen.x, cen.y);
-      const fallbackTop = elevationWorldHeight(this.world.tiles[unit.tileIndex]);
+      const fallbackTop = elevationWorldHeight(this.world.tiles[unit.tileIndex], ELEV_WORLD_SCALE);
       const { height: groundY, normal } = sampleSurface(ft, cen.x, cen.y, toWorld, heightOf, fallbackTop);
 
       const dir = facingDirection(ft, unit.facing);
@@ -966,6 +950,194 @@ export class FirstPersonView {
         if (mesh.geometry) this.unitGeoms.push(mesh.geometry);
       });
     }
+  }
+
+  /**
+   * (Re)build a 3D model for every building into the buildings group. Real
+   * buildings render solid; planned buildings (the same ones the City Design
+   * planner shows as ghosts) render translucent. Buildings are immobile
+   * full-segment structures, so they're placed upright at their segment
+   * centroid — front facing the segment's outer edge — without slope tilt.
+   */
+  private rebuildBuildings(): void {
+    const scene = this.scene;
+    const group = this.buildingsGroup;
+    if (!scene || !group) return;
+
+    // Tear down previous models (dispose geometries AND materials).
+    for (const child of [...group.children]) group.remove(child);
+    for (const g of this.buildingGeoms) {
+      try { g.dispose(); } catch { /* best-effort */ }
+    }
+    this.buildingGeoms = [];
+    for (const m of this.buildingMats) {
+      try { m.dispose(); } catch { /* best-effort */ }
+    }
+    this.buildingMats = [];
+
+    const toWorld = this.toWorld;
+    const heightOf = this.heightOf;
+    const tileById = this.tileById;
+
+    const place = (b: BuildingData, ghost: boolean): void => {
+      const ft = tileById.get(b.tileIndex);
+      if (!ft) return;
+
+      const attrs = buildingDataToModelAttrs(b);
+      const fc = factionColor(this.world, b.ownerId);
+      const model = buildBuildingModel(attrs, fc);
+
+      // Scale the structure to a building footprint (much larger than units).
+      // Scale from the fixed base-block footprint — NOT the full bounding box —
+      // so every building's body reads at the same on-screen size regardless of
+      // equipment. Horizontally-protruding gear (gun barrels, anti-air dishes)
+      // is then free to extend past the hex fraction instead of shrinking the
+      // whole structure to make room for it.
+      const s = (HEX_WORLD_RADIUS * BUILDING_HEX_FRACTION) / BUILDING_BASE_FOOTPRINT;
+      model.scale.setScalar(s);
+
+      // Sit the base flush on the terrain at the segment centroid, standing
+      // upright (buildings don't tilt with the slope the way units do).
+      const box2 = new THREE.Box3().setFromObject(model);
+      const groundLift = -box2.min.y;
+      const cen = segmentCentroid(ft, b.segment);
+      const [wx, , wz] = toWorld(cen.x, cen.y);
+      const fallbackTop = elevationWorldHeight(this.world.tiles[b.tileIndex], ELEV_WORLD_SCALE);
+      const { height: groundY } = sampleSurface(ft, cen.x, cen.y, toWorld, heightOf, fallbackTop);
+
+      const dir = facingDirection(ft, b.segment);
+      orientToSurface(model, new THREE.Vector3(0, 1, 0), dir);
+      model.position.set(wx, groundY + groundLift, wz);
+
+      // Planned buildings render as translucent "ghosts" (mirrors the dashed
+      // grey markers the City Design planner draws).
+      if (ghost) {
+        model.traverse((obj) => {
+          const mesh = obj as THREE.Mesh;
+          const mat = mesh.material as THREE.MeshStandardMaterial | undefined;
+          if (mat && 'opacity' in mat) {
+            mat.transparent = true;
+            mat.opacity = 0.35;
+            mat.depthWrite = false;
+          }
+        });
+      }
+
+      group.add(model);
+      model.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (mesh.geometry) this.buildingGeoms.push(mesh.geometry);
+        const mat = mesh.material;
+        if (Array.isArray(mat)) this.buildingMats.push(...mat);
+        else if (mat) this.buildingMats.push(mat as THREE.Material);
+      });
+    };
+
+    for (const b of this.world.buildings) place(b, false);
+    for (const b of this.world.plannedBuildings ?? []) place(b, true);
+  }
+
+  /**
+   * Scatter simple 3D trees across every forested hex currently in view. This is
+   * the first-person echo of the 2D map's forest tree icons
+   * (terrainFeatures.drawForestCornerTrees): a low-poly trunk + conical canopy,
+   * drawn with two InstancedMeshes (one per part) for performance. Placement is
+   * driven by a per-tile seeded RNG so a given forest looks identical each time
+   * the view is opened. Trees are static scenery — built once on open() and torn
+   * down with the rest of the scene on close() (geometry/material pushed onto
+   * `disposables`).
+   */
+  private buildTrees(): void {
+    const scene = this.scene;
+    if (!scene) return;
+
+    const toWorld = this.toWorld;
+    const heightOf = this.heightOf;
+
+    // Gather an upright world-space placement for every tree first, so we can
+    // size the InstancedMeshes exactly. `round` mixes spherical canopies in
+    // among the cones for a more varied treeline.
+    const placements: Array<{ x: number; y: number; z: number; yaw: number; scale: number; round: boolean }> = [];
+    for (const ft of this.flatTiles) {
+      const tile = this.world.tiles[ft.tileIndex];
+      if (!tile.f) continue; // forested hexes only
+      const n = ft.poly.length;
+      const rand = mulberry32((ft.tileIndex * 0x9e3779b1) >>> 0);
+      const fallbackTop = elevationWorldHeight(tile, ELEV_WORLD_SCALE);
+
+      for (let t = 0; t < TREES_PER_HEX; t++) {
+        // Random point inside the hex: pick a fan triangle (centre → edge) then
+        // a uniform barycentric point within it.
+        const seg = Math.min(n - 1, Math.floor(rand() * n));
+        const v0 = ft.poly[seg];
+        const v1 = ft.poly[(seg + 1) % n];
+        let a = rand(), b = rand();
+        if (a + b > 1) { a = 1 - a; b = 1 - b; }
+        const px = ft.cx + a * (v0.x - ft.cx) + b * (v1.x - ft.cx);
+        const py = ft.cy + a * (v0.y - ft.cy) + b * (v1.y - ft.cy);
+        const [wx, , wz] = toWorld(px, py);
+        const { height } = sampleSurface(ft, px, py, toWorld, heightOf, fallbackTop);
+        placements.push({
+          x: wx, y: height, z: wz,
+          yaw: rand() * Math.PI * 2,
+          scale: 0.7 + rand() * 0.6,
+          round: rand() < 0.4, // ~40% rounded (deciduous) canopies, rest conical
+        });
+      }
+    }
+    if (placements.length === 0) return;
+
+    // Tree parts, pre-translated in local Y so the trunk base sits at y=0 and
+    // the canopy stacks above it. Sharing one matrix per instance across the
+    // trunk + canopy meshes keeps each canopy locked to its trunk.
+    const treeH = HEX_WORLD_RADIUS * TREE_HEX_FRACTION;
+    const trunkH = treeH * 0.4;
+    const coneH = treeH * 0.85;
+    const sphereR = treeH * 0.32;
+
+    const trunkGeo = new THREE.CylinderGeometry(treeH * 0.04, treeH * 0.06, trunkH, 6);
+    trunkGeo.translate(0, trunkH / 2, 0);
+    const coneGeo = new THREE.ConeGeometry(treeH * 0.28, coneH, 7);
+    coneGeo.translate(0, trunkH + coneH / 2, 0);
+    const sphereGeo = new THREE.SphereGeometry(sphereR, 8, 6);
+    sphereGeo.translate(0, trunkH + sphereR * 0.85, 0);
+
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.95, metalness: 0 });
+    const coneMat = new THREE.MeshStandardMaterial({ color: 0x2f6a24, roughness: 0.9, metalness: 0 });
+    const sphereMat = new THREE.MeshStandardMaterial({ color: 0x4f8a32, roughness: 0.9, metalness: 0 });
+
+    const coneCount = placements.filter((p) => !p.round).length;
+    const sphereCount = placements.length - coneCount;
+    const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, placements.length);
+    const coneMesh = new THREE.InstancedMesh(coneGeo, coneMat, coneCount);
+    const sphereMesh = new THREE.InstancedMesh(sphereGeo, sphereMat, sphereCount);
+
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const pos = new THREE.Vector3();
+    const scl = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+    let ci = 0, si = 0;
+    for (let i = 0; i < placements.length; i++) {
+      const p = placements[i];
+      q.setFromAxisAngle(up, p.yaw);
+      pos.set(p.x, p.y, p.z);
+      scl.setScalar(p.scale);
+      m.compose(pos, q, scl);
+      trunkMesh.setMatrixAt(i, m);
+      if (p.round) sphereMesh.setMatrixAt(si++, m);
+      else coneMesh.setMatrixAt(ci++, m);
+    }
+    trunkMesh.instanceMatrix.needsUpdate = true;
+    coneMesh.instanceMatrix.needsUpdate = true;
+    sphereMesh.instanceMatrix.needsUpdate = true;
+
+    scene.add(trunkMesh, coneMesh, sphereMesh);
+    this.disposables.push(
+      trunkMesh, coneMesh, sphereMesh,
+      trunkGeo, coneGeo, sphereGeo,
+      trunkMat, coneMat, sphereMat,
+    );
   }
 
   // ─── Command interaction (select / move / attack / repair) ──────────────────
@@ -1271,7 +1443,7 @@ export class FirstPersonView {
   /** Lift a flat-space point onto the rendered terrain surface (+ epsilon). */
   private liftFlat(ft: FlatTile, x: number, y: number, eps = 0.12): THREE.Vector3 {
     const [wx, , wz] = this.toWorld(x, y);
-    const top = elevationWorldHeight(this.world.tiles[ft.tileIndex]);
+    const top = elevationWorldHeight(this.world.tiles[ft.tileIndex], ELEV_WORLD_SCALE);
     const h = sampleSurface(ft, x, y, this.toWorld, this.heightOf, top).height;
     return new THREE.Vector3(wx, h + eps, wz);
   }
@@ -1446,6 +1618,7 @@ export class FirstPersonView {
         // Look around in place — "grab the surface and turn it": dragging moves
         // the world the same way it does when panning. Drag right → world swings
         // right (camera yaws left); drag down → world tilts down (camera looks up).
+        this.boomFocus = false;
         this.yaw -= dx * LOOK_SPEED;
         this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch + dy * LOOK_SPEED));
       } else {
@@ -1453,6 +1626,7 @@ export class FirstPersonView {
         // the cursor. Drag right → surface slides right (eye moves left); drag down
         // → surface slides toward you (eye moves forward). Stays on the horizontal
         // plane (yaw-based axes, pitch ignored) so altitude never changes.
+        this.boomFocus = false;
         const sinY = Math.sin(this.yaw), cosY = Math.cos(this.yaw);
         const fwdX = sinY, fwdZ = -cosY;   // horizontal forward (yaw only)
         const rightX = cosY, rightZ = sinY; // horizontal right
@@ -1464,9 +1638,34 @@ export class FirstPersonView {
     });
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      // Scroll up = move forward (zoom in); scroll down = move back (zoom out).
-      const forward = this.forwardVec();
-      this.camPos.addScaledVector(forward, e.deltaY > 0 ? -BOOM_STEP : BOOM_STEP);
+      // Step scales with current altitude: tiny near the ground, large when high up.
+      const step = Math.min(BOOM_STEP_MAX, Math.max(BOOM_STEP_MIN, this.camPos.y * BOOM_STEP_FACTOR));
+      const zoomIn = e.deltaY < 0;
+      // Boom zoom: only while focus is armed (right after open or the Home
+      // shoulder-snap) does the wheel dolly toward + re-aim at the selected
+      // unit's shoulder. Once the player pans or looks, focus is cleared and
+      // zoom becomes a plain forward dolly that keeps pointing where they aimed.
+      const shoulder = this.boomFocus && this.selectedUnitId
+        ? this.shoulderWorldPos(this.selectedUnitId)
+        : null;
+      let boomed = false;
+      if (shoulder) {
+        const dir = shoulder.clone().sub(this.camPos);
+        const dist = dir.length();
+        if (dist > 1e-3) {
+          dir.divideScalar(dist);
+          // Leave a small standoff when zooming in so the camera frames the
+          // shoulder rather than punching through the model.
+          const move = zoomIn ? Math.min(step, Math.max(0, dist - SHOULDER_STANDOFF)) : -step;
+          this.camPos.addScaledVector(dir, move);
+          this.aimAt(shoulder);
+          boomed = true;
+        }
+      }
+      if (!boomed) {
+        const forward = this.forwardVec();
+        this.camPos.addScaledVector(forward, zoomIn ? step : -step);
+      }
       this.applyLook();
     }, { passive: false });
 
@@ -1519,7 +1718,7 @@ export class FirstPersonView {
   private clampPos(): void {
     this.camPos.x = Math.max(-FIELD_EXTENT, Math.min(FIELD_EXTENT, this.camPos.x));
     this.camPos.z = Math.max(-FIELD_EXTENT, Math.min(FIELD_EXTENT, this.camPos.z));
-    this.camPos.y = Math.max(0.5, Math.min(BOOM_MAX, this.camPos.y));
+    this.camPos.y = Math.max(CAM_MIN_HEIGHT, Math.min(BOOM_MAX, this.camPos.y));
   }
 
   private applyLook(): void {
@@ -1584,26 +1783,17 @@ function isDrone(unit: UnitData): boolean {
 }
 
 /**
- * World-space terrain height for a tile, derived from its discrete 0–11 height.
- * Normalised to the shared 0→1 scale and lifted into world units via
- * ELEV_WORLD_SCALE. Ocean sits slightly below the flat floor.
+ * Tiny deterministic PRNG (mulberry32). Seeded per forested tile so each
+ * forest's tree scatter is stable across repeated open/close cycles.
  */
-function elevationWorldHeight(tile: TileData): number {
-  // True open ocean sits just below the flat floor. River hexes share the
-  // ocean terrain type but descend the valley toward the sea — use their own
-  // height so they don't render flattened at sea level.
-  const isOpenOcean = (tile.terrain === 'ocean' || tile.elevType === 'ocean') && tile.rv === undefined;
-  if (isOpenOcean) return -0.25 * ELEV_WORLD_SCALE;
-  return (tileHeight(tile) / (HEIGHT_LEVELS - 1)) * ELEV_WORLD_SCALE;
-}
-
-/** Average distance from a flat tile's centre to its boundary vertices. */
-function avgHexRadius(ft: FlatTile): number {
-  let sum = 0;
-  for (const v of ft.poly) {
-    sum += Math.sqrt((v.x - ft.cx) ** 2 + (v.y - ft.cy) ** 2);
-  }
-  return sum / Math.max(1, ft.poly.length);
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 /** Centroid of a hex segment (triangle: centre, vertex s, vertex s+1) in flat coords. */
@@ -1660,13 +1850,14 @@ function sampleSurface(
   ft: FlatTile,
   px: number, py: number,
   toWorld: (px: number, py: number) => [number, number, number],
-  heightOf: (p: { x: number; y: number }) => number,
+  heightOf: (tileIndex: number, p: { x: number; y: number }) => number,
   fallback: number,
 ): { height: number; normal: THREE.Vector3 } {
   const n = ft.poly.length;
+  const h = (p: { x: number; y: number }): number => heightOf(ft.tileIndex, p);
   const lift = (p: { x: number; y: number }): THREE.Vector3 => {
     const [wx, , wz] = toWorld(p.x, p.y);
-    return new THREE.Vector3(wx, heightOf(p), wz);
+    return new THREE.Vector3(wx, h(p), wz);
   };
   for (let i = 1; i < n - 1; i++) {
     const a = ft.poly[0], b = ft.poly[i], c = ft.poly[i + 1];
@@ -1674,7 +1865,7 @@ function sampleSurface(
     if (!bary) continue;
     const [wa, wb, wc] = bary;
     if (wa < -1e-6 || wb < -1e-6 || wc < -1e-6) continue;
-    const height = wa * heightOf(a) + wb * heightOf(b) + wc * heightOf(c);
+    const height = wa * h(a) + wb * h(b) + wc * h(c);
     const pa = lift(a), pb = lift(b), pc = lift(c);
     const normal = new THREE.Vector3()
       .subVectors(pb, pa)

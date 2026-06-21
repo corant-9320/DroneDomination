@@ -73,7 +73,13 @@ export function isTextureReady(): boolean {
 // Chassis types
 // ---------------------------------------------------------------------------
 
-export type ChassisType = 'wheeled' | 'limbed' | 'flight';
+/**
+ * Model base type. The three movement chassis (wheeled/limbed/flight) belong to
+ * mobile units; `building` is a static structure base used by buildingModel.ts.
+ * Buildings reuse the same attribute add-on builders (gun, splash, anti-air,
+ * armour, defence, repair) but never carry movement or engineering equipment.
+ */
+export type ChassisType = 'wheeled' | 'limbed' | 'flight' | 'building';
 
 export interface UnitModelAttrs {
   kinetic: number;

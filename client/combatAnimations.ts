@@ -85,10 +85,13 @@ interface SmokeState {
 
 interface MoveState {
   type: 'move';
-  from: Vec2;
-  to: Vec2;
   progress: number;
-  onStep: (pos: Vec2) => void;
+  /**
+   * Called each frame with the eased progress (0–1). The caller is responsible
+   * for converting progress into a screen position using the *current* view
+   * projection, so the glide tracks any map recentre that happens mid-animation.
+   */
+  onStep: (progress: number) => void;
 }
 
 type AnimationState = MissileState | ExplosionState | SmokeState | MoveState;
@@ -241,14 +244,14 @@ export class CombatAnimator {
   }
 
   /**
-   * Play a smooth movement animation for a unit sliding from `from` to `to`.
-   * `onStep` is called each frame with the current interpolated position so
-   * the caller can re-render the unit at the right screen location.
-   * Resolves when the unit reaches its destination.
+   * Play a smooth movement glide for a unit. `onStep` is called each frame with
+   * the eased progress (0–1); the caller converts it to a screen position using
+   * the current projection so the glide stays correct even if the map recentres
+   * mid-animation. Resolves when the unit reaches its destination.
    */
-  playMove(from: Vec2, to: Vec2, onStep: (pos: Vec2) => void): Promise<void> {
+  playMove(onStep: (progress: number) => void): Promise<void> {
     return new Promise((resolve) => {
-      const state: MoveState = { type: 'move', from, to, progress: 0, onStep };
+      const state: MoveState = { type: 'move', progress: 0, onStep };
       this.enqueue(state, MOVE_DURATION, resolve);
     });
   }
@@ -698,8 +701,7 @@ export class CombatAnimator {
 
   private updateMove(m: MoveState, t: number) {
     m.progress = this.easeInOutCubic(t);
-    const pos = this.lerpVec(m.from, m.to, m.progress);
-    m.onStep(pos);
+    m.onStep(m.progress);
   }
 
   // ─── Helpers ────────────────────────────────────────────────────────

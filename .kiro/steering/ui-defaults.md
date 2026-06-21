@@ -48,6 +48,9 @@ Spans local map width minus curtain (280 px). Shows:
   outcome (no per-step delay, animations bypassed); turn then returns to player
 
 Combat highlights: red attacker ring, cyan target ring, dashed arrow.
+Move indicator: amber origin ring + dot at the start segment, dashed amber arrow
+to the unit's new position. An enemy unit's `#number` turns red once it has
+moved/acted this AI turn.
 
 ## Keyboard Shortcuts
 
@@ -56,10 +59,25 @@ Combat highlights: red attacker ring, cyan target ring, dashed arrow.
 | Home | Centre on home city |
 | Space | End Turn |
 | B | Engineer builds a bridge over an adjacent river hex |
+| C | Construct a building on the selected hex segment (one per faction per turn) |
 | V | First-person view of selected unit (toggle; Esc exits) |
 | Ctrl+S | Save game |
 | Ctrl+L | Load game |
 | Escape | Close modal / deselect / exit first-person view |
+
+## Right-Click Menus
+
+- **Own unit** (selected): rotate, refit, sleep, first-person view.
+- **Any segment** (no unit selected, right-click the segment): **👁 View** —
+  enter the read-only first-person look-around positioned at that segment, works
+  on empty segments too (Esc exits). When the segment also holds a player-owned
+  building or is on the player capital, the same menu additionally shows:
+  - **⚙ Refit Building** — opens the building refit modal. Redistribute
+    the seven equipment attributes (kinetic, range, splash, anti-air, armour,
+    defence, repair) within a fixed points budget. No movement/engineering.
+  - **🏛 City Design** (capital hex, segment without a building) — opens the city
+    planner modal. Plan buildings ahead of time; planned buildings show
+    greyed/dashed, built ones solid. Plans persist per seed (localStorage).
 
 ## Design Principles
 

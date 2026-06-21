@@ -1,63 +1,33 @@
 /**
  * Compact wire format serialization.
  *
- * Converts authoritative World objects into the minified JSON format
- * used by the API and data/world.json. Shared between the CLI generator
- * and the API handler.
+ * Converts authoritative World objects into the minified JSON used by the API
+ * and data/world.json. The wire types are defined in `shared/wireTypes.ts` —
+ * this module provides the serialization functions that produce them.
  *
- * The CompactTile/CompactUnit shapes here are the SERVER-SIDE source of truth
- * for the wire format. The client mirror lives in `client/worldData.ts`
- * (TileData/UnitData) — keep the two in sync. See that file's header for the
- * full authoritative→wire field-name mapping (e.g. position3d→pos, terrainType→terrain).
+ * ── Source of truth ──────────────────────────────────────────────────────────
+ * The wire shapes live in `shared/wireTypes.ts` (WireTile / WireUnit /
+ * WireBuilding / WireCity / WireWorld / CompactSave). The client imports those
+ * types directly; this file only needs the serialization logic.
+ *
+ * See `shared/wireTypes.ts` for the authoritative → wire field-name mapping
+ * (e.g. position3d → pos, terrainType → terrain).
  */
 
-import { Tile } from './types.js';
+import { Tile, Building } from './types.js';
 import { Unit } from './units.js';
+import type { WireTile, WireUnit, WireBuilding, WireWorld } from '../../shared/wireTypes.js';
 
-/** Compact tile representation for the wire format. */
-export interface CompactTile {
-  idx: number;
-  s: 5 | 6;
-  n: number[];
-  pos: [number, number, number];
-  b: [number, number, number][];
-  terrain: string;
-  elevType: string;
-  /** Discrete terrain height 0–11. */
-  h?: number;
-  /** Whether this tile has forest cover. */
-  f?: boolean;
-  /** Downstream neighbour tile index a river flows toward (toward the sea). */
-  rv?: number;
-  city?: string;
-}
-
-/** Compact unit representation for the wire format. */
-export interface CompactUnit {
-  id: string;
-  label: string;
-  ownerId: string;
-  tileIndex: number;
-  segment: number;
-  facing: number;
-  attributes: Unit['attributes'];
-  currentHealth: number;
-}
-
-/** Full compact world payload sent over the wire. */
-export interface CompactWorld {
-  seed: number;
-  tileCount: number;
-  pentagonCount: number;
-  hexCount: number;
-  pentagonIndices: number[];
-  cities: unknown[];
-  units: CompactUnit[];
-  tiles: CompactTile[];
-}
+// Re-export wire types for callers that import from here
+export type {
+  WireTile as CompactTile,
+  WireUnit as CompactUnit,
+  WireBuilding as CompactBuilding,
+  WireWorld as CompactWorld,
+} from '../../shared/wireTypes.js';
 
 /** Serialize a single authoritative Tile into compact wire format. */
-export function toCompactTile(t: Tile): CompactTile {
+export function toCompactTile(t: Tile): WireTile {
   return {
     idx: t.index,
     s: t.sides,
@@ -82,7 +52,7 @@ export function toCompactTile(t: Tile): CompactTile {
 }
 
 /** Serialize a single Unit into compact wire format. */
-export function toCompactUnit(u: Unit): CompactUnit {
+export function toCompactUnit(u: Unit): WireUnit {
   return {
     id: u.id,
     label: u.label,
@@ -92,6 +62,17 @@ export function toCompactUnit(u: Unit): CompactUnit {
     facing: u.facing,
     attributes: u.attributes,
     currentHealth: u.currentHealth,
+  };
+}
+
+/** Serialize a single Building into compact wire format. */
+export function toCompactBuilding(b: Building): WireBuilding {
+  return {
+    id: b.id,
+    ownerId: b.ownerId,
+    tileIndex: b.tileIndex,
+    segment: b.segment as 0 | 1 | 2 | 3 | 4 | 5,
+    attributes: b.attributes,
   };
 }
 
@@ -105,15 +86,17 @@ export function toCompactWorld(
   pentagonIndices: number[],
   cities: unknown[],
   units: Unit[],
-): CompactWorld {
+  buildings: Building[] = [],
+): WireWorld {
   return {
     seed,
     tileCount: tiles.length,
     pentagonCount: pentagonIndices.length,
     hexCount: tiles.length - pentagonIndices.length,
     pentagonIndices,
-    cities,
+    cities: cities as WireWorld['cities'],
     units: units.map(toCompactUnit),
+    buildings: buildings.map(toCompactBuilding),
     tiles: tiles.map(toCompactTile),
   };
 }

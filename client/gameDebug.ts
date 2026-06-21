@@ -53,7 +53,7 @@ export const DEBUG_ACTIVE = isDebugMode();
 export interface DebugEvent {
   ts: number;
   turn: number;
-  type: 'move' | 'attack' | 'repair' | 'turn-end' | 'ai-turn-start' | 'ai-turn-end' | 'refit' | 'sleep' | 'selection' | 'build-bridge';
+  type: 'move' | 'attack' | 'repair' | 'turn-end' | 'ai-turn-start' | 'ai-turn-end' | 'refit' | 'sleep' | 'selection' | 'build-bridge' | 'build' | 'build-rejected';
   detail: Record<string, unknown>;
 }
 
@@ -109,7 +109,7 @@ function getOrCreateRoot(): HTMLElement | null {
     root.style.cssText = [
       'position:fixed',
       'bottom:0',
-      'right:0',
+      'left:0',
       'z-index:9999',
       'background:rgba(0,0,0,0.82)',
       'color:#b0ffd8',
@@ -118,7 +118,7 @@ function getOrCreateRoot(): HTMLElement | null {
       'max-width:320px',
       'max-height:48vh',
       'overflow:hidden',
-      'border-top-left-radius:6px',
+      'border-top-right-radius:6px',
       'pointer-events:none',
       'display:flex',
       'flex-direction:column',
