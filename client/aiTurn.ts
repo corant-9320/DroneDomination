@@ -458,8 +458,8 @@ function getAttackRange(unit: UnitData): number {
 // executeAiTurn is retained as a reference implementation / fallback.
 
 /** Map a client tile to the minimal wire shape the combat/AI endpoints expect. */
-function aiMinimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; elev: string; f?: boolean; pos: [number, number, number]; b: [number, number, number][] } {
-  return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, elev: t.elevType, f: t.f || undefined, pos: t.pos, b: t.b };
+function aiMinimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; elev: string; f?: boolean; h?: number; pos: [number, number, number]; b: [number, number, number][] } {
+  return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, elev: t.elevType, f: t.f || undefined, h: t.h, pos: t.pos, b: t.b };
 }
 
 /**

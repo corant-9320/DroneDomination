@@ -821,8 +821,8 @@ export class CombatPanel {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function minimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; elev: string; f?: boolean; pos: [number, number, number]; b: [number, number, number][] } {
-  return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, elev: t.elevType, f: t.f || undefined, pos: t.pos, b: t.b };
+function minimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; elev: string; f?: boolean; h?: number; pos: [number, number, number]; b: [number, number, number][] } {
+  return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, elev: t.elevType, f: t.f || undefined, h: t.h, pos: t.pos, b: t.b };
 }
 
 /** Return the faction colour for a unit, looking it up from the live world. */

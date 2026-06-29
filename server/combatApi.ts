@@ -41,6 +41,7 @@ import {
   validateRepair,
   resolveRepair,
 } from '../src/world/repair.js';
+import { getMovementMode, getMaxMovement, segmentCost } from '../shared/movementConstants.js';
 import type { CombatResponse } from '../shared/combatTypes.js';
 import {
   explainAttack,
@@ -86,6 +87,8 @@ export interface WireTile {
   elev?: string;
   /** Whether tile has forest cover (needed for movement cost). */
   f?: boolean;
+  /** Discrete terrain height 0–11 (needed for movement steepness validation). Omitted when 0. */
+  h?: number;
   /** 3D position on unit sphere [x, y, z] (needed for bearing-based orientation). */
   pos?: [number, number, number];
   /** Boundary polygon vertices [[x,y,z], ...] (needed for segment-distance range check). */
@@ -400,6 +403,61 @@ function handlePreview(req: CombatRequest, ctx: CombatContext): CombatResponse<W
 // Move handler (with Anti-Air reaction fire for drones, §16)
 // ---------------------------------------------------------------------------
 
+/**
+ * Server-side legality check for a requested move path (server-authority
+ * Phase 2). Validates everything derivable from the world snapshot + the
+ * unit's attributes, so a client can no longer fabricate teleports, paths
+ * through impassable terrain, or moves longer than the unit's movement budget.
+ *
+ * NOTE: this enforces a SINGLE action's cost against the unit's *maximum*
+ * movement. Cumulative per-turn MP and "already acted this turn" enforcement
+ * needs server-held turn state and is deferred to Phase 3 (match sessions).
+ *
+ * Returns null when the path is legal, or a human-readable reason when not.
+ */
+export function validateMovePath(mover: Unit, path: number[], tiles: Tile[]): string | null {
+  if (path[0] !== mover.tileIndex) {
+    return 'Move path does not start at the unit\'s current tile';
+  }
+  const mode = getMovementMode(mover.attributes);
+  const budget = getMaxMovement(mover.attributes);
+
+  let spent = 0;
+  let currentSegment = mover.segment as number;
+
+  for (let i = 1; i < path.length; i++) {
+    const prevHex = path[i - 1];
+    const currentHex = path[i];
+    const prevTile = tiles[prevHex];
+    const destTile = tiles[currentHex];
+    if (!prevTile || !destTile) return 'Move path references an unknown tile';
+
+    // Contiguity: each step must cross to an actual neighbour.
+    const departureSeg = prevTile.neighbours.indexOf(currentHex);
+    if (departureSeg < 0) return 'Move path is not contiguous';
+
+    // Intra-hex pivot to the departure segment.
+    const diff = Math.abs(currentSegment - departureSeg);
+    const pivotSteps = Math.min(diff, 6 - diff);
+    const pivotStepCost = segmentCost(prevTile, mode);
+    if (!Number.isFinite(pivotStepCost)) return 'Move path crosses impassable terrain';
+    spent += pivotSteps * pivotStepCost;
+
+    // Cross the border into the destination tile.
+    const crossCost = segmentCost(destTile, mode, prevTile);
+    if (!Number.isFinite(crossCost)) return 'Move path crosses impassable terrain';
+    spent += crossCost;
+
+    const arrivalSeg = destTile.neighbours.indexOf(prevHex);
+    currentSegment = arrivalSeg >= 0 ? arrivalSeg : 0;
+  }
+
+  // Small epsilon for floating-point segment-cost accumulation.
+  if (spent > budget + 1e-9) return 'Move exceeds the unit\'s movement budget';
+
+  return null;
+}
+
 function handleMove(req: CombatRequest, ctx: CombatContext): CombatResponse<WireUnit> {
   const { units, tiles } = ctx;
   const { unitId, path, activeFaction } = req;
@@ -415,6 +473,12 @@ function handleMove(req: CombatRequest, ctx: CombatContext): CombatResponse<Wire
   // Turn-based enforcement: only the active faction may move
   if (mover.ownerId !== activeFaction) {
     return { success: false, error: 'Not this faction\'s turn to move', combats: [], reactions: [], updatedUnits: [] };
+  }
+
+  // Legality enforcement (Phase 2): reject teleports / impassable / overlong paths.
+  const moveError = validateMovePath(mover, path, tiles);
+  if (moveError) {
+    return { success: false, error: moveError, combats: [], reactions: [], updatedUnits: [] };
   }
 
   // Drones trigger Anti-Air Reaction Fire along their path (§16).
@@ -529,6 +593,7 @@ export function rebuildTiles(wireTiles: WireTile[]): Tile[] {
       boundary,
       terrainType: (wt.t as TerrainType) ?? 'plains',
       elevationType: (wt.elev as ElevationType) ?? 'flat',
+      height: wt.h,
       forested: wt.f || undefined,
     };
   }

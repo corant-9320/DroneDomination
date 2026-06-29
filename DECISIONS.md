@@ -4,6 +4,37 @@ Append-only record of design decisions, gotchas, and known issues. The game's
 rules are invented as we go — this log is how that intent survives across
 sessions so agents stop re-discovering (or re-breaking) the same things.
 
+## 2026-06-29 — Server-authority Phase 2: validate human move legality
+
+**Decision:** `/api/combat` now rejects illegal **move** requests instead of
+trusting the client. `validateMovePath` (`server/combatApi.ts`, called from
+`handleMove`) checks, from the world snapshot + the unit's attributes alone:
+- the path starts at the unit's current tile,
+- every step crosses to a real neighbour (contiguity),
+- no step crosses impassable terrain for the chassis (segment cost finite,
+  steepness gate), and
+- the total segment cost does not exceed the unit's **maximum** movement.
+
+To make the server's cost model match the client's, the wire tile now carries
+discrete height `h` (`WireTile.h` → `Tile.height` in `rebuildTiles`; included by
+`minimalTile` in `combatPanel.ts` and `aiMinimalTile` in `aiTurn.ts`). Without
+it the server fell back to band-approximate heights and could disagree with the
+client on steepness near mountains.
+
+**Why:** Closes the most blatant client-side cheat — `handleMove` previously
+just walked whatever path it was given, so a malicious client could teleport a
+unit anywhere or move arbitrarily far. Attacks and repairs were already gated
+server-side (range, friendly-fire, adjacency, faction ownership).
+
+**Impact / limits:** This enforces a **single** action's cost against the unit's
+*max* MP. It deliberately does NOT enforce cumulative per-turn MP or
+"already acted this turn" — those require server-held turn state and are
+**Phase 3** (match sessions). Because remaining MP ≤ max MP, legitimate client
+moves (which the client already gates on remaining MP) always pass; the server
+is simply more permissive on cumulative spend until Phase 3 lands. No unit tests
+drive moves through `handleCombat`, so existing tests are unaffected (350 pass);
+the e2e move test sends contiguous affordable paths and should still pass.
+
 ## 2026-06-29 — Move toward server-authoritative game state (roadmap)
 
 **Decision:** Begin migrating game authority from the client to the server. The

@@ -37,6 +37,8 @@ Response (400):
 
 Stateless pure resolver for a single action. Body: `{ action: 'attack' | 'move' | 'preview' | 'repair', …, activeFaction, units, tiles, buildings? }`. Returns `CombatResponse` (combats, reactions, updatedUnits, updatedBuildings?). Holds no state — turn/MP live client-side in `TurnManager`. Serves the **player's** own actions.
 
+**Move legality (server-authority Phase 2):** `move` requests are validated by `validateMovePath` before being applied — the path must start at the unit's tile, be contiguous, avoid impassable terrain, and cost ≤ the unit's max movement. Illegal requests return `{ success: false, error }`. The wire tile carries height `h` so the server's cost model matches the client's. Cumulative per-turn MP and "already acted" enforcement is deferred to Phase 3 (sessions).
+
 ### POST /api/ai-turn
 
 Server-authoritative resolver for an **entire AI faction turn** (server-authority Phase 1 — see `DECISIONS.md` 2026-06-29). Replaces the per-action round-trips the client AI used to make.
