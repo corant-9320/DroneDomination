@@ -20,6 +20,7 @@ import { rerenderBuildingSprite } from './buildingRenderer.js';
 import { dbg } from './debug.js';
 import { getMovementMode, segmentCost } from '../shared/movementConstants.js';
 import { graphDistance, findPath as sharedFindPath } from '../shared/pathfinding.js';
+import type { AiActionEvent, AiTurnResponse } from '../shared/combatTypes.js';
 
 // ---------------------------------------------------------------------------
 // Building damage sync (building-damage feature)
@@ -445,4 +446,107 @@ function affordableSteps(
  */
 function getAttackRange(unit: UnitData): number {
   return weaponRangeFromAttributes(unit.attributes);
+}
+
+// ---------------------------------------------------------------------------
+// Server-authoritative AI turn (Phase 1 — see DECISIONS.md 2026-06-29)
+// ---------------------------------------------------------------------------
+//
+// The decision logic above (executeAiTurn) is superseded for live play: the
+// whole turn is now resolved server-side by /api/ai-turn in one request, and
+// the client merely replays the returned event log through the playback bar.
+// executeAiTurn is retained as a reference implementation / fallback.
+
+/** Map a client tile to the minimal wire shape the combat/AI endpoints expect. */
+function aiMinimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; elev: string; f?: boolean; pos: [number, number, number]; b: [number, number, number][] } {
+  return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, elev: t.elevType, f: t.f || undefined, pos: t.pos, b: t.b };
+}
+
+/**
+ * Resolve a full AI faction turn server-side. Ships the world once and gets
+ * back an ordered event log + final authoritative state.
+ */
+export async function fetchAiTurn(world: WorldData, factionId: string): Promise<AiTurnResponse<UnitData>> {
+  const payload = {
+    factionId,
+    units: world.units,
+    tiles: world.tiles.map(aiMinimalTile),
+    buildings: world.buildings,
+  };
+
+  try {
+    const resp = await fetch('/api/ai-turn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return (await resp.json()) as AiTurnResponse<UnitData>;
+  } catch (err) {
+    dbg.input.error('fetchAiTurn error:', err);
+    return { success: false, error: String(err), events: [], finalUnits: world.units };
+  }
+}
+
+/**
+ * Replay a precomputed AI turn event log through the playback bar. Reuses the
+ * same callbacks + pacing (`waitForNext`/`recordSnapshot`/`isSkipping`) as the
+ * old live driver, so play/step/rewind/skip behave identically — but no combat
+ * is computed here: every outcome already came from the server.
+ */
+export async function replayAiTurn(
+  world: WorldData,
+  events: AiActionEvent<UnitData>[],
+  combatPanel: CombatPanel,
+  playback: AiPlaybackController,
+  callbacks: AiTurnCallbacks,
+): Promise<void> {
+  // Always yield once so the playback bar is visible even with no actions.
+  await playback.waitForNext();
+
+  for (const ev of events) {
+    if (ev.kind === 'attack' && ev.targetId) {
+      const targetId = ev.targetId;
+      if (!playback.isSkipping()) {
+        callbacks.selectActingUnit(ev.unitId);
+        callbacks.showCombatPreview(ev.unitId, targetId);
+        callbacks.highlightCombat(ev.unitId, targetId);
+        callbacks.renderMap();
+      }
+      await playback.waitForNext();
+
+      // Animate while the pre-action snapshot is still rendered (both units alive).
+      const color = factionColor(world, ev.factionId);
+      await callbacks.playAttackAnimation(
+        ev.unitId, targetId, color, ev.damage ?? 0, ev.targetDestroyed ?? false, ev.splashVictims,
+      );
+
+      // Apply the authoritative post-action snapshot + combat-log entries.
+      world.units = ev.units;
+      combatPanel.recordHistory(ev.combats, ev.reactions);
+      await syncBuildingDamage(world, ev.buildings, ev.buildingDamage);
+
+      callbacks.clearHighlight();
+      callbacks.markActed(ev.unitId);
+      callbacks.renderMap();
+      playback.recordSnapshot();
+    } else if (ev.kind === 'move') {
+      if (!playback.isSkipping()) {
+        callbacks.selectActingUnit(ev.unitId);
+        callbacks.renderMap();
+      }
+      await playback.waitForNext();
+
+      world.units = ev.units;
+      if (ev.reactions.length > 0) combatPanel.recordHistory([], ev.reactions);
+
+      callbacks.markActed(ev.unitId);
+      if (ev.fromTile != null && ev.fromSegment != null) {
+        callbacks.highlightMove(ev.unitId, ev.fromTile, ev.fromSegment);
+      }
+      callbacks.renderMap();
+      playback.recordSnapshot();
+    }
+  }
+
+  callbacks.clearHighlight();
 }

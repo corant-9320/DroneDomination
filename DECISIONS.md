@@ -4,6 +4,44 @@ Append-only record of design decisions, gotchas, and known issues. The game's
 rules are invented as we go — this log is how that intent survives across
 sessions so agents stop re-discovering (or re-breaking) the same things.
 
+## 2026-06-29 — Move toward server-authoritative game state (roadmap)
+
+**Decision:** Begin migrating game authority from the client to the server. The
+existing model is single-player-shaped: `/api/combat` is a stateless pure
+resolver and turn/MP/acted state lives client-side in `TurnManager`. That is
+fine for one trusted client but cannot support trustworthy multiplayer — an
+authoritative client can fabricate moves, MP, and outcomes. The server must own
+and enforce the rules for any shared/competitive play.
+
+**Why:** Multiplayer needs a single source of truth and server-side validation
+(anti-cheat + concurrency arbitration). It also removes the per-action HTTP
+round-trip that made AI "skip to end" crawl (~1 action / 2 s): each `/api/combat`
+call ships and rebuilds the entire tile array. Resolving a whole turn server-side
+ships/rebuilds the world once.
+
+**Roadmap (phased — each phase is independently shippable):**
+1. **Server-authoritative AI turn resolver** (this change). New `/api/ai-turn`
+   resolves an entire AI faction's turn from a world snapshot, returning an
+   ordered event log + final state. Client replays the log through the playback
+   bar instead of computing AI decisions locally. Server stays a pure
+   snapshot-in/result-out function — no session state yet.
+2. **Server-side validation of human actions.** Move/attack/repair intents are
+   validated against server-derived MP + turn order (not just trusted from the
+   client). `/api/combat` gains rule enforcement; client `TurnManager` becomes a
+   cache of server state rather than the source of truth.
+3. **Authoritative match sessions.** Server holds per-match state (units, MP,
+   turn, buildings) keyed by match id; clients send intents and receive diffs.
+   Requires a state store (in-memory + DynamoDB/Redis on AWS).
+4. **Real-time transport + identity.** WebSockets (API Gateway WS) for push,
+   plus player auth so intents are attributable. Turn-based tolerates latency,
+   so no FPS-grade netcode needed.
+
+**Impact (Phase 1 only, in this change):** AI decision logic moves to
+`server/aiTurnApi.ts`; `client/aiTurn.ts` is superseded for live play. Playback
+becomes pure replay of a precomputed event log. `/api/combat` is unchanged and
+still serves the player's own actions (Phase 2 will harden it). See the
+`data-flow-and-api.md` wiki page for the new endpoint contract.
+
 ## 2026-06-28 — Heavily-populated default scenario
 
 **Decision:** The game now loads `data/default-scenario.json` on startup instead

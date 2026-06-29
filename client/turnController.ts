@@ -2,7 +2,7 @@
  * Turn lifecycle: advanceTurn, confirmEndTurn, faction cycling, AI orchestration.
  */
 
-import { executeAiTurn } from './aiTurn.js';
+import { fetchAiTurn, replayAiTurn } from './aiTurn.js';
 import { dbg } from './debug.js';
 import { emitDebugEvent } from './gameDebug.js';
 import { getMaxMovement } from '../shared/movementConstants.js';
@@ -199,7 +199,14 @@ export async function advanceTurn(ctx: GameContext): Promise<void> {
 
     dbg.input.log('AI faction turn:', faction);
     emitDebugEvent('ai-turn-start', { faction }, turnManager.turnNumber);
-    await executeAiTurn(world, faction, combatPanel, aiPlayback, aiCallbacks);
+    // Server-authoritative: resolve the whole faction turn in one request, then
+    // replay the returned event log through the playback bar.
+    const aiResult = await fetchAiTurn(world, faction);
+    if (!aiResult.success) {
+      dbg.input.error('AI turn resolution failed:', aiResult.error);
+    } else {
+      await replayAiTurn(world, aiResult.events, combatPanel, aiPlayback, aiCallbacks);
+    }
   }
 
   aiPlayback.markComplete();

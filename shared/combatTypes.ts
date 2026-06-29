@@ -147,3 +147,71 @@ export interface ExplainedRepair {
   targetHealthBefore: number;
   targetHealthAfter: number;
 }
+
+// ─── Server-authoritative AI turn (Phase 1) ─────────────────────────────────
+//
+// `/api/ai-turn` resolves an entire AI faction's turn server-side and returns
+// an ordered list of actions. Each event carries the post-action world snapshot
+// so the client playback bar can step/rewind/skip without recomputing anything.
+
+/** One splash victim summary attached to an attack event (for animation). */
+export interface AiSplashVictim {
+  unitId: string;
+  damage: number;
+  destroyed: boolean;
+}
+
+/**
+ * A single resolved AI action plus the authoritative world snapshot that
+ * results from it. The client replays these in order; "skip to end" simply
+ * jumps to the final event's snapshot.
+ */
+export interface AiActionEvent<U = unknown> {
+  kind: 'move' | 'attack';
+  /** The acting unit. */
+  unitId: string;
+  /** Owning faction of the acting unit. */
+  factionId: string;
+
+  // ── move ──
+  /** Tile the unit started this step from (move events). */
+  fromTile?: number;
+  /** Segment the unit started this step from (move events). */
+  fromSegment?: number;
+  /** Tile-index path walked (move events). */
+  path?: number[];
+
+  // ── attack ──
+  /** Target unit id (attack events). */
+  targetId?: string;
+  /** Direct damage dealt to the primary target (attack events). */
+  damage?: number;
+  /** Whether the primary target was destroyed (attack events). */
+  targetDestroyed?: boolean;
+  /** Splash victims other than the primary target (attack events). */
+  splashVictims?: AiSplashVictim[];
+
+  /** Combat-log explanations produced by this action (attacks). */
+  combats: ExplainedCombat[];
+  /** Reaction-fire explanations produced by this action (drone moves). */
+  reactions: ExplainedCombat[];
+  /** Building component reductions caused by this action, if any. */
+  buildingDamage?: BuildingDamageReport[];
+
+  /** Authoritative units array AFTER this action (destroyed units removed). */
+  units: U[];
+  /** Authoritative buildings array AFTER this action, if any changed. */
+  buildings?: WireBuilding[];
+}
+
+/** Response from `/api/ai-turn` — the full resolved turn for one faction. */
+export interface AiTurnResponse<U = unknown> {
+  success: boolean;
+  error?: string;
+  /** Ordered actions taken by the faction this turn. */
+  events: AiActionEvent<U>[];
+  /** Final authoritative units after the whole turn (destroyed units removed). */
+  finalUnits: U[];
+  /** Final authoritative buildings after the whole turn. */
+  finalBuildings?: WireBuilding[];
+}

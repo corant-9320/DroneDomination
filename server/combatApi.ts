@@ -55,7 +55,7 @@ import {
 // ---------------------------------------------------------------------------
 
 /** Wire-format unit (matches CompactUnit + facing). */
-interface WireUnit {
+export interface WireUnit {
   id: string;
   label: string;
   ownerId: string;
@@ -67,7 +67,7 @@ interface WireUnit {
 }
 
 /** Wire-format building (immobile EW/combat source on a city hex). */
-interface WireBuilding {
+export interface WireBuilding {
   id: string;
   ownerId: string;
   tileIndex: number;
@@ -76,7 +76,7 @@ interface WireBuilding {
 }
 
 /** Minimal tile data needed for combat resolution. */
-interface WireTile {
+export interface WireTile {
   idx: number;
   s: 5 | 6;
   n: number[];
@@ -509,7 +509,7 @@ function handleRepair(req: CombatRequest, ctx: CombatContext): CombatResponse<Wi
 // Wire helpers
 // ---------------------------------------------------------------------------
 
-function rebuildTiles(wireTiles: WireTile[]): Tile[] {
+export function rebuildTiles(wireTiles: WireTile[]): Tile[] {
   const maxIdx = wireTiles.reduce((m, t) => Math.max(m, t.idx), 0);
   const tiles: Tile[] = new Array<Tile>(maxIdx + 1);
 
@@ -536,7 +536,7 @@ function rebuildTiles(wireTiles: WireTile[]): Tile[] {
   return tiles;
 }
 
-function rebuildUnits(wireUnits: WireUnit[]): Unit[] {
+export function rebuildUnits(wireUnits: WireUnit[]): Unit[] {
   return wireUnits.map((wu) => ({
     id: wu.id,
     label: wu.label,
@@ -561,7 +561,7 @@ function rebuildUnits(wireUnits: WireUnit[]): Unit[] {
   }));
 }
 
-function rebuildBuildings(wireBuildings: WireBuilding[]): Building[] {
+export function rebuildBuildings(wireBuildings: WireBuilding[]): Building[] {
   return wireBuildings.map((wb) => ({
     id: wb.id,
     ownerId: wb.ownerId,
@@ -571,7 +571,7 @@ function rebuildBuildings(wireBuildings: WireBuilding[]): Building[] {
   }));
 }
 
-function toWireUnit(u: Unit): WireUnit {
+export function toWireUnit(u: Unit): WireUnit {
   return {
     id: u.id,
     label: u.label,
@@ -584,7 +584,7 @@ function toWireUnit(u: Unit): WireUnit {
   };
 }
 
-function toWireBuilding(b: Building): WireBuilding {
+export function toWireBuilding(b: Building): WireBuilding {
   return {
     id: b.id,
     ownerId: b.ownerId,

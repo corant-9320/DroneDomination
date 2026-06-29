@@ -7,6 +7,7 @@ import type { Plugin, ViteDevServer } from 'vite';
 type RegenerateTiles = (seed: number) => unknown;
 type HandleGenerate = (body: unknown) => { success: boolean };
 type HandleCombat = (body: unknown) => { success: boolean };
+type HandleAiTurn = (body: unknown) => { success: boolean };
 
 export function apiPlugin(): Plugin {
   return {
@@ -97,6 +98,35 @@ export function apiPlugin(): Plugin {
         res.setHeader('Content-Type', 'application/json');
         res.statusCode = result.success ? 200 : 400;
         console.log('[DD][api] Combat response success:', result.success);
+        res.end(JSON.stringify(result));
+      });
+
+      // Resolve an entire AI faction turn server-side (server-authoritative,
+      // Phase 1). Returns an ordered event log + final state for the client to
+      // replay through the AI playback bar.
+      server.middlewares.use('/api/ai-turn', async (req, res) => {
+        if (req.method !== 'POST') {
+          console.warn('[DD][api] Rejected %s /api/ai-turn (405)', req.method);
+          res.statusCode = 405;
+          res.end(JSON.stringify({ error: 'Method not allowed' }));
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) {
+          chunks.push(chunk as Buffer);
+        }
+        const body = JSON.parse(Buffer.concat(chunks).toString()) as { factionId?: unknown };
+        console.log('[DD][api] POST /api/ai-turn — faction:', body.factionId);
+
+        const mod = await server.ssrLoadModule('/server/aiTurnApi.ts') as {
+          handleAiTurn: HandleAiTurn;
+        };
+        const result = mod.handleAiTurn(body);
+
+        res.setHeader('Content-Type', 'application/json');
+        res.statusCode = result.success ? 200 : 400;
+        console.log('[DD][api] AI-turn response success:', result.success);
         res.end(JSON.stringify(result));
       });
     },

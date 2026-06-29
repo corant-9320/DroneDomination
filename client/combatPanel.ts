@@ -378,6 +378,25 @@ export class CombatPanel {
     }
   }
 
+  /**
+   * Push precomputed combat/reaction explanations into the history list
+   * (server-authoritative AI replay — outcomes already resolved server-side).
+   * Mirrors the history bookkeeping done by resolveAttack/resolveMove.
+   */
+  recordHistory(combats: ExplainedCombat[], reactions: ExplainedCombat[]): void {
+    for (const c of combats) this.history.unshift({ kind: 'combat', turn: this.currentTurn, data: c });
+    for (const r of reactions) this.history.unshift({ kind: 'reaction', turn: this.currentTurn, data: r });
+    while (this.history.length > this.MAX_HISTORY) this.history.pop();
+
+    const newCount = combats.length + reactions.length;
+    if (newCount > 0) {
+      const shifted = new Set<number>();
+      for (const idx of this.expandedIndices) shifted.add(idx + newCount);
+      this.expandedIndices = shifted;
+    }
+    this.render();
+  }
+
   /** Clear the combat log. */
   clear(): void {
     this.history = [];
