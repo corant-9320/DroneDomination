@@ -12,6 +12,7 @@ import type { DetailPanel } from './detailPanel.js';
 import type { FirstPersonView } from './firstPersonView.js';
 import type { AiPlaybackController } from './aiPlayback.js';
 import type { TurnManager } from './turnManager.js';
+import type { MatchClient } from './matchClient.js';
 
 export interface GameContext {
   world: WorldData;
@@ -22,6 +23,8 @@ export interface GameContext {
   firstPerson: FirstPersonView;
   aiPlayback: AiPlaybackController;
   turnManager: TurnManager;
+  /** Authoritative server match session (server-authority Phase 3). */
+  matchClient: MatchClient;
   /** Switch the right-curtain tab (main = selection info, history = combat log). */
   switchRpTab: (tab: 'main' | 'history') => void;
   /** True when the player's faction is the active one. */

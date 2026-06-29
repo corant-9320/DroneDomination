@@ -40,10 +40,33 @@ so intents stay fast, but on Lambda this cost recurs per cold container. Future:
 persist/cache tiles (e.g. a warm layer or precomputed artifact) rather than
 regenerating per container.
 
-**NOT yet done (next increments):** wire the client `TurnManager` to consume
-session state (it's still the source of truth today), and route AI faction turns
-through the session (AI still uses `/api/ai-turn` from Phase 1). The match API
-is implemented + verified but not yet on the live client path.
+**Client wiring (in progress):** `client/matchClient.ts` (`MatchClient`) now
+creates the authoritative session on game load (`main.ts`, fire-and-forget) and
+provides `submit(intent)` + `reconcile(resp, world, turnManager)` for routing
+player actions. Added to `GameContext`.
+
+**Per-action routing — remaining work + gaps found (investigated 2026-06-29).**
+Because the session must observe *every* state change to stay consistent,
+actions are all-or-nothing within a turn. Concretely, to route player actions
+through `/api/match/intent` we still need:
+- **Move:** player moves never hit the server today (`mapInput.onRightClick`
+  mutates `world` + MP locally). Routing requires sending the tile-index path
+  (derivable from `movementRoute` hops) AND the destination **segment** — and
+  the server move handler must set the unit's segment (it currently only sets
+  tileIndex/facing), or session range checks use a stale segment.
+- **Building attack:** `matchApi` has no `attackBuilding` intent yet — needs a
+  server-side intent that reuses `handleBuildingAttack`.
+- **Client MP pre-deduction:** `mapInput` pre-deducts MP / sets `acted` before
+  calling the attack/repair handlers; that must move to server-authoritative
+  reconciliation from `unitTurn`.
+- **AI / turn boundary:** AI still runs via `/api/ai-turn` (Phase 1) outside the
+  session, so the session must be refreshed (recreated) at each player-turn
+  boundary, or AI must move into the session.
+- These change the live movement/combat UX and need browser verification (not
+  just `tsc`/unit tests), so they're being landed as a separate, verified step.
+
+**NOT yet done:** the above per-action routing, AI-in-session, and the real
+DynamoDB adapter swap.
 
 ## 2026-06-29 — Server-authority Phase 2: validate human move legality
 

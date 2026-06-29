@@ -13,6 +13,7 @@ import { showNewWorldModal } from './newWorldModal.js';
 import { saveGame, showLoadModal } from './saveLoad.js';
 import { executeAiTurn as _executeAiTurn } from './aiTurn.js';
 import { AiPlaybackController } from './aiPlayback.js';
+import { MatchClient } from './matchClient.js';
 import { preRenderUnits } from './unitRenderer.js';
 import { preRenderBuildings } from './buildingRenderer.js';
 import { FirstPersonView } from './firstPersonView.js';
@@ -80,6 +81,9 @@ async function main() {
     // ─── Turn management ─────────────────────────────────────────────────
     const turnManager = new TurnManager(world);
     detailPanel.setTurnManager(turnManager);
+
+    // ─── Authoritative match session (server-authority Phase 3) ──────────
+    const matchClient = new MatchClient();
 
     const turnIndicator = document.createElement('span');
     turnIndicator.id        = 'turn-indicator';
@@ -166,6 +170,7 @@ async function main() {
       firstPerson,
       aiPlayback,
       turnManager,
+      matchClient,
       switchRpTab,
       isPlayerTurn: () => turnManager.isPlayerTurn(),
       updateTurnIndicator,
@@ -175,6 +180,10 @@ async function main() {
     globe.setOnViewCentreChange((tileIndex, up) => {
       localMap.setCentre(tileIndex, false, up);
     });
+    // Establish the authoritative match session on load (fire-and-forget; the
+    // session warms server-side tiles ~once). Player actions will route through
+    // it as the per-action wiring comes online.
+    void matchClient.create(world, turnManager.getFactions());
     localMap.setOnCentreChange((tileIndex) => {
       globe.panToTile(tileIndex);
     });
