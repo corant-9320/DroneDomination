@@ -66,6 +66,14 @@ function newMatchId(): string {
   return `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * Test hook: pre-seed the authoritative tile cache so tests can supply a small
+ * synthetic world instead of paying the multi-second `generateWorld` cost.
+ */
+export function __setTilesForTest(seed: number, t: Tile[]): void {
+  tileCache.set(seed, t);
+}
+
 // ---------------------------------------------------------------------------
 // Create match
 // ---------------------------------------------------------------------------

@@ -55,7 +55,7 @@ inclusion: always
 - **No pinned formula values.** Do not assert exact damage numbers from game-balance formulas (e.g., `expect(damage).toBe(14)`). Use property/range assertions instead: monotonicity, min/max bounds, relative comparisons.
 - **One golden smoke test per formula is fine** — but label it clearly and expect it to break on balance changes.
 - **Test behavior, not implementation.** Good: "splash hits all enemies in hex". Bad: "splash deals exactly 9 damage to a unit with armour 2".
-- **Don't add tests proactively.** Only add tests when the user asks, or when fixing a bug that needs a regression guard.
+- **Add tests for new code paths.** When you introduce a new code path that isn't covered — a new module, endpoint, or distinct branch of behaviour — add focused tests for it proactively, so it has ongoing coverage. Also add a regression guard when fixing a bug. Don't pad the suite with tests for trivial, already-covered, or purely-cosmetic code.
 - **Keep test files under 300 lines.** If a test file grows past that, it's testing too many implementation details.
 
 ## Related Files
