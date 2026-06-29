@@ -23,13 +23,19 @@
  * - Combat explanation text (combatExplainer.ts)
  */
 
-import { Tile, ElevationType, TerrainType } from '../src/world/types.js';
+import { Tile, ElevationType, TerrainType, Building } from '../src/world/types.js';
 import { Unit, HexSegment } from '../src/world/units.js';
 import type { UnitAttributes } from '../shared/unitTypes.js';
 import {
   isDrone,
   resolveAttack,
   resolveReactionFire,
+  resolveBuildingDirectFire,
+  resolveSplashHex,
+  type CombatContext,
+  type BuildingComponent,
+  type BuildingDamageEvent,
+  type WeaponMode,
 } from '../src/world/combat.js';
 import {
   validateRepair,
@@ -60,6 +66,15 @@ interface WireUnit {
   currentHealth: number;
 }
 
+/** Wire-format building (immobile EW/combat source on a city hex). */
+interface WireBuilding {
+  id: string;
+  ownerId: string;
+  tileIndex: number;
+  segment: number;
+  attributes?: UnitAttributes;
+}
+
 /** Minimal tile data needed for combat resolution. */
 interface WireTile {
   idx: number;
@@ -84,6 +99,24 @@ export interface CombatRequest {
   attackerId?: string;
   /** For 'attack'/'preview': target unit ID. */
   targetId?: string;
+  /**
+   * For 'attack'/'preview' against a building (building-damage feature): the
+   * target building's ID. Mutually exclusive with targeting a unit. When set,
+   * the attack degrades the building's components instead of dealing HP damage.
+   */
+  targetBuildingId?: string;
+  /**
+   * For Direct_Fire against a building: which component the attacking player
+   * chose to degrade. Required for Direct_Fire when the building has at least
+   * one eligible component (Requirement 4). Ignored for Splash_Fire.
+   */
+  component?: BuildingComponent;
+  /**
+   * Optional explicit weapon mode for a building attack ('direct' | 'splash').
+   * When omitted, the server auto-selects, defaulting to Splash_Fire when both
+   * are available (Requirement 2.6). 'antiAir' against a building is rejected.
+   */
+  weaponMode?: WeaponMode;
   /** For 'repair': repairer unit ID. */
   repairerId?: string;
   /** For 'repair': target unit ID to heal. */
@@ -98,6 +131,8 @@ export interface CombatRequest {
   units: WireUnit[];
   /** Tile adjacency data (only idx, sides, neighbours needed). */
   tiles: WireTile[];
+  /** Buildings on the board — EW-bearing buildings project anti-drone screens. */
+  buildings?: WireBuilding[];
 }
 
 // ---------------------------------------------------------------------------
@@ -107,29 +142,182 @@ export interface CombatRequest {
 export function handleCombat(req: CombatRequest): CombatResponse<WireUnit> {
   console.log('[DD][combat] handleCombat action=%s', req.action);
 
-  // Rebuild minimal Tile[] for pathfinding/adjacency
-  const tiles = rebuildTiles(req.tiles);
-  const units = rebuildUnits(req.units);
+  // Rebuild the combat context (units, tiles, buildings) once for all handlers.
+  const ctx: CombatContext = {
+    units: rebuildUnits(req.units),
+    tiles: rebuildTiles(req.tiles),
+    buildings: rebuildBuildings(req.buildings ?? []),
+  };
 
   if (req.action === 'attack') {
-    return handleAttack(req, tiles, units);
+    return handleAttack(req, ctx);
   } else if (req.action === 'preview') {
-    return handlePreview(req, tiles, units);
+    return handlePreview(req, ctx);
   } else if (req.action === 'move') {
-    return handleMove(req, tiles, units);
+    return handleMove(req, ctx);
   } else if (req.action === 'repair') {
-    return handleRepair(req, tiles, units);
+    return handleRepair(req, ctx);
   }
 
   return { success: false, error: 'Unknown action', combats: [], reactions: [], updatedUnits: [] };
 }
 
 // ---------------------------------------------------------------------------
+// Building attack handler (building-damage feature)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve an attack declared against an enemy building. Direct_Fire degrades
+ * the single attacker-chosen component; Splash_Fire degrades one random
+ * component of every enemy building in the hex (and applies HP splash to enemy
+ * units there). Anti_Air_Fire against a building is rejected.
+ */
+function handleBuildingAttack(req: CombatRequest, ctx: CombatContext): CombatResponse<WireUnit> {
+  const { units, buildings } = ctx;
+  const { attackerId, targetBuildingId, activeFaction, component } = req;
+  if (!attackerId || !targetBuildingId) {
+    return { success: false, error: 'attackerId and targetBuildingId required', combats: [], reactions: [], updatedUnits: [] };
+  }
+
+  const attacker = units.find((u) => u.id === attackerId);
+  const building = buildings.find((b) => b.id === targetBuildingId);
+  if (!attacker || !building) {
+    return { success: false, error: 'Attacker or target building not found', combats: [], reactions: [], updatedUnits: [] };
+  }
+  if (attacker.ownerId !== activeFaction) {
+    return { success: false, error: 'Not this faction\'s turn to attack', combats: [], reactions: [], updatedUnits: [] };
+  }
+  if (attacker.ownerId === building.ownerId) {
+    return { success: false, error: 'Cannot attack a friendly building', combats: [], reactions: [], updatedUnits: [] };
+  }
+
+  // Weapon-mode selection. Anti-Air can never target a building (Requirement 2.5).
+  const hasDirect = (attacker.attributes.kinetic ?? 0) > 0;
+  const hasSplash = (attacker.attributes.splashAttack ?? 0) > 0;
+  let mode = req.weaponMode;
+  if (mode === 'antiAir') {
+    return { success: false, error: 'Buildings cannot be targeted by Anti-Air Fire', combats: [], reactions: [], updatedUnits: [] };
+  }
+  if (!mode) {
+    // Auto-select: default to Splash_Fire when both are available (Req 2.6).
+    mode = hasSplash ? 'splash' : hasDirect ? 'direct' : undefined;
+  }
+  if (!mode) {
+    return { success: false, error: 'Attacker has no building-damaging weapon', combats: [], reactions: [], updatedUnits: [] };
+  }
+
+  const result = mode === 'splash'
+    ? resolveSplashHex(attackerId, building.tileIndex, ctx)
+    : resolveBuildingDirectFire(attackerId, building, component, ctx);
+
+  if (!result.wasValid) {
+    return {
+      success: true,
+      combats: [buildBuildingCombat(req, ctx, result, false)],
+      reactions: [],
+      updatedUnits: units.filter((u) => u.currentHealth > 0).map(toWireUnit),
+      updatedBuildings: buildings.map(toWireBuilding),
+    };
+  }
+
+  return {
+    success: true,
+    combats: [buildBuildingCombat(req, ctx, result, true)],
+    reactions: [],
+    updatedUnits: units.filter((u) => u.currentHealth > 0).map(toWireUnit),
+    updatedBuildings: buildings.map(toWireBuilding),
+  };
+}
+
+/** Build an ExplainedCombat for a building attack result. */
+function buildBuildingCombat(
+  req: CombatRequest,
+  ctx: CombatContext,
+  result: ReturnType<typeof resolveBuildingDirectFire>,
+  valid: boolean,
+): import('../shared/combatTypes.js').ExplainedCombat {
+  const attacker = ctx.units.find((u) => u.id === result.attackerId);
+  const building = ctx.buildings.find((b) => b.id === req.targetBuildingId);
+  const buildingDamage = result.buildingDamage.map(toBuildingReport);
+  const steps = valid
+    ? buildBuildingSteps(result)
+    : [{ title: '❌ Invalid Attack', description: result.reasonInvalid ?? 'Invalid', result: 'Attack cannot proceed', tone: 'negative' as const }];
+
+  // Translate any HP splash on co-located enemy units into splash explanations
+  // (Splash_Fire on a building's hex also damages enemy units — decision O1).
+  const splash: import('../shared/combatTypes.js').SplashExplanation[] = result.splashEvents.map((ev) => {
+    const victim = ctx.units.find((u) => u.id === ev.victimId);
+    const healthAfter = victim ? victim.currentHealth : 0;
+    const healthBefore = healthAfter + ev.damage;
+    const label = victim?.label ?? ev.victimId;
+    return {
+      victimId: ev.victimId,
+      victimLabel: label,
+      steps: [{
+        title: '💣 Splash Fire',
+        description: `${label} caught in the splash for ${ev.damage} damage.`,
+        result: ev.victimDestroyed ? `${label} destroyed!` : `${healthAfter} HP remaining`,
+        tone: ev.victimDestroyed ? 'critical' : 'negative',
+      }],
+      damage: ev.damage,
+      victimDestroyed: ev.victimDestroyed,
+      victimHealthBefore: healthBefore,
+      victimHealthAfter: healthAfter,
+    };
+  });
+
+  return {
+    attackerId: result.attackerId,
+    attackerLabel: attacker?.label ?? result.attackerId,
+    targetId: req.targetBuildingId ?? result.targetId,
+    targetLabel: building ? `Building ${building.id}` : result.targetId,
+    wasValid: valid,
+    reasonInvalid: valid ? undefined : result.reasonInvalid,
+    steps,
+    directDamage: 0,
+    targetHealthBefore: 0,
+    targetHealthAfter: 0,
+    targetDestroyed: false,
+    splash,
+    destroyedUnitIds: result.destroyedUnitIds,
+    buildingDamage,
+  };
+}
+
+function buildBuildingSteps(result: ReturnType<typeof resolveBuildingDirectFire>): import('../shared/combatTypes.js').ExplanationStep[] {
+  if (result.buildingDamage.length === 0) {
+    return [{
+      title: '🏛 No Component Damage',
+      description: 'The targeted building has no component left to degrade.',
+      result: 'No damage applied',
+      tone: 'neutral',
+    }];
+  }
+  return result.buildingDamage.map((ev) => ({
+    title: ev.destroyed ? '🏚 Component Destroyed' : '🏛 Component Damaged',
+    description: `${ev.component} reduced to ${ev.newValue}.`,
+    result: ev.destroyed ? `${ev.component} disabled` : `${ev.component} → ${ev.newValue}`,
+    tone: ev.destroyed ? 'critical' : 'negative',
+  }));
+}
+
+function toBuildingReport(ev: BuildingDamageEvent): import('../shared/combatTypes.js').BuildingDamageReport {
+  return { buildingId: ev.buildingId, component: ev.component, newValue: ev.newValue, destroyed: ev.destroyed };
+}
+
+// ---------------------------------------------------------------------------
 // Attack handler
 // ---------------------------------------------------------------------------
 
-function handleAttack(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatResponse<WireUnit> {
+function handleAttack(req: CombatRequest, ctx: CombatContext): CombatResponse<WireUnit> {
+  const { units } = ctx;
   const { attackerId, targetId, activeFaction } = req;
+
+  // Building target → dedicated handler (building-damage feature).
+  if (req.targetBuildingId) {
+    return handleBuildingAttack(req, ctx);
+  }
+
   if (!attackerId || !targetId) {
     return { success: false, error: 'attackerId and targetId required', combats: [], reactions: [], updatedUnits: [] };
   }
@@ -146,10 +334,10 @@ function handleAttack(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatR
   }
 
   // Build explanation BEFORE resolving (so we capture "before" state)
-  const explained = explainAttack(attacker, target, units, tiles);
+  const explained = explainAttack(attacker, target, ctx);
 
   // Actually resolve the attack (mutates units)
-  const result = resolveAttack(attackerId, targetId, units, tiles);
+  const result = resolveAttack(attackerId, targetId, ctx);
 
   // Update explanation with post-combat health
   explained.targetHealthAfter = target.currentHealth;
@@ -157,7 +345,16 @@ function handleAttack(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatR
   explained.destroyedUnitIds = result.destroyedUnitIds;
 
   // Build splash explanations
-  explained.splash = explainSplash(attacker, target, result, units, tiles);
+  explained.splash = explainSplash(attacker, target, result, ctx);
+
+  // Surface any building component damage caused by Splash_Fire that landed in
+  // the same hex (building-damage feature, Resolved decision O1).
+  explained.buildingDamage = result.buildingDamage.map((ev) => ({
+    buildingId: ev.buildingId,
+    component: ev.component,
+    newValue: ev.newValue,
+    destroyed: ev.destroyed,
+  }));
 
   // Remove destroyed units completely so they never appear again
   const survivingUnits = units.filter((u) => u.currentHealth > 0);
@@ -167,6 +364,7 @@ function handleAttack(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatR
     combats: [explained],
     reactions: [],
     updatedUnits: survivingUnits.map(toWireUnit),
+    updatedBuildings: result.buildingDamage.length > 0 ? ctx.buildings.map(toWireBuilding) : undefined,
   };
 }
 
@@ -174,7 +372,8 @@ function handleAttack(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatR
 // Preview handler (explanation only, no state mutation)
 // ---------------------------------------------------------------------------
 
-function handlePreview(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatResponse<WireUnit> {
+function handlePreview(req: CombatRequest, ctx: CombatContext): CombatResponse<WireUnit> {
+  const { units } = ctx;
   const { attackerId, targetId } = req;
   if (!attackerId || !targetId) {
     return { success: false, error: 'attackerId and targetId required', combats: [], reactions: [], updatedUnits: [] };
@@ -187,7 +386,7 @@ function handlePreview(req: CombatRequest, tiles: Tile[], units: Unit[]): Combat
   }
 
   // Build explanation WITHOUT resolving (read-only)
-  const explained = explainAttack(attacker, target, units, tiles);
+  const explained = explainAttack(attacker, target, ctx);
 
   return {
     success: true,
@@ -201,7 +400,8 @@ function handlePreview(req: CombatRequest, tiles: Tile[], units: Unit[]): Combat
 // Move handler (with Anti-Air reaction fire for drones, §16)
 // ---------------------------------------------------------------------------
 
-function handleMove(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatResponse<WireUnit> {
+function handleMove(req: CombatRequest, ctx: CombatContext): CombatResponse<WireUnit> {
+  const { units, tiles } = ctx;
   const { unitId, path, activeFaction } = req;
   if (!unitId || !path || path.length < 2) {
     return { success: false, error: 'unitId and path (2+ tiles) required', combats: [], reactions: [], updatedUnits: [] };
@@ -220,7 +420,7 @@ function handleMove(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatRes
   // Drones trigger Anti-Air Reaction Fire along their path (§16).
   // Ground units do not trigger reaction fire.
   if (isDrone(mover)) {
-    const reactionResults = resolveReactionFire(unitId, path, units, tiles);
+    const reactionResults = resolveReactionFire(unitId, path, ctx);
     const reactionExplained = reactionResults.map((r) => {
       const reactor = units.find((u) => u.id === r.attackerId);
       const drone = units.find((u) => u.id === r.targetId);
@@ -261,7 +461,8 @@ function handleMove(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatRes
 // Repair handler
 // ---------------------------------------------------------------------------
 
-function handleRepair(req: CombatRequest, tiles: Tile[], units: Unit[]): CombatResponse<WireUnit> {
+function handleRepair(req: CombatRequest, ctx: CombatContext): CombatResponse<WireUnit> {
+  const { units } = ctx;
   const { repairerId, repairTargetId, activeFaction } = req;
   if (!repairerId || !repairTargetId) {
     return { success: false, error: 'repairerId and repairTargetId required', combats: [], reactions: [], updatedUnits: [] };
@@ -360,6 +561,16 @@ function rebuildUnits(wireUnits: WireUnit[]): Unit[] {
   }));
 }
 
+function rebuildBuildings(wireBuildings: WireBuilding[]): Building[] {
+  return wireBuildings.map((wb) => ({
+    id: wb.id,
+    ownerId: wb.ownerId,
+    tileIndex: wb.tileIndex,
+    segment: wb.segment,
+    attributes: wb.attributes,
+  }));
+}
+
 function toWireUnit(u: Unit): WireUnit {
   return {
     id: u.id,
@@ -370,5 +581,15 @@ function toWireUnit(u: Unit): WireUnit {
     facing: u.facing,
     attributes: u.attributes,
     currentHealth: u.currentHealth,
+  };
+}
+
+function toWireBuilding(b: Building): WireBuilding {
+  return {
+    id: b.id,
+    ownerId: b.ownerId,
+    tileIndex: b.tileIndex,
+    segment: b.segment,
+    attributes: b.attributes,
   };
 }

@@ -24,7 +24,7 @@ one entry now saves the next agent a long investigation.
 | Kind of knowledge | Goes in |
 |---|---|
 | Combat formulas, constants, validation rules | `COMBAT_RULES.md` (authoritative) |
-| Module map, data flow, API contract | `ARCHITECTURE.md` |
+| Module map, data flow, API contract | `docs/architecture/` wiki (hub: `docs/architecture/README.md`) |
 | One-off decisions, gotchas, known issues | `DECISIONS.md` |
 | Scoped agent routing / conventions | `.kiro/steering/*.md` |
 

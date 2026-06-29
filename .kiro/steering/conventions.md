@@ -60,5 +60,5 @@ inclusion: always
 
 ## Related Files
 
-- `architecture.md` — auto-loads when editing `src/`, `server/`, or config files
+- `architecture.md` (+ `architecture-*.md`) — auto-load the relevant `docs/architecture/` wiki page when editing `src/`, `server/`, or config files
 - `ui-defaults.md` — auto-loads when editing `client/`

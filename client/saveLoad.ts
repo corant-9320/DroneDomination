@@ -26,6 +26,11 @@ interface BundledSave {
 
 const BUNDLED_SAVES: BundledSave[] = [
   {
+    filename: 'default-scenario.json',
+    label: 'Default (populated)',
+    description: 'Two big cities with dozens of buildings, a siege of each, and open-field battles — the heavily-populated default world',
+  },
+  {
     filename: 'battle-20v20.json',
     label: 'Battle (20v20)',
     description: '20 player vs 20 enemy — randomized 27-point units, 5 hexes wide formation',

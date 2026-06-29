@@ -512,11 +512,12 @@ damage from drone attackers** — against tank/spider (ground) attackers EW does
 ### Calculation
 
 For a defending unit, sum the contribution of every friendly source (including
-the defender itself) with `defence ≥ 1`:
+the defender itself) with `defence ≥ 1`. Sources are **units AND buildings** —
+any friendly EW-bearing building projects the same radius screen as a unit:
 
 ```
 contribution(source) = max(0, source.defence − hopDistance(source, defender))
-EW_raw = Σ contribution(source)   over all living friendly units
+EW_raw = Σ contribution(source)   over all living friendly units + buildings
 EW     = EW_raw × (attackerIsDrone ? 1 : 0)
 ```
 
@@ -534,8 +535,34 @@ A defender adjacent (1 hop) to three EW-5 screens receives
 
 - EW applies **only when the attacker is a drone**; otherwise EW = 0.
 - The defender's own `defence` counts (distance 0 → full value).
-- Destroyed units and enemy units do not contribute.
+- Both **units and buildings** contribute (any friendly EW-bearing building
+  on a city hex projects its screen). Buildings are **indestructible**
+  (building-damage feature): a building is never removed by combat, so it
+  always contributes while its `defence` component is ≥ 1. Degrading `defence`
+  via combat shrinks or removes its screen on the next calculation.
+- Destroyed units and enemy sources do not contribute.
 - `MAX_EW_RADIUS = 5` (largest possible `defence`).
+
+### Building Damage (building-damage feature)
+
+Buildings have **no health pool**. They are never destroyed or removed. Instead,
+a successful Direct_Fire or Splash_Fire attack that reaches a building strips
+**one point from one component** (the seven equipment attributes: `kinetic`,
+`rangeAttack`, `splashAttack`, `antiAir`, `armour`, `defence`, `repair`).
+
+- **Direct_Fire** damages only the single targeted building, removing one point
+  from a component the **attacking player chooses** (must be a component with
+  value ≥ 1).
+- **Splash_Fire** damages **every enemy building** in the target hex, removing
+  one point from a **uniformly-random** eligible component of each (resolved
+  authoritatively on the server). Splash also applies normal HP damage to enemy
+  units in the hex.
+- **Anti_Air_Fire** never targets buildings.
+- No armour mitigation and no min-damage formula apply — it is a flat one point.
+  A component at 0 is "absent" and cannot be targeted; a building with no
+  eligible component takes no damage but is still a valid target.
+- When an attacker targeting a building has both Direct_Fire and Splash_Fire,
+  auto-selection defaults to **Splash_Fire**.
 
 ---
 

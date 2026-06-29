@@ -69,6 +69,11 @@ moved/acted this AI turn.
 ## Right-Click Menus
 
 - **Own unit** (selected): rotate, refit, sleep, first-person view, **EW coverage**.
+- **Enemy building** (own unit selected, in range): right-click the building's
+  segment to attack it. Splash-only attackers fire immediately; when a choice
+  exists, a small menu offers **💥 Splash Fire** (default) and **⚡ Direct Fire**
+  with a list of the building's degradable components. See the building-damage
+  feature in `COMBAT_RULES.md` §12.
 - **Any segment** (no unit selected, right-click the segment): **👁 View** —
   enter the read-only first-person look-around positioned at that segment, works
   on empty segments too (Esc exits). Also offers **📡 EW coverage** for the
@@ -133,4 +138,4 @@ Since we only have 6 pre-rendered directions, there's up to ±30° of visual err
 ## Related Files
 
 - `conventions.md` — always loaded, covers build/test commands
-- `architecture.md` — loads when editing `src/`, `server/`, or config files
+- `architecture.md` (+ `architecture-*.md`) — auto-load the relevant architecture wiki page when editing `src/`, `server/`, or config files

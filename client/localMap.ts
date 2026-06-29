@@ -104,6 +104,8 @@ export class LocalMapView implements MapViewInterface {
   // Movement system callbacks
   onTurnEnd: (() => void) | null = null;
   onAttack: ((attackerId: string, targetId: string) => void) | null = null;
+  /** Attack an enemy building (building-damage feature). mode is 'splash'|'direct'; component required for direct. */
+  onAttackBuilding: ((attackerId: string, buildingId: string, mode: 'splash' | 'direct', component?: string) => void) | null = null;
   onRepair: ((repairerId: string, targetId: string) => void) | null = null;
   onSleepUnit: ((unitId: string) => void) | null = null;
   onRefit: ((unitId: string) => void) | null = null;
@@ -384,6 +386,69 @@ export class LocalMapView implements MapViewInterface {
 
   get isAnimating(): boolean {
     return this.animator.isAnimating;
+  }
+
+  /**
+   * Get the screen-space position of a building by its id.
+   * Returns null if the building isn't visible on the current view.
+   */
+  getBuildingScreenPos(buildingId: string): { x: number; y: number } | null {
+    const building = this.world.buildings.find((b) => b.id === buildingId);
+    if (!building) return null;
+
+    const ft = this.flatTiles.find((f) => f.tileIndex === building.tileIndex);
+    if (!ft) return null;
+
+    const seg = getSegmentCentroid(ft, building.segment);
+    if (!seg) return null;
+
+    const [sx, sy] = this.worldToScreen(seg.x, seg.y);
+    return { x: sx, y: sy };
+  }
+
+  /**
+   * Play the attack animation against a building (building-damage feature):
+   * a missile arcs from the attacker to the building, an explosion blooms on
+   * it, and any enemy units caught in Splash_Fire explode (and smoke if
+   * destroyed). Buildings are never destroyed, so the building itself never
+   * smokes. No-op if either endpoint is off-screen.
+   */
+  async playBuildingAttackAnimation(
+    attackerId: string,
+    buildingId: string,
+    factionColorHex: string,
+    splashVictims: Array<{ unitId: string; damage: number; destroyed: boolean }> = [],
+  ): Promise<void> {
+    const from = this.getUnitScreenPos(attackerId);
+    const to = this.getBuildingScreenPos(buildingId);
+    if (!from || !to) return;
+
+    await this.animator.playMissile(from, to, factionColorHex);
+
+    // Building explosion + any co-located splash-victim explosions in parallel.
+    const splashExplosions: Promise<void>[] = splashVictims.map((v) => {
+      const pos = this.getUnitScreenPos(v.unitId);
+      return pos ? this.animator.playExplosion(pos, v.damage, factionColorHex) : Promise.resolve();
+    });
+    await Promise.all([
+      this.animator.playExplosion(to, 12, factionColorHex),
+      ...splashExplosions,
+    ]);
+
+    // Smoke for any destroyed splash victims (the building itself is never destroyed).
+    const destroyedPositions: Array<{ id: string; pos: { x: number; y: number } }> = [];
+    for (const v of splashVictims) {
+      if (v.destroyed) {
+        const pos = this.getUnitScreenPos(v.unitId);
+        if (pos) destroyedPositions.push({ id: v.unitId, pos });
+      }
+    }
+    if (destroyedPositions.length > 0) {
+      for (const { id } of destroyedPositions) this.hiddenUnits.add(id);
+      this.render();
+      await Promise.all(destroyedPositions.map(({ pos }) => this.animator.playSmoke(pos)));
+      for (const { id } of destroyedPositions) this.hiddenUnits.delete(id);
+    }
   }
 
   /**
@@ -773,6 +838,10 @@ export class LocalMapView implements MapViewInterface {
 
   setOnAttack(cb: (attackerId: string, targetId: string) => void): void {
     this.onAttack = cb;
+  }
+
+  setOnAttackBuilding(cb: (attackerId: string, buildingId: string, mode: 'splash' | 'direct', component?: string) => void): void {
+    this.onAttackBuilding = cb;
   }
 
   setOnRepair(cb: (repairerId: string, targetId: string) => void): void {

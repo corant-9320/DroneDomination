@@ -16,9 +16,36 @@ import { CombatPanel } from './combatPanel.js';
 import { isTargetInRange, weaponRangeFromAttributes, RangeTile } from '../shared/rangeCheck.js';
 import { AiPlaybackController } from './aiPlayback.js';
 import { factionColor } from './colors.js';
+import { rerenderBuildingSprite } from './buildingRenderer.js';
 import { dbg } from './debug.js';
 import { getMovementMode, segmentCost } from '../shared/movementConstants.js';
 import { graphDistance, findPath as sharedFindPath } from '../shared/pathfinding.js';
+
+// ---------------------------------------------------------------------------
+// Building damage sync (building-damage feature)
+// ---------------------------------------------------------------------------
+
+/**
+ * Apply server-reported post-damage building component values to the local
+ * world and rebuild the procedural model of each building that changed
+ * (Requirements 8.4, 9.5). No-op when no building was affected.
+ */
+async function syncBuildingDamage(
+  world: WorldData,
+  buildings: import('./worldData.js').BuildingData[] | undefined,
+  damage: import('../shared/combatTypes.js').BuildingDamageReport[] | undefined,
+): Promise<void> {
+  if (!buildings || buildings.length === 0) return;
+  const byId = new Map(buildings.map((b) => [b.id, b]));
+  for (const b of world.buildings) {
+    const updated = byId.get(b.id);
+    if (updated) b.attributes = updated.attributes;
+  }
+  for (const ev of damage ?? []) {
+    const b = world.buildings.find((bb) => bb.id === ev.buildingId);
+    if (b) await rerenderBuildingSprite(b, world);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Callback types for visual feedback during AI turns
@@ -233,6 +260,7 @@ export async function executeAiTurn(
         await callbacks.playAttackAnimation(unit.id, nearestEnemy.id, color, damage, targetDestroyed, splashVictims);
 
         world.units = units;
+        await syncBuildingDamage(world, updated.buildings, combat.buildingDamage);
       }
       callbacks.clearHighlight();
       callbacks.markActed(unit.id);
@@ -332,6 +360,7 @@ export async function executeAiTurn(
                 await callbacks.playAttackAnimation(unit.id, target.id, clr, dmg, destroyed, splashVictims2);
 
                 world.units = units2;
+                await syncBuildingDamage(world, updated2.buildings, combat2.buildingDamage);
               }
               callbacks.clearHighlight();
               callbacks.markActed(unit.id);

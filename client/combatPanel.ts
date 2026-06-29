@@ -10,7 +10,7 @@
  *   'repair'   — repair action
  */
 
-import { WorldData, UnitData, TileData } from './worldData.js';
+import { WorldData, UnitData, TileData, BuildingData } from './worldData.js';
 import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
 import { esc, toneColor } from './htmlUtils.js';
@@ -160,6 +160,7 @@ export class CombatPanel {
       activeFaction: this.activeFaction,
       units: this.world.units,
       tiles: this.world.tiles.map(minimalTile),
+      buildings: this.world.buildings,
     };
 
     try {
@@ -195,7 +196,7 @@ export class CombatPanel {
    * Request combat resolution from the server and display the breakdown.
    * Returns the updated units and the explained combat result (for animation).
    */
-  async resolveAttack(attackerId: string, targetId: string): Promise<{ units: UnitData[]; combat: ExplainedCombat } | null> {
+  async resolveAttack(attackerId: string, targetId: string): Promise<{ units: UnitData[]; buildings?: BuildingData[]; combat: ExplainedCombat } | null> {
     dbg.detail.log('CombatPanel.resolveAttack:', attackerId, '→', targetId);
 
     // Invalidate any in-flight preview fetches
@@ -208,6 +209,7 @@ export class CombatPanel {
       activeFaction: this.activeFaction,
       units: this.world.units,
       tiles: this.world.tiles.map(minimalTile),
+      buildings: this.world.buildings,
     };
 
     try {
@@ -247,9 +249,75 @@ export class CombatPanel {
       this.selectedUnit = null;
       this.hoveredEnemy = null;
       this.render();
-      return { units: data.updatedUnits, combat: data.combats[0] };
+      return { units: data.updatedUnits, buildings: data.updatedBuildings as BuildingData[] | undefined, combat: data.combats[0] };
     } catch (err) {
       dbg.detail.error('CombatPanel fetch error:', err);
+      this.renderError(`Network error: ${err}`);
+      return null;
+    }
+  }
+
+  /**
+   * Request resolution of an attack against an enemy building (building-damage
+   * feature). `mode` is the weapon mode ('splash' or 'direct'); `component` is
+   * required for Direct_Fire. Returns updated units/buildings and the explained
+   * result, and pushes the result into the combat history.
+   */
+  async resolveBuildingAttack(
+    attackerId: string,
+    buildingId: string,
+    mode: 'splash' | 'direct',
+    component?: string,
+  ): Promise<{ units: UnitData[]; buildings?: BuildingData[]; combat: ExplainedCombat } | null> {
+    dbg.detail.log('CombatPanel.resolveBuildingAttack:', attackerId, '→', buildingId, mode, component ?? '');
+    this.previewGeneration++;
+
+    const payload = {
+      action: 'attack',
+      attackerId,
+      targetBuildingId: buildingId,
+      weaponMode: mode,
+      component,
+      activeFaction: this.activeFaction,
+      units: this.world.units,
+      tiles: this.world.tiles.map(minimalTile),
+      buildings: this.world.buildings,
+    };
+
+    try {
+      const resp = await fetch('/api/combat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data: CombatResponse = await resp.json();
+
+      if (!data.success) {
+        this.renderError(data.error ?? 'Unknown error');
+        return null;
+      }
+
+      for (const c of data.combats) {
+        this.history.unshift({ kind: 'combat', turn: this.currentTurn, data: c });
+      }
+      while (this.history.length > this.MAX_HISTORY) this.history.pop();
+
+      const newCount = data.combats.length;
+      const shifted = new Set<number>();
+      for (const idx of this.expandedIndices) shifted.add(idx + newCount);
+      this.expandedIndices = shifted;
+
+      this.preview = null;
+      this.selectedUnit = null;
+      this.hoveredEnemy = null;
+      this.render();
+      return {
+        units: data.updatedUnits,
+        buildings: data.updatedBuildings as BuildingData[] | undefined,
+        combat: data.combats[0],
+      };
+    } catch (err) {
+      dbg.detail.error('CombatPanel building attack error:', err);
       this.renderError(`Network error: ${err}`);
       return null;
     }
@@ -268,6 +336,7 @@ export class CombatPanel {
       activeFaction: this.activeFaction,
       units: this.world.units,
       tiles: this.world.tiles.map(minimalTile),
+      buildings: this.world.buildings,
     };
 
     try {
@@ -570,16 +639,31 @@ export class CombatPanel {
       summaryHtml += `<span style="color:${esc(atkColor)};">#${esc(atkSuffix)} ${esc(c.attackerLabel)}</span>`;
       summaryHtml += `<span style="color:#999;"> → </span>`;
       summaryHtml += `<span style="color:${esc(tgtColor)};">#${esc(tgtSuffix)} ${esc(c.targetLabel)}</span>`;
-      summaryHtml += ` <span class="cl-summary-dmg">−${c.directDamage}</span>`;
 
-      if (c.targetDestroyed) {
-        summaryHtml += ` <span style="color:#f44;">☠</span>`;
+      const bd = c.buildingDamage ?? [];
+      if (bd.length > 0) {
+        // Building attack: report component degradation instead of HP.
+        const parts = bd.map((d) =>
+          d.destroyed
+            ? `<span style="color:#f44;">${esc(d.component)} ✕</span>`
+            : `<span style="color:#fa0;">${esc(d.component)}→${d.newValue}</span>`,
+        );
+        summaryHtml += ` <span style="font-size:0.9em;">🏛 ${parts.join(', ')}</span>`;
+        if (c.splash.length > 0) {
+          summaryHtml += ` <span style="color:#fa0;font-size:0.85em;">💥×${c.splash.length}</span>`;
+        }
       } else {
-        summaryHtml += ` <span class="cl-summary-hp">${c.targetHealthAfter}/${maxHp} HP</span>`;
-      }
+        summaryHtml += ` <span class="cl-summary-dmg">−${c.directDamage}</span>`;
 
-      if (c.splash.length > 0) {
-        summaryHtml += ` <span style="color:#fa0;font-size:0.85em;">💥×${c.splash.length}</span>`;
+        if (c.targetDestroyed) {
+          summaryHtml += ` <span style="color:#f44;">☠</span>`;
+        } else {
+          summaryHtml += ` <span class="cl-summary-hp">${c.targetHealthAfter}/${maxHp} HP</span>`;
+        }
+
+        if (c.splash.length > 0) {
+          summaryHtml += ` <span style="color:#fa0;font-size:0.85em;">💥×${c.splash.length}</span>`;
+        }
       }
     }
 

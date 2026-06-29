@@ -4,6 +4,20 @@
  * Used by both server/combatApi.ts (produces) and client/combatPanel.ts (consumes).
  */
 
+import type { WireBuilding } from './wireTypes.js';
+
+/** One building component reduction reported back to the client (building-damage feature). */
+export interface BuildingDamageReport {
+  /** The affected building's id. */
+  buildingId: string;
+  /** The affected component (e.g. 'defence', 'kinetic'). */
+  component: string;
+  /** The component's value AFTER the reduction (clamped to ≥ 0). */
+  newValue: number;
+  /** True when the component reached 0 (reported as destroyed). */
+  destroyed: boolean;
+}
+
 /** Step-by-step explanation entry. */
 export interface ExplanationStep {
   /** Short title for this step (e.g. "Range Check"). */
@@ -44,6 +58,12 @@ export interface ExplainedCombat {
   targetDestroyed: boolean;
   splash: SplashExplanation[];
   destroyedUnitIds: string[];
+  /**
+   * Building component reductions caused by this attack (building-damage
+   * feature). Present/empty unless the attack reached one or more enemy
+   * buildings. The client renders these and rebuilds affected building models.
+   */
+  buildingDamage?: BuildingDamageReport[];
   /** Structured breakdown for the combat preview table. Present on preview responses. */
   breakdown?: CombatBreakdown;
 }
@@ -104,6 +124,12 @@ export interface CombatResponse<U = unknown> {
   reactions: ExplainedCombat[];
   /** Updated units array (with new health/facing/position values). */
   updatedUnits: U[];
+  /**
+   * Updated buildings array (with post-damage component values). Present when
+   * an attack degraded one or more buildings so the client can sync and
+   * re-render them (building-damage feature). Omitted when no building changed.
+   */
+  updatedBuildings?: WireBuilding[];
   /** Repair explanation (only present for repair actions). */
   repair?: ExplainedRepair;
 }

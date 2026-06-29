@@ -10,6 +10,8 @@ import type { MovePlan } from './localMapMovement.js';
 import { rotateHexIndex } from './facing.js';
 import { UnitContextMenu } from './unitContextMenu.js';
 import { SegmentContextMenu } from './cityContextMenus.js';
+import { BuildingAttackMenu } from './buildingAttackMenu.js';
+import { BUILDING_COMPONENTS, type BuildingComponent } from '../shared/buildingComponents.js';
 import { setEwFocus } from './ewOverlay.js';
 import { TurnManager } from './turnManager.js';
 
@@ -63,6 +65,7 @@ export interface MapViewInterface {
   readonly onTileSelectCb: (tileIndex: number, segment?: number) => void;
   readonly onTurnEnd: (() => void) | null;
   readonly onAttack: ((attackerId: string, targetId: string) => void) | null;
+  readonly onAttackBuilding: ((attackerId: string, buildingId: string, mode: 'splash' | 'direct', component?: string) => void) | null;
   readonly onRepair: ((repairerId: string, targetId: string) => void) | null;
   readonly onHoverEnemy: ((attacker: UnitData | null, target: UnitData | null) => void) | null;
   readonly onCentreChange: ((tileIndex: number) => void) | null;
@@ -118,6 +121,7 @@ export class MapInputHandler {
   private tm: TurnManager;
   private contextMenu = new UnitContextMenu();
   private segmentMenu = new SegmentContextMenu();
+  private buildingMenu = new BuildingAttackMenu();
 
   // Bound listener references (needed for removeEventListener)
   private boundClick: (e: MouseEvent) => void;
@@ -546,6 +550,62 @@ export class MapInputHandler {
         return;
       }
 
+      // --- Building attack check (building-damage feature) ---
+      // No enemy unit in the clicked segment, but an enemy building there can
+      // be targeted to degrade its components.
+      if (!enemyTarget && v.onAttackBuilding && targetSegment >= 0) {
+        const enemyBuilding = v.world.buildings.find(
+          (b) => b.tileIndex === targetTile && b.segment === targetSegment && b.ownerId !== playerOwner,
+        );
+        if (enemyBuilding) {
+          if (!v.isInAttackRange(enemyBuilding.tileIndex, enemyBuilding.segment)) {
+            return;
+          }
+          const bAttacker = playerUnits.find(
+            (u) =>
+              (this.tm.movementPoints.get(u.id) ?? 0) >= 1 &&
+              !this.tm.actedUnits.has(u.id) &&
+              (((u.attributes.kinetic ?? 0) > 0) || ((u.attributes.splashAttack ?? 0) > 0)),
+          );
+          if (!bAttacker) {
+            return;
+          }
+
+          const hasDirect = (bAttacker.attributes.kinetic ?? 0) > 0;
+          const hasSplash = (bAttacker.attributes.splashAttack ?? 0) > 0;
+          const eligible = BUILDING_COMPONENTS.filter(
+            (c) => (enemyBuilding.attributes?.[c] ?? 0) >= 1,
+          );
+
+          const fire = (mode: 'splash' | 'direct', component?: BuildingComponent): void => {
+            this.tm.actedUnits.add(bAttacker.id);
+            this.tm.movementPoints.set(
+              bAttacker.id,
+              Math.max(0, (this.tm.movementPoints.get(bAttacker.id) ?? 0) - 1),
+            );
+            v.onAttackBuilding?.(bAttacker.id, enemyBuilding.id, mode, component);
+          };
+
+          // Only Splash available, or building has no component for Direct to
+          // strike → fire Splash immediately (no choice to make).
+          if (hasSplash && (!hasDirect || eligible.length === 0)) {
+            fire('splash');
+          } else if (!hasSplash && hasDirect && eligible.length === 0) {
+            // Direct-only attacker vs a plain building — valid but no effect.
+            fire('direct');
+          } else {
+            // A real choice exists (Direct component pick, or Splash vs Direct).
+            this.buildingMenu.show(
+              event.clientX,
+              event.clientY,
+              { hasSplash, hasDirect, eligibleComponents: eligible },
+              (mode, component) => fire(mode, component),
+            );
+          }
+          return;
+        }
+      }
+
       // --- Repair check ---
       if (!enemyTarget && v.onRepair) {
         const repairer = playerUnits.find(
@@ -731,6 +791,7 @@ export class MapInputHandler {
   private closeContextMenu(): void {
     this.contextMenu.close();
     this.segmentMenu.close();
+    this.buildingMenu.close();
   }
 
   /** Show the segment menu (View + optional building/city actions). */

@@ -86,5 +86,5 @@ After editing `src/world/**`, run `npm run build` to regenerate world data.
 
 ## Deeper Docs
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — module map, data flow, API contract
+- [Architecture wiki](docs/architecture/README.md) — module map, data flow, API contract, debugging (split into focused pages; landing page at [ARCHITECTURE.md](ARCHITECTURE.md))
 - [COMBAT_RULES.md](COMBAT_RULES.md) — full combat formulas, validation, constants

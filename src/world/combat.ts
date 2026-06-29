@@ -23,9 +23,9 @@
  * the pure formula functions, kept for backward compatibility.
  */
 
-import { Tile, ElevationType } from './types.js';
+import { Tile, ElevationType, Building } from './types.js';
 import { Unit, HexSegment } from './units.js';
-import { effectiveCombatDistance } from './segmentGeometry.js';
+import { effectiveCombatDistance, segmentDistance } from './segmentGeometry.js';
 import { elevationRangeMultiplier } from '../../shared/rangeCheck.js';
 
 // ---------------------------------------------------------------------------
@@ -106,6 +106,27 @@ import {
   classifyArcFromAngle,
   getAngularDifference,
 } from './combatFacing.js';
+
+// ---------------------------------------------------------------------------
+// Combat context — the shared world state every combat calculation reads
+// ---------------------------------------------------------------------------
+
+/**
+ * Bundles the world state combat functions need. Passing this single object
+ * (instead of threading `units`/`tiles`/`buildings` positionally through every
+ * function) means adding a new state source later only touches the functions
+ * that actually read it — not every signature in the call chain.
+ *
+ * `units` is mutated in place by the `resolve*` functions (health changes).
+ */
+export interface CombatContext {
+  /** All units on the board. */
+  units: Unit[];
+  /** Tile adjacency / terrain data. */
+  tiles: Tile[];
+  /** Buildings on the board — EW-bearing buildings project anti-drone screens. */
+  buildings: Building[];
+}
 
 // ---------------------------------------------------------------------------
 // Unit/Tile adapters — gather state from game objects, delegate to combatFormula
@@ -217,29 +238,35 @@ function bfsHopDistances(tiles: Tile[], start: number, maxRadius: number): Map<n
 /**
  * Radius-based Electronic Warfare protection for a target unit.
  *
- * Each friendly unit (including the target itself) with a `defence` value E
- * projects an anti-drone screen of radius E hops, contributing max(0, E − d)
- * to a unit d hops away. Contributions are additive across all sources, with
- * no explicit cap — geometry limits it naturally (e.g. three EW-5 screens one
- * hop away give 3 × (5 − 1) = 12). Destroyed units and enemies do not contribute.
+ * Each friendly EW source — units AND buildings (including the target itself) —
+ * with a `defence` value E projects an anti-drone screen of radius E hops,
+ * contributing max(0, E − d) to a unit d hops away. Contributions are additive
+ * across all sources, with no explicit cap — geometry limits it naturally (e.g.
+ * three EW-5 screens one hop away give 3 × (5 − 1) = 12). Destroyed units and
+ * enemies do not contribute; buildings are indestructible (building-damage
+ * feature) and contribute while their `defence` component is ≥ 1.
  *
  * This value only mitigates damage from DRONE attackers (see getDefencePower).
  */
-export function getEWProtection(
-  target: Unit,
-  allUnits: Unit[],
-  tiles: Tile[],
-): number {
+export function getEWProtection(target: Unit, ctx: CombatContext): number {
+  const { units: allUnits, tiles, buildings } = ctx;
   const dist = bfsHopDistances(tiles, target.tileIndex, MAX_EW_RADIUS);
+
+  const contribution = (ownerId: string, tileIndex: number, defence: number): number => {
+    if (ownerId !== target.ownerId) return 0;
+    if (defence <= 0) return 0;
+    const d = tileIndex === target.tileIndex ? 0 : dist.get(tileIndex);
+    if (d === undefined) return 0; // beyond max radius
+    return Math.max(0, defence - d);
+  };
+
   let total = 0;
   for (const unit of allUnits) {
-    if (unit.ownerId !== target.ownerId) continue;
     if (unit.currentHealth <= 0) continue;
-    const E = unit.attributes.defence ?? 0;
-    if (E <= 0) continue;
-    const d = unit.tileIndex === target.tileIndex ? 0 : dist.get(unit.tileIndex);
-    if (d === undefined) continue; // beyond max radius
-    total += Math.max(0, E - d);
+    total += contribution(unit.ownerId, unit.tileIndex, unit.attributes.defence ?? 0);
+  }
+  for (const building of buildings) {
+    total += contribution(building.ownerId, building.tileIndex, building.attributes?.defence ?? 0);
   }
   return total;
 }
@@ -278,16 +305,18 @@ export function getTerrainDefense(tile: Tile): number {
  * when the attacker is a drone; against ground (tank/spider) attackers EW
  * contributes 0. (The defensive-formation term was deprecated 2026-06-21 and is always 0.)
  *
+ * @param ctx - combat context (units, tiles, buildings) — buildings and units
+ *   both act as EW sources via getEWProtection.
  * @param attackerIsDrone - whether the attacking unit is a drone (enables EW).
  */
 export function getDefencePower(
   target: Unit,
-  allUnits: Unit[],
-  tiles: Tile[],
+  ctx: CombatContext,
   attackerIsDrone: boolean = false,
 ): { armour: number; ew: number; ewRaw: number; ewMultiplier: number; defensiveFormation: number; terrain: number; total: number } {
+  const { tiles } = ctx;
   const armour = clamp(target.attributes.armour ?? 0, 0, 5);
-  const ewRaw = getEWProtection(target, allUnits, tiles);
+  const ewRaw = getEWProtection(target, ctx);
   const ewMultiplier = attackerIsDrone ? 1 : 0;
   const ew = ewRaw * ewMultiplier;
   // Defensive formation bonus deprecated (2026-06-21).
@@ -315,10 +344,10 @@ export function getDefencePower(
 export function calculateDirectDamage(
   attacker: Unit,
   target: Unit,
-  allUnits: Unit[],
-  tiles: Tile[],
+  ctx: CombatContext,
   distance: number = 1,
 ): { damage: number; arc: AttackArc; orientationBonus: number; defencePower: ReturnType<typeof getDefencePower>; antiDronePenaltyApplied: boolean } {
+  const { tiles } = ctx;
   // New bearing-based orientation bonus (continuous 0–2)
   const orientationBonus = calculateOrientationBonus(tiles, attacker.tileIndex, target.tileIndex, target.facing);
 
@@ -327,7 +356,7 @@ export function calculateDirectDamage(
   const arc: AttackArc = isNaN(angleDiff) ? 'unknown' : classifyArcFromAngle(angleDiff);
 
   // EW (radius anti-drone screen) only applies when the attacker is a drone.
-  const defencePower = getDefencePower(target, allUnits, tiles, isDrone(attacker));
+  const defencePower = getDefencePower(target, ctx, isDrone(attacker));
   const antiDronePenaltyApplied = isDrone(target);
 
   const { finalDamage } = computeDamage({
@@ -359,10 +388,10 @@ export function calculateSplashDamage(
   attacker: Unit,
   selectedTarget: Unit,
   victim: Unit,
-  allUnits: Unit[],
-  tiles: Tile[],
+  ctx: CombatContext,
   distance: number = 1,
 ): number {
+  const { tiles } = ctx;
   const splashPower = attacker.attributes.splashAttack ?? 0;
   if (splashPower <= 0) return 0;
 
@@ -372,7 +401,7 @@ export function calculateSplashDamage(
     : 0;
 
   // EW (radius anti-drone screen) only applies when the attacker is a drone.
-  const defPower = getDefencePower(victim, allUnits, tiles, isDrone(attacker));
+  const defPower = getDefencePower(victim, ctx, isDrone(attacker));
 
   const { finalDamage } = computeDamage({
     mode: 'splash',
@@ -414,6 +443,11 @@ export interface CombatResult {
   reactionEvents: CombatResult[];
   /** The weapon mode that was selected and resolved. */
   chosenWeaponMode?: WeaponMode;
+  /**
+   * Building component reductions applied by this attack (building-damage
+   * feature). Empty unless the attack reached one or more enemy buildings.
+   */
+  buildingDamage: BuildingDamageEvent[];
 }
 
 // ---------------------------------------------------------------------------
@@ -436,6 +470,251 @@ function invalidResult(attackerId: string, targetId: string, reason: string): Co
     destroyedUnitIds: [],
     reactionEvents: [],
     chosenWeaponMode: undefined,
+    buildingDamage: [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Building component damage (building-damage feature)
+// ---------------------------------------------------------------------------
+
+/**
+ * The seven equipment components a building may carry. A building is never
+ * destroyed; attacks strip points from these components. A component with
+ * value 0 is "absent" and cannot be targeted. (Movement/engineering attributes
+ * never apply to buildings.) The identifiers live in shared/buildingComponents
+ * so the client UI can reference them without importing from src/.
+ */
+import type { BuildingComponent } from '../../shared/buildingComponents.js';
+import { BUILDING_COMPONENTS } from '../../shared/buildingComponents.js';
+export type { BuildingComponent };
+export { BUILDING_COMPONENTS };
+
+/**
+ * A deterministic random source returning a float in [0, 1). Defaults to
+ * Math.random. The server passes its own generator so Splash_Fire's random
+ * component selection is authoritative and reproducible (Requirement 5.6).
+ */
+export type RandomFn = () => number;
+
+/** One building component reduction produced by a successful attack. */
+export interface BuildingDamageEvent {
+  buildingId: string;
+  component: BuildingComponent;
+  /** Component value AFTER the reduction (always clamped to ≥ 0). */
+  newValue: number;
+  /** True when the component reached 0 (capability fully disabled). */
+  destroyed: boolean;
+}
+
+/**
+ * Components of a building whose current value is at least 1 — i.e. those
+ * eligible to receive a point of damage. Returns [] for a Plain_Building.
+ */
+export function getEligibleBuildingComponents(building: Building): BuildingComponent[] {
+  const a = building.attributes;
+  if (!a) return [];
+  return BUILDING_COMPONENTS.filter((c) => (a[c] ?? 0) >= 1);
+}
+
+/**
+ * Reduce a single building component by exactly one point (clamped at 0),
+ * mutating the building's attributes in place. Buildings have no health pool,
+ * no armour mitigation, and no min-damage formula — this is a flat one-point
+ * loss (Requirements 1, 3).
+ *
+ * Returns the resulting event, or null when the component is already 0/absent
+ * (no change applied — Requirements 3.4, 6.1).
+ */
+export function applyBuildingComponentDamage(
+  building: Building,
+  component: BuildingComponent,
+): BuildingDamageEvent | null {
+  const a = building.attributes;
+  if (!a) return null;
+  const current = a[component] ?? 0;
+  if (current < 1) return null;
+  const newValue = current - 1; // current ≥ 1 ⇒ newValue ≥ 0 (clamped by construction)
+  a[component] = newValue;
+  return { buildingId: building.id, component, newValue, destroyed: newValue === 0 };
+}
+
+/**
+ * Resolve Direct_Fire against a single targeted building: the attacking player
+ * chooses which component to degrade (Requirement 4).
+ *
+ * Returns a CombatResult. On success the chosen component is reduced by one and
+ * reported in `buildingDamage`. Invalid declarations (friendly building, out of
+ * range, missing/invalid component, no targetable component) are rejected with
+ * `wasValid = false` and leave every component unchanged.
+ */
+export function resolveBuildingDirectFire(
+  attackerId: string,
+  building: Building,
+  component: BuildingComponent | undefined,
+  ctx: CombatContext,
+): CombatResult {
+  const { units: allUnits, tiles } = ctx;
+  const attacker = allUnits.find((u) => u.id === attackerId);
+
+  if (!attacker) return invalidResult(attackerId, building.id, 'Attacker not found');
+  if (attacker.currentHealth <= 0) return invalidResult(attackerId, building.id, 'Attacker is destroyed');
+  if (attacker.ownerId === building.ownerId) {
+    return invalidResult(attackerId, building.id, 'Cannot attack a friendly building');
+  }
+  if ((attacker.attributes.kinetic ?? 0) <= 0) {
+    return invalidResult(attackerId, building.id, 'Attacker has no Direct Fire weapon');
+  }
+
+  // Range gate — same segment-distance + elevation rules as unit Direct Fire.
+  const segDist = effectiveCombatDistance(tiles, attacker, { tileIndex: building.tileIndex, segment: building.segment as HexSegment });
+  const elevRangeMult = elevationRangeMultiplier(
+    tiles[attacker.tileIndex].elevationType,
+    tiles[building.tileIndex].elevationType,
+    isDrone(attacker),
+  );
+  const rangeThreshold = getSegmentRangeThreshold(attacker) * elevRangeMult;
+  if (segDist > rangeThreshold) {
+    return invalidResult(attackerId, building.id, 'Target out of range');
+  }
+
+  const eligible = getEligibleBuildingComponents(building);
+
+  // A Plain_Building (or fully stripped building) is a valid target but takes
+  // no damage (Requirements 2.3, 6.3).
+  if (eligible.length === 0) {
+    return { ...directFireBaseResult(attacker.id, building.id), buildingDamage: [] };
+  }
+
+  if (component === undefined) {
+    return invalidResult(attackerId, building.id, 'A component selection is required');
+  }
+  if (!eligible.includes(component)) {
+    return invalidResult(attackerId, building.id, 'Selected component cannot be targeted');
+  }
+
+  const event = applyBuildingComponentDamage(building, component);
+  return {
+    ...directFireBaseResult(attacker.id, building.id),
+    buildingDamage: event ? [event] : [],
+  };
+}
+
+/** A minimal valid Direct_Fire-on-building result skeleton. */
+function directFireBaseResult(attackerId: string, buildingId: string): CombatResult {
+  return {
+    attackerId,
+    targetId: buildingId,
+    wasValid: true,
+    attackArc: 'unknown',
+    facingModifier: 0,
+    targetArmour: 0,
+    targetEffectiveDefense: 0,
+    directDamage: 0,
+    antiAirDamage: 0,
+    splashEvents: [],
+    destroyedUnitIds: [],
+    reactionEvents: [],
+    chosenWeaponMode: 'direct',
+    buildingDamage: [],
+  };
+}
+
+/**
+ * Resolve Splash_Fire's building damage in a hex: every enemy building in the
+ * tile loses one uniformly-random eligible component (Requirement 5). Buildings
+ * with no eligible component are left unchanged. Each building's random choice
+ * is independent.
+ *
+ * Pure with respect to the RNG: pass a deterministic `rng` on the server so all
+ * clients observe the same outcome (Requirement 5.6).
+ */
+export function resolveBuildingSplashInHex(
+  attackerOwnerId: string,
+  tileIndex: number,
+  ctx: CombatContext,
+  rng: RandomFn = Math.random,
+): BuildingDamageEvent[] {
+  const events: BuildingDamageEvent[] = [];
+  for (const building of ctx.buildings) {
+    if (building.tileIndex !== tileIndex) continue;
+    if (building.ownerId === attackerOwnerId) continue; // only enemy buildings
+    const eligible = getEligibleBuildingComponents(building);
+    if (eligible.length === 0) continue; // Requirement 5.3
+    const pick = eligible[Math.floor(rng() * eligible.length)];
+    const event = applyBuildingComponentDamage(building, pick);
+    if (event) events.push(event);
+  }
+  return events;
+}
+
+/**
+ * Resolve Splash_Fire against a whole hex (used when the player targets a
+ * building with Splash_Fire). Applies HP damage to every enemy unit in the hex
+ * (front orientation — no selected unit) AND one random component of damage to
+ * every enemy building in the hex (Requirement 5, Resolved decision O1).
+ *
+ * Mutates unit health and building attributes in place.
+ */
+export function resolveSplashHex(
+  attackerId: string,
+  tileIndex: number,
+  ctx: CombatContext,
+  rng: RandomFn = Math.random,
+): CombatResult {
+  const { units: allUnits, tiles } = ctx;
+  const hexTargetId = `tile_${tileIndex}`;
+  const attacker = allUnits.find((u) => u.id === attackerId);
+
+  if (!attacker) return invalidResult(attackerId, hexTargetId, 'Attacker not found');
+  if (attacker.currentHealth <= 0) return invalidResult(attackerId, hexTargetId, 'Attacker is destroyed');
+  if ((attacker.attributes.splashAttack ?? 0) <= 0) {
+    return invalidResult(attackerId, hexTargetId, 'Attacker has no Splash Fire weapon');
+  }
+
+  // Range gate to the target hex (representative segment 0), with elevation.
+  const segDist = segmentDistance(tiles, attacker.tileIndex, attacker.segment, tileIndex, 0 as HexSegment);
+  const elevRangeMult = elevationRangeMultiplier(
+    tiles[attacker.tileIndex].elevationType,
+    tiles[tileIndex].elevationType,
+    isDrone(attacker),
+  );
+  if (segDist > getSegmentRangeThreshold(attacker) * elevRangeMult) {
+    return invalidResult(attackerId, hexTargetId, 'Target out of range');
+  }
+
+  const splashEvents: SplashEvent[] = [];
+  const destroyedIds: string[] = [];
+  const enemyUnits = allUnits.filter(
+    (u) => u.ownerId !== attacker.ownerId && u.currentHealth > 0 && u.tileIndex === tileIndex,
+  );
+  for (const victim of enemyUnits) {
+    // Passing `attacker` as the selected target forces front orientation for
+    // every victim (no victim's id equals the attacker's id).
+    const dmg = calculateSplashDamage(attacker, attacker, victim, ctx, segDist);
+    victim.currentHealth = applyDamage(victim.currentHealth, dmg);
+    const destroyed = victim.currentHealth <= 0;
+    if (destroyed) destroyedIds.push(victim.id);
+    splashEvents.push({ victimId: victim.id, damage: dmg, victimDestroyed: destroyed });
+  }
+
+  const buildingDamage = resolveBuildingSplashInHex(attacker.ownerId, tileIndex, ctx, rng);
+
+  return {
+    attackerId,
+    targetId: hexTargetId,
+    wasValid: true,
+    attackArc: 'front',
+    facingModifier: 0,
+    targetArmour: 0,
+    targetEffectiveDefense: 0,
+    directDamage: splashEvents.reduce((sum, e) => sum + e.damage, 0),
+    antiAirDamage: 0,
+    splashEvents,
+    destroyedUnitIds: destroyedIds,
+    reactionEvents: [],
+    chosenWeaponMode: 'splash',
+    buildingDamage,
   };
 }
 
@@ -468,16 +747,16 @@ export interface WeaponOption {
 export function evaluateWeaponOptions(
   attacker: Unit,
   target: Unit,
-  allUnits: Unit[],
-  tiles: Tile[],
+  ctx: CombatContext,
   dist: number,
   orientationBonus: number,
 ): WeaponOption[] {
+  const { units: allUnits } = ctx;
   const options: WeaponOption[] = [];
 
   // --- Direct Fire ---
   if ((attacker.attributes.kinetic ?? 0) > 0) {
-    const { damage } = calculateDirectDamage(attacker, target, allUnits, tiles, dist);
+    const { damage } = calculateDirectDamage(attacker, target, ctx, dist);
     options.push({
       mode: 'direct',
       score: damage,
@@ -495,7 +774,7 @@ export function evaluateWeaponOptions(
 
     const splashDamages: Array<{ unitId: string; damage: number }> = [];
     for (const victim of affectedEnemies) {
-      const dmg = calculateSplashDamage(attacker, target, victim, allUnits, tiles, dist);
+      const dmg = calculateSplashDamage(attacker, target, victim, ctx, dist);
       splashDamages.push({ unitId: victim.id, damage: dmg });
     }
 
@@ -509,7 +788,7 @@ export function evaluateWeaponOptions(
 
   // --- Anti-Air Fire ---
   if ((attacker.attributes.antiAir ?? 0) > 0 && isDrone(target)) {
-    const defencePower = getDefencePower(target, allUnits, tiles, isDrone(attacker));
+    const defencePower = getDefencePower(target, ctx, isDrone(attacker));
     const { finalDamage } = computeDamage({
       mode: 'antiAir',
       attackerChassis: getChassisType(attacker),
@@ -542,9 +821,10 @@ export function evaluateWeaponOptions(
 export function resolveAttack(
   attackerId: string,
   targetId: string,
-  allUnits: Unit[],
-  tiles: Tile[],
+  ctx: CombatContext,
+  rng: RandomFn = Math.random,
 ): CombatResult {
+  const { units: allUnits, tiles } = ctx;
   const attacker = allUnits.find((u) => u.id === attackerId);
   const target = allUnits.find((u) => u.id === targetId);
 
@@ -583,10 +863,10 @@ export function resolveAttack(
   const angleDiff = getAngularDifference(tiles, attacker.tileIndex, target.tileIndex, target.facing);
   const arc: AttackArc = isNaN(angleDiff) ? 'unknown' : classifyArcFromAngle(angleDiff);
   // EW (radius anti-drone screen) only applies when the attacker is a drone.
-  const defencePower = getDefencePower(target, allUnits, tiles, isDrone(attacker));
+  const defencePower = getDefencePower(target, ctx, isDrone(attacker));
 
   // Evaluate all valid weapon options (shared with explainer)
-  const validOptions = evaluateWeaponOptions(attacker, target, allUnits, tiles, segDist, orientationBonus);
+  const validOptions = evaluateWeaponOptions(attacker, target, ctx, segDist, orientationBonus);
 
   if (validOptions.length === 0) {
     return invalidResult(attackerId, targetId, 'No valid weapon modes available');
@@ -621,6 +901,12 @@ export function resolveAttack(
   // antiAirDamage field: only set when antiAir mode was chosen
   const antiAirDamage = chosen.mode === 'antiAir' ? totalDamage : 0;
 
+  // Splash Fire also degrades every enemy building sharing the target hex —
+  // one uniformly-random component each (Requirement 5, Resolved decision O1).
+  const buildingDamage = chosen.mode === 'splash'
+    ? resolveBuildingSplashInHex(attacker.ownerId, target.tileIndex, ctx, rng)
+    : [];
+
   return {
     attackerId,
     targetId,
@@ -635,6 +921,7 @@ export function resolveAttack(
     destroyedUnitIds: destroyedIds,
     reactionEvents: [],
     chosenWeaponMode: chosen.mode,
+    buildingDamage,
   };
 }
 
@@ -692,11 +979,10 @@ export function chooseWeaponOption(options: WeaponOption[], target: Unit): Weapo
 export function calculateAntiAirReactionDamage(
   reactingUnit: Unit,
   drone: Unit,
-  allUnits: Unit[],
-  tiles: Tile[],
+  ctx: CombatContext,
 ): number {
   // Anti-air reaction: EW only applies if the reacting attacker is itself a drone.
-  const defPower = getDefencePower(drone, allUnits, tiles, isDrone(reactingUnit));
+  const defPower = getDefencePower(drone, ctx, isDrone(reactingUnit));
   // Terrain is 0 for airborne drones (formation bonus deprecated — see getDefencePower)
   const airborneDefence = (defPower.armour + defPower.ew) * DEFENCE_SCALE;
 
@@ -728,10 +1014,10 @@ export function calculateAntiAirReactionDamage(
 export function resolveAntiAirReactionFireForTile(
   drone: Unit,
   tileIndex: number,
-  allUnits: Unit[],
-  tiles: Tile[],
+  ctx: CombatContext,
   reactedThisAction: Set<string>,
 ): CombatResult[] {
+  const { units: allUnits } = ctx;
   const results: CombatResult[] = [];
 
   for (const unit of allUnits) {
@@ -743,7 +1029,7 @@ export function resolveAntiAirReactionFireForTile(
 
     reactedThisAction.add(unit.id);
 
-    const damage = calculateAntiAirReactionDamage(unit, drone, allUnits, tiles);
+    const damage = calculateAntiAirReactionDamage(unit, drone, ctx);
     drone.currentHealth = applyDamage(drone.currentHealth, damage);
     const destroyed = drone.currentHealth <= 0;
 
@@ -754,13 +1040,14 @@ export function resolveAntiAirReactionFireForTile(
       attackArc: 'front', // snap shot — no arc
       facingModifier: 0,
       targetArmour: drone.attributes.armour ?? 0,
-      targetEffectiveDefense: getDefencePower(drone, allUnits, tiles, isDrone(unit)).total,
+      targetEffectiveDefense: getDefencePower(drone, ctx, isDrone(unit)).total,
       directDamage: damage,
       antiAirDamage: damage,
       splashEvents: [],
       destroyedUnitIds: destroyed ? [drone.id] : [],
       reactionEvents: [],
       chosenWeaponMode: 'antiAir',
+      buildingDamage: [],
     });
 
     if (destroyed) break;
@@ -786,9 +1073,9 @@ export function resolveAntiAirReactionFireForTile(
 export function resolveReactionFire(
   movingUnitId: string,
   path: number[],
-  allUnits: Unit[],
-  tiles: Tile[],
+  ctx: CombatContext,
 ): CombatResult[] {
+  const { units: allUnits, tiles } = ctx;
   const movingUnit = allUnits.find((u) => u.id === movingUnitId);
   if (!movingUnit || movingUnit.currentHealth <= 0) return [];
 
@@ -811,7 +1098,7 @@ export function resolveReactionFire(
 
     // Resolve AA reaction fire from enemies in this tile
     const tileResults = resolveAntiAirReactionFireForTile(
-      movingUnit, currentHex, allUnits, tiles, reactedThisAction,
+      movingUnit, currentHex, ctx, reactedThisAction,
     );
     results.push(...tileResults);
 
@@ -851,9 +1138,9 @@ export {
 export function resolveSimultaneousAttacks(
   unitAId: string,
   unitBId: string,
-  allUnits: Unit[],
-  tiles: Tile[],
+  ctx: CombatContext,
 ): CombatResult[] {
+  const { units: allUnits } = ctx;
   const unitA = allUnits.find((u) => u.id === unitAId);
   const unitB = allUnits.find((u) => u.id === unitBId);
 
@@ -864,14 +1151,14 @@ export function resolveSimultaneousAttacks(
   const healthB = unitB.currentHealth;
 
   // Resolve A attacking B
-  const resultA = resolveAttack(unitAId, unitBId, allUnits, tiles);
+  const resultA = resolveAttack(unitAId, unitBId, ctx);
 
   // Restore both to pre-combat state for B's attack
   unitA.currentHealth = healthA;
   unitB.currentHealth = healthB;
 
   // Resolve B attacking A
-  const resultB = resolveAttack(unitBId, unitAId, allUnits, tiles);
+  const resultB = resolveAttack(unitBId, unitAId, ctx);
 
   // Restore and apply both damages simultaneously
   unitA.currentHealth = applyDamage(healthA, resultB.directDamage);

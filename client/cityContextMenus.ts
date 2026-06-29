@@ -37,7 +37,7 @@ export interface SegmentMenuActions {
 // ─── Shared DOM helpers ───────────────────────────────────────────────────────
 
 /** Create a single menu-row <div>. */
-function makeItem(label: string, title: string, onClick: () => void): HTMLDivElement {
+export function makeItem(label: string, title: string, onClick: () => void): HTMLDivElement {
   const item = document.createElement('div');
   Object.assign(item.style, { padding: '6px 14px', cursor: 'pointer' });
   item.textContent = label;
@@ -49,7 +49,7 @@ function makeItem(label: string, title: string, onClick: () => void): HTMLDivEle
 }
 
 /** Build the shared dark popup container positioned at (clientX, clientY). */
-function makeMenuContainer(clientX: number, clientY: number): HTMLDivElement {
+export function makeMenuContainer(clientX: number, clientY: number): HTMLDivElement {
   const menu = document.createElement('div');
   Object.assign(menu.style, {
     position: 'fixed',
@@ -76,7 +76,7 @@ function makeMenuContainer(clientX: number, clientY: number): HTMLDivElement {
  * cleanup so both CityContextMenu and BuildingContextMenu can share the
  * same open/close pattern without duplicating state.
  */
-class MenuLifecycle {
+export class MenuLifecycle {
   el: HTMLElement | null = null;
   cleanup: (() => void) | null = null;
 

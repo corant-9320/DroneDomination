@@ -105,8 +105,37 @@ async function regenerateTilesFromSeed(seed: number): Promise<{
 /**
  * Expand a compact save into a full WorldData by regenerating tiles from the seed.
  */
+const BUILDING_COMPONENT_KEYS = [
+  'kinetic', 'rangeAttack', 'splashAttack', 'antiAir', 'armour', 'defence', 'repair',
+] as const;
+
+/**
+ * Validate that every building's component values are integers within the
+ * allowed 0–5 range. Throws on the first violation so a corrupt or out-of-range
+ * save is rejected without mutating the live world (building-damage Req 8.5).
+ */
+function validateBuildingComponents(buildings: BuildingData[]): void {
+  for (const b of buildings) {
+    const a = b.attributes;
+    if (!a) continue;
+    for (const key of BUILDING_COMPONENT_KEYS) {
+      const v = a[key];
+      if (v === undefined) continue;
+      if (!Number.isInteger(v) || v < 0 || v > 5) {
+        throw new Error(
+          `Invalid building data: ${b.id} component "${key}"=${v} is outside the allowed range 0–5`,
+        );
+      }
+    }
+  }
+}
+
 async function expandCompactSave(data: CompactSave): Promise<WorldData> {
   const regen = await regenerateTilesFromSeed(data.seed);
+
+  // Reject invalid persisted building component values before mutating any
+  // state, so a corrupt save leaves the existing world untouched (Req 8.5).
+  validateBuildingComponents(data.buildings ?? []);
 
   // Apply city markers to tiles (cities may have been filtered by scenario)
   const cityIds = new Set(data.cities.map((c) => c.id));
@@ -210,11 +239,11 @@ export async function loadWorld(): Promise<WorldData> {
     return cachedWorld;
   }
 
-  dbg.world.log('Fetching /battle-20v20.json from server');
-  const response = await fetch('/battle-20v20.json?v=' + Date.now());
+  dbg.world.log('Fetching /default-scenario.json from server');
+  const response = await fetch('/default-scenario.json?v=' + Date.now());
   if (!response.ok) {
-    dbg.world.error('Failed to load /battle-20v20.json, status:', response.status);
-    throw new Error(`Failed to load battle-20v20.json: ${response.status}`);
+    dbg.world.error('Failed to load /default-scenario.json, status:', response.status);
+    throw new Error(`Failed to load default-scenario.json: ${response.status}`);
   }
   const raw: CompactSave = await response.json();
   const data = await expandCompactSave(raw);

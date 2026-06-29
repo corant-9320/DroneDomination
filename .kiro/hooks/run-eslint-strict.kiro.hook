@@ -2,7 +2,7 @@
   "enabled": true,
   "name": "Run ESLint (Strict Rules)",
   "description": "Manually runs ESLint across src, shared, and server. Enforces no-explicit-any, no-unsafe-*, no-floating-promises, switch-exhaustiveness-check, complexity, and max-lines-per-function (configured in eslint.config.js).",
-  "version": "1",
+  "version": "1.0.0",
   "when": {
     "type": "userTriggered"
   },

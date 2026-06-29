@@ -405,6 +405,55 @@ export class FirstPersonView {
   }
 
   /**
+   * First-person equivalent of `localMap.playBuildingAttackAnimation`
+   * (building-damage feature): a missile arcs from the attacker to the targeted
+   * building, an explosion blooms on it, and any enemy units caught in
+   * Splash_Fire also explode. Buildings are indestructible, so there is no
+   * building destruction effect. No-op when the view is closed or an endpoint
+   * can't be located.
+   */
+  async playBuildingAttackAnimation(
+    attackerId: string,
+    buildingId: string,
+    factionColorHex: string,
+    splashVictims: Array<{ unitId: string; damage: number; destroyed: boolean }> = [],
+  ): Promise<void> {
+    if (!this.active || !this.scene) return;
+    const from = this.unitWorldPos(attackerId);
+    const to = this.buildingWorldPos(buildingId);
+    if (!from || !to) return;
+
+    const color = new THREE.Color(factionColorHex);
+    await this.playMissile3D(from, to, color);
+
+    const blasts: Array<Promise<void>> = [this.playExplosion3D(to, 12, color)];
+    for (const v of splashVictims) {
+      const p = this.unitWorldPos(v.unitId);
+      if (p) blasts.push(this.playExplosion3D(p, v.damage, color));
+    }
+    await Promise.all(blasts);
+  }
+
+  /**
+   * World-space impact point near the middle of a building's body, used as the
+   * missile target / explosion centre. Mirrors the placement maths in the
+   * building `place()` helper (segment centroid → tilted surface sample) and
+   * lifts to roughly mid-structure height.
+   */
+  private buildingWorldPos(buildingId: string): THREE.Vector3 | null {
+    const b = this.world.buildings.find((bb) => bb.id === buildingId);
+    if (!b) return null;
+    const ft = this.tileById.get(b.tileIndex);
+    if (!ft) return null;
+    const cen = segmentCentroid(ft, b.segment);
+    const [wx, , wz] = this.toWorld(cen.x, cen.y);
+    const fallbackTop = elevationWorldHeight(this.world.tiles[b.tileIndex], ELEV_WORLD_SCALE);
+    const { height: groundY } = sampleSurface(ft, cen.x, cen.y, this.toWorld, this.heightOf, fallbackTop);
+    const bodyLift = HEX_WORLD_RADIUS * BUILDING_HEX_FRACTION * 0.5;
+    return new THREE.Vector3(wx, groundY + bodyLift, wz);
+  }
+
+  /**
    * World-space position near a unit's body centre, used as a missile muzzle /
    * impact point. Mirrors the placement maths in rebuildUnits (segment centroid
    * → tilted surface sample → drone air hover) and lifts to roughly mid-body.

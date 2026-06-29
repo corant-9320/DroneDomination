@@ -27,6 +27,7 @@ import { setupKeyboardShortcuts } from './keyboardShortcuts.js';
 import { advanceTurn } from './turnController.js';
 import {
   handlePlayerAttack,
+  handlePlayerBuildingAttack,
   handlePlayerRepair,
   handlePlayerSleep,
   handlePlayerRefit,
@@ -181,6 +182,9 @@ async function main() {
     // ─── Player action wiring ─────────────────────────────────────────────
     localMap.setOnAttack((attackerId, targetId) => {
       void handlePlayerAttack(ctx, attackerId, targetId);
+    });
+    localMap.setOnAttackBuilding((attackerId, buildingId, mode, component) => {
+      void handlePlayerBuildingAttack(ctx, attackerId, buildingId, mode, component);
     });
     localMap.setOnHoverEnemy((attacker, target) => {
       detailPanel.showEnemy(target);

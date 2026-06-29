@@ -5,7 +5,6 @@
  * Imported by server/combatApi.ts to attach explanations to API responses.
  */
 
-import { Tile } from '../src/world/types.js';
 import { Unit } from '../src/world/units.js';
 import { effectiveCombatDistance } from '../src/world/segmentGeometry.js';
 import { elevationRangeMultiplier } from '../shared/rangeCheck.js';
@@ -40,6 +39,7 @@ import {
   DRONE_ANTI_AIR_DAMAGE_MULTIPLIER,
   type AttackArc,
   type CombatResult,
+  type CombatContext,
   type WeaponMode,
   type WeaponOption,
 } from '../src/world/combat.js';
@@ -114,8 +114,7 @@ function formatArcDetailed(angleDiffDeg: number): string {
 function buildBreakdown(
   attacker: Unit,
   target: Unit,
-  allUnits: Unit[],
-  tiles: Tile[],
+  ctx: CombatContext,
   segDist: number,
   rangeThreshold: number,
   rangeAttack: number,
@@ -126,6 +125,7 @@ function buildBreakdown(
   chosenMode: WeaponMode | 'none',
   totalDamage: number,
 ): CombatBreakdown {
+  const { tiles } = ctx;
   // Elevation now extends/reduces RANGE (not damage). Higher ground shoots farther.
   const elevMult = elevationRangeMultiplier(
     tiles[attacker.tileIndex].elevationType,
@@ -204,9 +204,9 @@ function buildBreakdown(
 export function explainAttack(
   attacker: Unit,
   target: Unit,
-  allUnits: Unit[],
-  tiles: Tile[],
+  ctx: CombatContext,
 ): ExplainedCombat {
+  const { units: allUnits, tiles } = ctx;
   const steps: ExplanationStep[] = [];
 
   // Validation
@@ -264,7 +264,7 @@ export function explainAttack(
   // Step 3: Defence breakdown. EW is now a radius-based anti-drone screen —
   // it only applies when the ATTACKER is a drone (independent of weapon mode).
   const attackerIsDrone = isDrone(attacker);
-  const defPower = getDefencePower(target, allUnits, tiles, attackerIsDrone);
+  const defPower = getDefencePower(target, ctx, attackerIsDrone);
   const effectiveDefence = defPower.total * DEFENCE_SCALE;
 
   steps.push({
@@ -286,7 +286,7 @@ export function explainAttack(
 
   // Single source of truth: same function used by resolveAttack
   // Use segment-aware distance for range efficiency (same as resolveAttack)
-  const weaponOptions: WeaponOption[] = evaluateWeaponOptions(attacker, target, allUnits, tiles, segDist, orientationBonus);
+  const weaponOptions: WeaponOption[] = evaluateWeaponOptions(attacker, target, ctx, segDist, orientationBonus);
 
   // Build display labels for each evaluated option (formatting only)
   const weaponLabelsForDisplay: Array<{ mode: WeaponMode; score: number; label: string }> = weaponOptions.map((opt) => {
@@ -407,7 +407,7 @@ export function explainAttack(
     targetDestroyed: outOfRange ? false : destroyed,    splash: [],
     destroyedUnitIds: [],
     breakdown: buildBreakdown(
-      attacker, target, allUnits, tiles,
+      attacker, target, ctx,
       segDist, baseRangeThreshold,
       rangeAttack, meleeAttack, antiAirAttack,
       orientationBonus,
@@ -426,9 +426,9 @@ export function explainSplash(
   attacker: Unit,
   primaryTarget: Unit,
   result: CombatResult,
-  allUnits: Unit[],
-  tiles: Tile[],
+  ctx: CombatContext,
 ): SplashExplanation[] {
+  const { units: allUnits, tiles } = ctx;
   const splashPower = attacker.attributes.splashAttack ?? 0;
   if (splashPower <= 0 || result.chosenWeaponMode !== 'splash') return [];
 
@@ -440,7 +440,7 @@ export function explainSplash(
     const victim = allUnits.find((u) => u.id === event.victimId);
     if (!victim) continue;
 
-    const defPower = getDefencePower(victim, allUnits, tiles, isDrone(attacker));
+    const defPower = getDefencePower(victim, ctx, isDrone(attacker));
     const effectiveDefence = defPower.total * DEFENCE_SCALE;
     const healthBefore = victim.currentHealth + event.damage;
 

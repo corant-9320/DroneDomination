@@ -2,8 +2,8 @@
  * GAME DEBUG — DOM instrumentation + window.gameDebug API for dev/test use.
  *
  * ── Implementation note ─────────────────────────────────────────────────────
- * Steering files read: architecture.md, ui-defaults.md, conventions.md,
- *   docs-as-we-go.md, README.md.
+ * Steering files read: architecture-debugging.md (→ docs/architecture/debugging.md),
+ *   ui-defaults.md, conventions.md, docs-as-we-go.md, README.md.
  *
  * Game entities instrumented (derived from codebase, not assumptions):
  *   World summary  — seed, tileCount, city/unit counts, turn state

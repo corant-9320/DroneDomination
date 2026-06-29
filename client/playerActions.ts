@@ -28,12 +28,12 @@ export async function handlePlayerAttack(
   emitDebugEvent('attack', { attackerId, targetId }, turnManager.turnNumber);
 
   const attacker = world.units.find((u) => u.id === attackerId);
-  const updatedUnits = await combatPanel.resolveAttack(attackerId, targetId);
-  if (!updatedUnits) return;
+  const result = await combatPanel.resolveAttack(attackerId, targetId);
+  if (!result) return;
 
   switchRpTab('history');
 
-  const { units, combat } = updatedUnits;
+  const { units, buildings, combat } = result;
 
   const oldTarget = world.units.find((u) => u.id === targetId);
   const newTarget = units.find((u) => u.id === targetId);
@@ -60,10 +60,84 @@ export async function handlePlayerAttack(
   await Promise.all(attackAnims);
 
   world.units = units;
+
+  // Sync any building component damage and rebuild affected building models
+  // (building-damage feature, Requirement 9.5).
+  if (buildings && buildings.length > 0) {
+    const byId = new Map(buildings.map((b) => [b.id, b]));
+    for (const b of world.buildings) {
+      const updated = byId.get(b.id);
+      if (updated) b.attributes = updated.attributes;
+    }
+    const changed = combat.buildingDamage ?? [];
+    for (const ev of changed) {
+      const b = world.buildings.find((bb) => bb.id === ev.buildingId);
+      if (b) await rerenderBuildingSprite(b, world);
+    }
+  }
+
   localMap.render();
   if (firstPerson.isActive) firstPerson.refresh();
+  detailPanel.showTile(localMap.selectedTile, localMap.selectedSegment >= 0 ? localMap.selectedSegment : undefined);
+}
 
-  // Keep detail panel in sync after the attack
+export async function handlePlayerBuildingAttack(
+  ctx: GameContext,
+  attackerId: string,
+  buildingId: string,
+  mode: 'splash' | 'direct',
+  component?: string,
+): Promise<void> {
+  const { world, localMap, firstPerson, combatPanel, detailPanel, turnManager, switchRpTab, isPlayerTurn } = ctx;
+
+  if (!isPlayerTurn()) {
+    dbg.input.log('Building attack blocked — not player turn');
+    return;
+  }
+  dbg.input.log('Building attack initiated:', attackerId, '→', buildingId, mode, component ?? '');
+  emitDebugEvent('attack', { attackerId, targetId: buildingId }, turnManager.turnNumber);
+
+  const result = await combatPanel.resolveBuildingAttack(attackerId, buildingId, mode, component);
+  if (!result) return;
+
+  switchRpTab('history');
+
+  const { units, buildings, combat } = result;
+
+  // Missile → explosion on the building, plus explosions/smoke for any enemy
+  // units caught in Splash_Fire (building-damage animation).
+  const attacker = world.units.find((u) => u.id === attackerId);
+  const attackerColor = attacker ? factionColor(world, attacker.ownerId) : '#ffffff';
+  const splashVictims = combat.splash.map((s) => ({
+    unitId: s.victimId,
+    damage: s.damage,
+    destroyed: s.victimDestroyed,
+  }));
+  const buildingAnims: Array<Promise<void>> = [
+    localMap.playBuildingAttackAnimation(attackerId, buildingId, attackerColor, splashVictims),
+  ];
+  if (firstPerson.isActive) {
+    buildingAnims.push(firstPerson.playBuildingAttackAnimation(attackerId, buildingId, attackerColor, splashVictims));
+  }
+  await Promise.all(buildingAnims);
+
+  // Splash on a building's hex may also damage co-located enemy units.
+  world.units = units;
+
+  if (buildings && buildings.length > 0) {
+    const byId = new Map(buildings.map((b) => [b.id, b]));
+    for (const b of world.buildings) {
+      const updated = byId.get(b.id);
+      if (updated) b.attributes = updated.attributes;
+    }
+    for (const ev of combat.buildingDamage ?? []) {
+      const b = world.buildings.find((bb) => bb.id === ev.buildingId);
+      if (b) await rerenderBuildingSprite(b, world);
+    }
+  }
+
+  localMap.render();
+  if (firstPerson.isActive) firstPerson.refresh();
   detailPanel.showTile(localMap.selectedTile, localMap.selectedSegment >= 0 ? localMap.selectedSegment : undefined);
 }
 
