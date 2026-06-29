@@ -22,6 +22,8 @@ export class MatchClient {
   private matchId: string | null = null;
   private version = 0;
   private creating: Promise<boolean> | null = null;
+  /** Serialises intent submissions so versions never race. */
+  private chain: Promise<unknown> = Promise.resolve();
 
   /** Whether an authoritative session is established. */
   get active(): boolean {
@@ -73,11 +75,17 @@ export class MatchClient {
   }
 
   /**
-   * Submit a player intent for authoritative validation. Returns the response
-   * (with the updated authoritative state) or null on a transport error.
-   * Updates the tracked version on success.
+   * Submit a player intent for authoritative validation. Submissions are
+   * serialised so each carries the current version (no races from rapid
+   * clicks). Returns the response or null on a transport error.
    */
-  async submit(intent: Intent): Promise<MatchIntentResponse | null> {
+  submit(intent: Intent): Promise<MatchIntentResponse | null> {
+    const run = this.chain.then(() => this.doSubmit(intent));
+    this.chain = run.catch(() => undefined);
+    return run;
+  }
+
+  private async doSubmit(intent: Intent): Promise<MatchIntentResponse | null> {
     if (!this.matchId) {
       dbg.input.error('submit() with no active match');
       return null;

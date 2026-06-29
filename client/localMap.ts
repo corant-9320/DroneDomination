@@ -53,6 +53,7 @@ import {
   computeContextualAttackRoute as _computeContextualAttackRoute,
   computeMovementRouteForDestination as _computeMovementRouteForDestination,
   extractMovePlan as _extractMovePlan,
+  extractMovePath as _extractMovePath,
   drawMovementCostRoute as _drawMovementCostRoute,
   drawReachableSegments as _drawReachableSegments,
   drawAttackRangeRings as _drawAttackRangeRings,
@@ -108,6 +109,11 @@ export class LocalMapView implements MapViewInterface {
   onAttackBuilding: ((attackerId: string, buildingId: string, mode: 'splash' | 'direct', component?: string) => void) | null = null;
   onRepair: ((repairerId: string, targetId: string) => void) | null = null;
   onSleepUnit: ((unitId: string) => void) | null = null;
+  /**
+   * Fired after a player move is committed, with the tile-index path and the
+   * arrival segment, so the move can be submitted to the authoritative session.
+   */
+  onMoveCommitted: ((unitId: string, path: number[], segment: number) => void) | null = null;
   onRefit: ((unitId: string) => void) | null = null;
   onViewUnit: ((unitId: string) => void) | null = null;
   /** Enter first-person look-around at an arbitrary hex segment (no unit needed). */
@@ -688,6 +694,17 @@ export class LocalMapView implements MapViewInterface {
     return _extractMovePlan(route, this.world.tiles);
   }
 
+  /**
+   * Compute the contiguous tile-index path for a planned move (same route the
+   * preview line + planMove use). Empty/1-element for a pure intra-hex move.
+   */
+  planMovePath(unit: UnitData, destTile: number, destSegment: number, remainingMP: number): number[] {
+    const route = _computeMovementRouteForDestination(
+      this.world, unit, destTile, destSegment, remainingMP, this._rangeResult,
+    );
+    return _extractMovePath(route);
+  }
+
   // ─── Movement helpers delegation (MapViewInterface) ─────────────────────────
 
   getMaxMovement(unit: UnitData): number {
@@ -846,6 +863,10 @@ export class LocalMapView implements MapViewInterface {
 
   setOnRepair(cb: (repairerId: string, targetId: string) => void): void {
     this.onRepair = cb;
+  }
+
+  setOnMoveCommitted(cb: (unitId: string, path: number[], segment: number) => void): void {
+    this.onMoveCommitted = cb;
   }
 
   setOnSleepUnit(cb: (unitId: string) => void): void {

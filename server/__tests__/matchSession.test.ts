@@ -49,8 +49,13 @@ function units(): WireUnit[] {
   ];
 }
 
+/** An enemy building on tile 3 with a degradable defence component. */
+function buildings(): import('../combatApi.js').WireBuilding[] {
+  return [{ id: 'bldg', ownerId: 'e', tileIndex: 3, segment: 2, attributes: attrs({ defence: 3 }) }];
+}
+
 async function freshMatch() {
-  const c = await handleCreateMatch({ seed: SEED, factions: ['p', 'e'], units: units() });
+  const c = await handleCreateMatch({ seed: SEED, factions: ['p', 'e'], units: units(), buildings: buildings() });
   expect(c.success).toBe(true);
   return c.state!.matchId;
 }
@@ -125,6 +130,22 @@ describe('match session authority', () => {
     const back = await handleMatchIntent({ matchId, intent: { kind: 'endTurn' } }); // → 'p'
     expect(back.unitTurn!['gun'].acted).toBe(false);
     expect(back.unitTurn!['gun'].mp).toBe(2);
+  });
+
+  it('applies the destination segment on a move', async () => {
+    const matchId = await freshMatch();
+    const r = await handleMatchIntent({ matchId, intent: { kind: 'move', unitId: 'mover', path: [5, 6], segment: 4 } });
+    expect(r.success).toBe(true);
+    expect(r.units!.find((u) => u.id === 'mover')!.segment).toBe(4);
+  });
+
+  it('degrades a building component via an attackBuilding intent (Direct Fire)', async () => {
+    const matchId = await freshMatch();
+    const r = await handleMatchIntent({ matchId, intent: { kind: 'attackBuilding', attackerId: 'gun', buildingId: 'bldg', weaponMode: 'direct', component: 'defence' } });
+    expect(r.success).toBe(true);
+    expect(r.unitTurn!['gun'].acted).toBe(true);
+    const dmg = r.combats?.[0]?.buildingDamage ?? [];
+    expect(dmg.some((d) => d.buildingId === 'bldg' && d.component === 'defence')).toBe(true);
   });
 
   it('rejects a stale expectedVersion as a conflict', async () => {

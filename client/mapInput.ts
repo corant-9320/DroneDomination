@@ -110,6 +110,10 @@ export interface MapViewInterface {
    * nothing to move.
    */
   planMove(unit: UnitData, destTile: number, destSegment: number, remainingMP: number): MovePlan | null;
+  /** Contiguous tile-index path for a planned move (for the session move intent). */
+  planMovePath(unit: UnitData, destTile: number, destSegment: number, remainingMP: number): number[];
+  /** Fired after a player move is committed (unit id, tile path, arrival segment). */
+  onMoveCommitted: ((unitId: string, path: number[], segment: number) => void) | null;
   isImpassableTerrain(terrain: string): boolean;
   computeFacingAngle(fromTileIndex: number, toTileIndex: number): number;
   angleToFacing(angle: number): 0 | 1 | 2 | 3 | 4 | 5;
@@ -685,6 +689,10 @@ export class MapInputHandler {
     const fromTile = unit.tileIndex;
     const fromSeg = unit.segment;
 
+    // Capture the tile-index path BEFORE mutating position, for the
+    // authoritative session move intent (skipped for pure intra-hex moves).
+    const movePath = v.planMovePath(unit, targetTile, preferredSegment, remaining);
+
     // Compute travel facing toward the destination tile.
     // plan.facing is the neighbour index in destTile's neighbour array pointing
     // forward (most aligned with the travel direction). See extractMovePlan.
@@ -709,6 +717,9 @@ export class MapInputHandler {
       unit.facing = travelFacing;
       v.render();
     });
+
+    // Mirror the move to the authoritative session (server-authority Phase 3).
+    if (movePath.length >= 2) v.onMoveCommitted?.(unit.id, movePath, freeSegment);
   }
 
   // ─── Drag helpers ──────────────────────────────────────────────────────────

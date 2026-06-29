@@ -175,7 +175,7 @@ export function handleCombat(req: CombatRequest): CombatResponse<WireUnit> {
  * component of every enemy building in the hex (and applies HP splash to enemy
  * units there). Anti_Air_Fire against a building is rejected.
  */
-function handleBuildingAttack(req: CombatRequest, ctx: CombatContext): CombatResponse<WireUnit> {
+export function handleBuildingAttack(req: CombatRequest, ctx: CombatContext): CombatResponse<WireUnit> {
   const { units, buildings } = ctx;
   const { attackerId, targetBuildingId, activeFaction, component } = req;
   if (!attackerId || !targetBuildingId) {

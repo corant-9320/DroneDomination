@@ -30,6 +30,7 @@ import {
   handlePlayerAttack,
   handlePlayerBuildingAttack,
   handlePlayerRepair,
+  handlePlayerMove,
   handlePlayerSleep,
   handlePlayerRefit,
   handlePlayerBuildingRefit,
@@ -202,6 +203,9 @@ async function main() {
     });
     localMap.setOnRepair((repairerId, targetId) => {
       void handlePlayerRepair(ctx, repairerId, targetId);
+    });
+    localMap.setOnMoveCommitted((unitId, path, segment) => {
+      void handlePlayerMove(ctx, unitId, path, segment);
     });
     localMap.setOnSleepUnit((unitId) => {
       handlePlayerSleep(ctx, unitId);

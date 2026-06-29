@@ -397,6 +397,19 @@ export class CombatPanel {
     this.render();
   }
 
+  /**
+   * Push a precomputed repair explanation into the history list (authoritative
+   * session replay). Mirrors the bookkeeping done by resolveRepair.
+   */
+  recordRepairHistory(r: ExplainedRepair): void {
+    this.history.unshift({ kind: 'repair', turn: this.currentTurn, data: r });
+    while (this.history.length > this.MAX_HISTORY) this.history.pop();
+    const shifted = new Set<number>();
+    for (const idx of this.expandedIndices) shifted.add(idx + 1);
+    this.expandedIndices = shifted;
+    this.render();
+  }
+
   /** Clear the combat log. */
   clear(): void {
     this.history = [];

@@ -25,6 +25,7 @@ export {
   computeMovementTowardTile,
   computeMovementRouteForDestination,
   extractMovePlan,
+  extractMovePath,
   type RouteHopZone,
   type MovementRouteHop,
   type MovementCostRoute,

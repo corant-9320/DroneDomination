@@ -33,6 +33,8 @@ import {
   toWireUnit,
   toWireBuilding,
   computeMovePath,
+  handleBuildingAttack,
+  type CombatRequest,
 } from './combatApi.js';
 import { getMaxMovement } from '../shared/movementConstants.js';
 import { getSessionStore, VersionConflictError } from './sessionStore.js';
@@ -153,6 +155,12 @@ export async function handleMatchIntent(req: MatchIntentRequest): Promise<MatchI
       combats = r.combats;
       break;
     }
+    case 'attackBuilding': {
+      const r = applyBuildingAttackIntent(state, ctx, activeFaction, intent);
+      if (r.error) return { success: false, error: r.error };
+      combats = r.combats;
+      break;
+    }
     case 'repair': {
       const r = applyRepairIntent(state, ctx, activeFaction, intent);
       if (r.error) return { success: false, error: r.error };
@@ -241,6 +249,9 @@ function applyMoveIntent(
   }
 
   ts.mp -= r.cost;
+  if (typeof intent.segment === 'number' && intent.segment >= 0 && intent.segment <= 5) {
+    mover.segment = intent.segment as typeof mover.segment;
+  }
   return { reactions };
 }
 
@@ -278,6 +289,40 @@ function applyAttackIntent(
   ts.acted = true;
   ts.mp -= 1;
   return { combats: [explained] };
+}
+
+function applyBuildingAttackIntent(
+  state: MatchState,
+  ctx: CombatContext,
+  activeFaction: string,
+  intent: Extract<Intent, { kind: 'attackBuilding' }>,
+): { error?: string; combats?: ExplainedCombat[] } {
+  const attacker = ctx.units.find((u) => u.id === intent.attackerId);
+  if (!attacker) return { error: 'Attacker not found' };
+  if (attacker.ownerId !== activeFaction) return { error: 'Not this faction\'s turn, or not your unit' };
+
+  const ts = state.unitTurn[attacker.id];
+  if (!ts) return { error: 'No turn state for unit' };
+  if (ts.acted) return { error: 'Unit has already acted this turn' };
+  if (ts.mp < 1) return { error: 'Insufficient movement points to attack' };
+
+  // Reuse the stateless building-attack resolver (reads units/buildings from ctx).
+  const req: CombatRequest = {
+    action: 'attack',
+    attackerId: intent.attackerId,
+    targetBuildingId: intent.buildingId,
+    weaponMode: intent.weaponMode,
+    component: intent.component,
+    activeFaction,
+    units: [],
+    tiles: [],
+  };
+  const result = handleBuildingAttack(req, ctx);
+  if (!result.success) return { error: result.error ?? 'Invalid building attack' };
+
+  ts.acted = true;
+  ts.mp -= 1;
+  return { combats: result.combats };
 }
 
 function applyRepairIntent(

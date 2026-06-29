@@ -16,6 +16,7 @@
 
 import type { WireUnit, WireBuilding } from './wireTypes.js';
 import type { ExplainedCombat, ExplainedRepair } from './combatTypes.js';
+import type { BuildingComponent } from './buildingComponents.js';
 
 /** Per-unit, per-turn budget the server enforces authoritatively. */
 export interface UnitTurnState {
@@ -51,8 +52,9 @@ export interface MatchState {
 
 /** A player intent submitted for authoritative validation + application. */
 export type Intent =
-  | { kind: 'move'; unitId: string; path: number[] }
+  | { kind: 'move'; unitId: string; path: number[]; segment?: number }
   | { kind: 'attack'; attackerId: string; targetId: string }
+  | { kind: 'attackBuilding'; attackerId: string; buildingId: string; weaponMode?: 'splash' | 'direct'; component?: BuildingComponent }
   | { kind: 'repair'; repairerId: string; targetId: string }
   | { kind: 'endTurn' };
 

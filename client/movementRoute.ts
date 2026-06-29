@@ -507,3 +507,19 @@ export function extractMovePlan(
     facing,
   };
 }
+
+/**
+ * Reduce a movement route to the contiguous tile-index path it walks (start
+ * tile followed by each distinct tile crossed). Weapon-range hops are ignored.
+ * Returns a 1-element array (or empty) for a pure intra-hex reposition.
+ * Used to send a move to the authoritative session (`/api/match/intent`).
+ */
+export function extractMovePath(route: MovementCostRoute | null): number[] {
+  if (!route) return [];
+  const moveHops = route.hops.filter((h) => h.zone !== 'weaponRange');
+  const path: number[] = [route.startTile];
+  for (const h of moveHops) {
+    if (path[path.length - 1] !== h.tileIndex) path.push(h.tileIndex);
+  }
+  return path;
+}

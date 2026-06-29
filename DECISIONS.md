@@ -40,33 +40,36 @@ so intents stay fast, but on Lambda this cost recurs per cold container. Future:
 persist/cache tiles (e.g. a warm layer or precomputed artifact) rather than
 regenerating per container.
 
-**Client wiring (in progress):** `client/matchClient.ts` (`MatchClient`) now
-creates the authoritative session on game load (`main.ts`, fire-and-forget) and
-provides `submit(intent)` + `reconcile(resp, world, turnManager)` for routing
-player actions. Added to `GameContext`.
+**Client wiring (live as of 2026-06-29):** player actions now route through the
+authoritative session. `client/matchClient.ts` (`MatchClient`) creates the
+session on load + after each AI turn (turn-boundary refresh), serialises intent
+submissions (so versions never race), and `reconcile()`s the authoritative
+response into `world` + `TurnManager`. Wired:
+- **Attack / repair / building-attack** (`playerActions.ts`) submit an intent,
+  animate from the returned `ExplainedCombat`, then reconcile + record history.
+  Server-side `attackBuilding` intent added (`matchApi.ts`, reuses
+  `handleBuildingAttack`).
+- **Move** (`mapInput.ts` → `onMoveCommitted` → `handlePlayerMove`) runs the
+  local optimistic glide, then mirrors the tile-path (+ arrival segment) to the
+  session; the move intent now carries `segment` and the server sets it.
+  `movementRoute.extractMovePath` + `localMap.planMovePath` derive the path.
+- **End turn**: the session is recreated from the post-AI world each player turn.
 
-**Per-action routing — remaining work + gaps found (investigated 2026-06-29).**
-Because the session must observe *every* state change to stay consistent,
-actions are all-or-nothing within a turn. Concretely, to route player actions
-through `/api/match/intent` we still need:
-- **Move:** player moves never hit the server today (`mapInput.onRightClick`
-  mutates `world` + MP locally). Routing requires sending the tile-index path
-  (derivable from `movementRoute` hops) AND the destination **segment** — and
-  the server move handler must set the unit's segment (it currently only sets
-  tileIndex/facing), or session range checks use a stale segment.
-- **Building attack:** `matchApi` has no `attackBuilding` intent yet — needs a
-  server-side intent that reuses `handleBuildingAttack`.
-- **Client MP pre-deduction:** `mapInput` pre-deducts MP / sets `acted` before
-  calling the attack/repair handlers; that must move to server-authoritative
-  reconciliation from `unitTurn`.
-- **AI / turn boundary:** AI still runs via `/api/ai-turn` (Phase 1) outside the
-  session, so the session must be refreshed (recreated) at each player-turn
-  boundary, or AI must move into the session.
-- These change the live movement/combat UX and need browser verification (not
-  just `tsc`/unit tests), so they're being landed as a separate, verified step.
+**Known limitations to verify / follow up:**
+- **Intra-hex repositions** (no tile change) aren't sent to the session (move
+  intent needs a 2+ tile path), so their MP cost isn't tracked server-side and a
+  later `reconcile` will refund it. Needs a segment-move model server-side.
+- **MP-model parity:** the server move cost (`computeMovePath`) and the client
+  route cost may differ in edge cases; `reconcile` makes the server authoritative,
+  so MP can visibly snap after an action. Aligning the two cost models is a
+  follow-up.
+- **Player-drone reaction fire** now triggers (moves hit the server) — new but
+  correct behaviour; verify the glide/▶ handles a drone destroyed mid-move.
+- Client still applies moves optimistically (responsive); a server rejection is
+  logged but the local move isn't reverted (fine in single-player local mode).
 
-**NOT yet done:** the above per-action routing, AI-in-session, and the real
-DynamoDB adapter swap.
+**NOT yet done:** AI factions running *inside* the session (still `/api/ai-turn`
++ turn-boundary recreate), and the real DynamoDB adapter swap.
 
 ## 2026-06-29 — Server-authority Phase 2: validate human move legality
 

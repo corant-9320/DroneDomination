@@ -18,7 +18,7 @@ export async function handlePlayerAttack(
   attackerId: string,
   targetId: string,
 ): Promise<void> {
-  const { world, localMap, firstPerson, combatPanel, detailPanel, turnManager, switchRpTab, isPlayerTurn } = ctx;
+  const { world, localMap, firstPerson, combatPanel, detailPanel, turnManager, matchClient, switchRpTab, isPlayerTurn } = ctx;
 
   if (!isPlayerTurn()) {
     dbg.input.log('Attack blocked — not player turn');
@@ -28,54 +28,44 @@ export async function handlePlayerAttack(
   emitDebugEvent('attack', { attackerId, targetId }, turnManager.turnNumber);
 
   const attacker = world.units.find((u) => u.id === attackerId);
-  const result = await combatPanel.resolveAttack(attackerId, targetId);
-  if (!result) return;
+
+  // Authoritative resolution via the match session.
+  const resp = await matchClient.submit({ kind: 'attack', attackerId, targetId });
+  if (!resp || !resp.success) {
+    if (resp?.error) dbg.input.log('Attack rejected by server:', resp.error);
+    return;
+  }
 
   switchRpTab('history');
 
-  const { units, buildings, combat } = result;
+  const combat = resp.combats?.[0];
+  if (combat) {
+    const damage = combat.directDamage;
+    const targetDestroyed = combat.targetDestroyed;
+    const attackerColor = attacker ? factionColor(world, attacker.ownerId) : '#ffffff';
+    const splashVictims = combat.splash
+      .filter((s) => s.victimId !== targetId)
+      .map((s) => ({ unitId: s.victimId, damage: s.damage, destroyed: s.victimDestroyed }));
 
-  const oldTarget = world.units.find((u) => u.id === targetId);
-  const newTarget = units.find((u) => u.id === targetId);
-  const damage = oldTarget && newTarget
-    ? oldTarget.currentHealth - newTarget.currentHealth
-    : oldTarget ? oldTarget.currentHealth : 10;
-  const targetDestroyed = newTarget ? newTarget.currentHealth <= 0 : true;
-  const attackerColor = attacker ? factionColor(world, attacker.ownerId) : '#ffffff';
-
-  const splashVictims = combat.splash
-    .filter((s) => s.victimId !== targetId)
-    .map((s) => ({
-      unitId: s.victimId,
-      damage: s.damage,
-      destroyed: s.victimDestroyed,
-    }));
-
-  const attackAnims: Array<Promise<void>> = [
-    localMap.playAttackAnimation(attackerId, targetId, attackerColor, damage, targetDestroyed, splashVictims),
-  ];
-  if (firstPerson.isActive) {
-    attackAnims.push(firstPerson.playAttackAnimation(attackerId, targetId, attackerColor, damage, targetDestroyed, splashVictims));
-  }
-  await Promise.all(attackAnims);
-
-  world.units = units;
-
-  // Sync any building component damage and rebuild affected building models
-  // (building-damage feature, Requirement 9.5).
-  if (buildings && buildings.length > 0) {
-    const byId = new Map(buildings.map((b) => [b.id, b]));
-    for (const b of world.buildings) {
-      const updated = byId.get(b.id);
-      if (updated) b.attributes = updated.attributes;
+    const attackAnims: Array<Promise<void>> = [
+      localMap.playAttackAnimation(attackerId, targetId, attackerColor, damage, targetDestroyed, splashVictims),
+    ];
+    if (firstPerson.isActive) {
+      attackAnims.push(firstPerson.playAttackAnimation(attackerId, targetId, attackerColor, damage, targetDestroyed, splashVictims));
     }
-    const changed = combat.buildingDamage ?? [];
-    for (const ev of changed) {
-      const b = world.buildings.find((bb) => bb.id === ev.buildingId);
-      if (b) await rerenderBuildingSprite(b, world);
-    }
+    await Promise.all(attackAnims);
   }
 
+  // Adopt authoritative state, then rebuild any damaged building models.
+  const buildingDamage = combat?.buildingDamage ?? [];
+  matchClient.reconcile(resp, world, turnManager);
+  combatPanel.recordHistory(resp.combats ?? [], resp.reactions ?? []);
+  for (const ev of buildingDamage) {
+    const b = world.buildings.find((bb) => bb.id === ev.buildingId);
+    if (b) await rerenderBuildingSprite(b, world);
+  }
+
+  localMap.computeMovementRange();
   localMap.render();
   if (firstPerson.isActive) firstPerson.refresh();
   detailPanel.showTile(localMap.selectedTile, localMap.selectedSegment >= 0 ? localMap.selectedSegment : undefined);
@@ -88,7 +78,7 @@ export async function handlePlayerBuildingAttack(
   mode: 'splash' | 'direct',
   component?: string,
 ): Promise<void> {
-  const { world, localMap, firstPerson, combatPanel, detailPanel, turnManager, switchRpTab, isPlayerTurn } = ctx;
+  const { world, localMap, firstPerson, combatPanel, detailPanel, turnManager, matchClient, switchRpTab, isPlayerTurn } = ctx;
 
   if (!isPlayerTurn()) {
     dbg.input.log('Building attack blocked — not player turn');
@@ -97,18 +87,24 @@ export async function handlePlayerBuildingAttack(
   dbg.input.log('Building attack initiated:', attackerId, '→', buildingId, mode, component ?? '');
   emitDebugEvent('attack', { attackerId, targetId: buildingId }, turnManager.turnNumber);
 
-  const result = await combatPanel.resolveBuildingAttack(attackerId, buildingId, mode, component);
-  if (!result) return;
+  const resp = await matchClient.submit({
+    kind: 'attackBuilding',
+    attackerId,
+    buildingId,
+    weaponMode: mode,
+    component: component as import('../shared/buildingComponents.js').BuildingComponent | undefined,
+  });
+  if (!resp || !resp.success) {
+    if (resp?.error) dbg.input.log('Building attack rejected by server:', resp.error);
+    return;
+  }
 
   switchRpTab('history');
 
-  const { units, buildings, combat } = result;
-
-  // Missile → explosion on the building, plus explosions/smoke for any enemy
-  // units caught in Splash_Fire (building-damage animation).
+  const combat = resp.combats?.[0];
   const attacker = world.units.find((u) => u.id === attackerId);
   const attackerColor = attacker ? factionColor(world, attacker.ownerId) : '#ffffff';
-  const splashVictims = combat.splash.map((s) => ({
+  const splashVictims = (combat?.splash ?? []).map((s) => ({
     unitId: s.victimId,
     damage: s.damage,
     destroyed: s.victimDestroyed,
@@ -121,21 +117,15 @@ export async function handlePlayerBuildingAttack(
   }
   await Promise.all(buildingAnims);
 
-  // Splash on a building's hex may also damage co-located enemy units.
-  world.units = units;
-
-  if (buildings && buildings.length > 0) {
-    const byId = new Map(buildings.map((b) => [b.id, b]));
-    for (const b of world.buildings) {
-      const updated = byId.get(b.id);
-      if (updated) b.attributes = updated.attributes;
-    }
-    for (const ev of combat.buildingDamage ?? []) {
-      const b = world.buildings.find((bb) => bb.id === ev.buildingId);
-      if (b) await rerenderBuildingSprite(b, world);
-    }
+  const buildingDamage = combat?.buildingDamage ?? [];
+  matchClient.reconcile(resp, world, turnManager);
+  combatPanel.recordHistory(resp.combats ?? [], []);
+  for (const ev of buildingDamage) {
+    const b = world.buildings.find((bb) => bb.id === ev.buildingId);
+    if (b) await rerenderBuildingSprite(b, world);
   }
 
+  localMap.computeMovementRange();
   localMap.render();
   if (firstPerson.isActive) firstPerson.refresh();
   detailPanel.showTile(localMap.selectedTile, localMap.selectedSegment >= 0 ? localMap.selectedSegment : undefined);
@@ -146,7 +136,7 @@ export async function handlePlayerRepair(
   repairerId: string,
   targetId: string,
 ): Promise<void> {
-  const { world, localMap, firstPerson, combatPanel, turnManager, isPlayerTurn } = ctx;
+  const { world, localMap, firstPerson, combatPanel, turnManager, matchClient, isPlayerTurn } = ctx;
 
   if (!isPlayerTurn()) {
     dbg.input.log('Repair blocked — not player turn');
@@ -155,12 +145,48 @@ export async function handlePlayerRepair(
   dbg.input.log('Repair initiated:', repairerId, '→', targetId);
   emitDebugEvent('repair', { repairerId, targetId }, turnManager.turnNumber);
 
-  const updatedUnits = await combatPanel.resolveRepair(repairerId, targetId);
-  if (!updatedUnits) return;
+  const resp = await matchClient.submit({ kind: 'repair', repairerId, targetId });
+  if (!resp || !resp.success) {
+    if (resp?.error) dbg.input.log('Repair rejected by server:', resp.error);
+    return;
+  }
 
-  world.units = updatedUnits;
+  matchClient.reconcile(resp, world, turnManager);
+  if (resp.repair) combatPanel.recordRepairHistory(resp.repair);
+
+  localMap.computeMovementRange();
   localMap.render();
   if (firstPerson.isActive) firstPerson.refresh();
+}
+
+/**
+ * Submit a committed player move to the authoritative session and adopt the
+ * result. The local optimistic move + glide have already run in mapInput; this
+ * syncs the server's authoritative position / MP (and surfaces any drone
+ * reaction fire). Skips pure intra-hex repositions (no tile-index path).
+ */
+export async function handlePlayerMove(
+  ctx: GameContext,
+  unitId: string,
+  path: number[],
+  segment: number,
+): Promise<void> {
+  const { world, localMap, combatPanel, turnManager, matchClient, isPlayerTurn } = ctx;
+  if (!isPlayerTurn()) return;
+  if (path.length < 2) return; // intra-hex reposition — not modelled server-side yet
+
+  const resp = await matchClient.submit({ kind: 'move', unitId, path, segment });
+  if (!resp || !resp.success) {
+    if (resp?.error) dbg.input.log('Move rejected by server:', resp.error);
+    return;
+  }
+
+  matchClient.reconcile(resp, world, turnManager);
+  if (resp.reactions && resp.reactions.length > 0) {
+    combatPanel.recordHistory([], resp.reactions);
+  }
+  localMap.computeMovementRange();
+  localMap.render();
 }
 
 export function handlePlayerSleep(ctx: GameContext, unitId: string): void {

@@ -220,6 +220,9 @@ export async function advanceTurn(ctx: GameContext): Promise<void> {
   localMap.setActiveFaction(turnManager.getActiveFaction());
   updateTurnIndicator();
   localMap.endTurn();
+  // Refresh the authoritative session from the post-AI world for the player's
+  // new turn (AI still resolves via /api/ai-turn outside the session).
+  await ctx.matchClient.create(world, turnManager.getFactions());
   localMap.render();
   emitDebugEvent('ai-turn-end', { newTurn: turnManager.turnNumber }, turnManager.turnNumber);
   dbg.input.log('All AI turns complete — player turn begins, turn:', turnManager.turnNumber);
