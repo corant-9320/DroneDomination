@@ -404,23 +404,21 @@ function handlePreview(req: CombatRequest, ctx: CombatContext): CombatResponse<W
 // ---------------------------------------------------------------------------
 
 /**
- * Server-side legality check for a requested move path (server-authority
- * Phase 2). Validates everything derivable from the world snapshot + the
- * unit's attributes, so a client can no longer fabricate teleports, paths
- * through impassable terrain, or moves longer than the unit's movement budget.
- *
- * NOTE: this enforces a SINGLE action's cost against the unit's *maximum*
- * movement. Cumulative per-turn MP and "already acted this turn" enforcement
- * needs server-held turn state and is deferred to Phase 3 (match sessions).
- *
- * Returns null when the path is legal, or a human-readable reason when not.
+ * Compute the segment-cost of a requested move path and validate its geometry
+ * (server-authority Phase 2/3). Returns `{ cost }` when the path is legal
+ * (contiguous, no impassable steps), or `{ error }` otherwise. Does NOT check
+ * any movement budget — callers compare `cost` against the relevant budget
+ * (max MP for the stateless endpoint, remaining MP for a match session).
  */
-export function validateMovePath(mover: Unit, path: number[], tiles: Tile[]): string | null {
+export function computeMovePath(
+  mover: Unit,
+  path: number[],
+  tiles: Tile[],
+): { error: string } | { cost: number } {
   if (path[0] !== mover.tileIndex) {
-    return 'Move path does not start at the unit\'s current tile';
+    return { error: 'Move path does not start at the unit\'s current tile' };
   }
   const mode = getMovementMode(mover.attributes);
-  const budget = getMaxMovement(mover.attributes);
 
   let spent = 0;
   let currentSegment = mover.segment as number;
@@ -430,31 +428,51 @@ export function validateMovePath(mover: Unit, path: number[], tiles: Tile[]): st
     const currentHex = path[i];
     const prevTile = tiles[prevHex];
     const destTile = tiles[currentHex];
-    if (!prevTile || !destTile) return 'Move path references an unknown tile';
+    if (!prevTile || !destTile) return { error: 'Move path references an unknown tile' };
 
     // Contiguity: each step must cross to an actual neighbour.
     const departureSeg = prevTile.neighbours.indexOf(currentHex);
-    if (departureSeg < 0) return 'Move path is not contiguous';
+    if (departureSeg < 0) return { error: 'Move path is not contiguous' };
 
     // Intra-hex pivot to the departure segment.
     const diff = Math.abs(currentSegment - departureSeg);
     const pivotSteps = Math.min(diff, 6 - diff);
     const pivotStepCost = segmentCost(prevTile, mode);
-    if (!Number.isFinite(pivotStepCost)) return 'Move path crosses impassable terrain';
+    if (!Number.isFinite(pivotStepCost)) return { error: 'Move path crosses impassable terrain' };
     spent += pivotSteps * pivotStepCost;
 
     // Cross the border into the destination tile.
     const crossCost = segmentCost(destTile, mode, prevTile);
-    if (!Number.isFinite(crossCost)) return 'Move path crosses impassable terrain';
+    if (!Number.isFinite(crossCost)) return { error: 'Move path crosses impassable terrain' };
     spent += crossCost;
 
     const arrivalSeg = destTile.neighbours.indexOf(prevHex);
     currentSegment = arrivalSeg >= 0 ? arrivalSeg : 0;
   }
 
-  // Small epsilon for floating-point segment-cost accumulation.
-  if (spent > budget + 1e-9) return 'Move exceeds the unit\'s movement budget';
+  return { cost: spent };
+}
 
+/**
+ * Server-side legality check for a requested move path (server-authority
+ * Phase 2). Validates everything derivable from the world snapshot + the
+ * unit's attributes, so a client can no longer fabricate teleports, paths
+ * through impassable terrain, or moves longer than the unit's movement budget.
+ *
+ * NOTE: this enforces a SINGLE action's cost against the unit's *maximum*
+ * movement. Cumulative per-turn MP and "already acted this turn" enforcement
+ * needs server-held turn state and is handled by the match-session path
+ * (server/matchApi.ts).
+ *
+ * Returns null when the path is legal, or a human-readable reason when not.
+ */
+export function validateMovePath(mover: Unit, path: number[], tiles: Tile[]): string | null {
+  const r = computeMovePath(mover, path, tiles);
+  if ('error' in r) return r.error;
+  // Small epsilon for floating-point segment-cost accumulation.
+  if (r.cost > getMaxMovement(mover.attributes) + 1e-9) {
+    return 'Move exceeds the unit\'s movement budget';
+  }
   return null;
 }
 

@@ -4,6 +4,47 @@ Append-only record of design decisions, gotchas, and known issues. The game's
 rules are invented as we go — this log is how that intent survives across
 sessions so agents stop re-discovering (or re-breaking) the same things.
 
+## 2026-06-29 — Server-authority Phase 3 (foundation): authoritative match sessions
+
+**Decision:** Introduced server-held authoritative match state behind a
+`SessionStore` abstraction, with the production backend chosen as **DynamoDB**
+but run locally with the Dynamo call **mocked** (in-memory, emulating the
+conditional/optimistic-lock write). New pieces:
+- `shared/matchTypes.ts` — `MatchState` (seed, factions, activeFactionIndex,
+  turn, units, buildings, per-unit `unitTurn` {mp, acted, rotated}, `version`),
+  `Intent` (move/attack/repair/endTurn), request/response types.
+- `server/sessionStore.ts` — `SessionStore` (create/get/update with optimistic
+  `version`), `DynamoTableClient` interface, `MockDynamoTableClient` (local),
+  and the documented seam for the real `@aws-sdk/lib-dynamodb` adapter.
+- `server/matchApi.ts` — `handleCreateMatch` + `handleMatchIntent`. Validates
+  every intent against authoritative MP/acted/turn state: rejects acting twice,
+  moving twice / overspending MP, illegal paths, and acting out of turn.
+- Endpoints `POST /api/match/create` and `POST /api/match/intent` (409 on
+  stale-version conflicts).
+
+**Authority detail:** tiles are regenerated from the **trusted seed**
+(`generateWorld(seed)`, cached per seed) — never accepted from the client — so
+terrain cannot be forged to legalise a move. Only mutable state is stored,
+keeping a match well under DynamoDB's 400 KB item cap. `validateMovePath` was
+split into `computeMovePath` (cost + geometry) so both the stateless
+`/api/combat` and the session path share one cost model.
+
+**Why DynamoDB / mock-now:** serverless + durable + scales with the Lambda
+deploy target; conditional writes give turn integrity. Mocking the table client
+lets all authority logic be written/tested locally; deploying is a one-class
+adapter swap.
+
+**Known issue — tile regeneration latency:** `generateWorld(seed)` is ~4.4 s
+for the shipped frequency. `handleCreateMatch` now warms the per-seed tile cache
+so intents stay fast, but on Lambda this cost recurs per cold container. Future:
+persist/cache tiles (e.g. a warm layer or precomputed artifact) rather than
+regenerating per container.
+
+**NOT yet done (next increments):** wire the client `TurnManager` to consume
+session state (it's still the source of truth today), and route AI faction turns
+through the session (AI still uses `/api/ai-turn` from Phase 1). The match API
+is implemented + verified but not yet on the live client path.
+
 ## 2026-06-29 — Server-authority Phase 2: validate human move legality
 
 **Decision:** `/api/combat` now rejects illegal **move** requests instead of

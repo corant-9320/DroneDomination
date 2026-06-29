@@ -8,6 +8,8 @@ type RegenerateTiles = (seed: number) => unknown;
 type HandleGenerate = (body: unknown) => { success: boolean };
 type HandleCombat = (body: unknown) => { success: boolean };
 type HandleAiTurn = (body: unknown) => { success: boolean };
+type HandleCreateMatch = (body: unknown) => Promise<{ success: boolean }>;
+type HandleMatchIntent = (body: unknown) => Promise<{ success: boolean; conflict?: boolean }>;
 
 export function apiPlugin(): Plugin {
   return {
@@ -127,6 +129,52 @@ export function apiPlugin(): Plugin {
         res.setHeader('Content-Type', 'application/json');
         res.statusCode = result.success ? 200 : 400;
         console.log('[DD][api] AI-turn response success:', result.success);
+        res.end(JSON.stringify(result));
+      });
+
+      // ── Authoritative match sessions (server-authority Phase 3) ──────────
+      // Create a match: server takes ownership of MP/turn state.
+      server.middlewares.use('/api/match/create', async (req, res) => {
+        if (req.method !== 'POST') {
+          res.statusCode = 405;
+          res.end(JSON.stringify({ error: 'Method not allowed' }));
+          return;
+        }
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(chunk as Buffer);
+        const body = JSON.parse(Buffer.concat(chunks).toString()) as unknown;
+
+        const mod = await server.ssrLoadModule('/server/matchApi.ts') as {
+          handleCreateMatch: HandleCreateMatch;
+        };
+        const result = await mod.handleCreateMatch(body);
+
+        res.setHeader('Content-Type', 'application/json');
+        res.statusCode = result.success ? 200 : 400;
+        console.log('[DD][api] match/create success:', result.success);
+        res.end(JSON.stringify(result));
+      });
+
+      // Apply one player intent, validated against authoritative match state.
+      server.middlewares.use('/api/match/intent', async (req, res) => {
+        if (req.method !== 'POST') {
+          res.statusCode = 405;
+          res.end(JSON.stringify({ error: 'Method not allowed' }));
+          return;
+        }
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(chunk as Buffer);
+        const body = JSON.parse(Buffer.concat(chunks).toString()) as unknown;
+
+        const mod = await server.ssrLoadModule('/server/matchApi.ts') as {
+          handleMatchIntent: HandleMatchIntent;
+        };
+        const result = await mod.handleMatchIntent(body);
+
+        res.setHeader('Content-Type', 'application/json');
+        // 409 Conflict for stale-version / concurrent-update rejections.
+        res.statusCode = result.success ? 200 : result.conflict ? 409 : 400;
+        console.log('[DD][api] match/intent success:', result.success, result.conflict ? '(conflict)' : '');
         res.end(JSON.stringify(result));
       });
     },

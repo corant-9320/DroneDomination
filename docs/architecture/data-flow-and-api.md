@@ -63,6 +63,17 @@ Response (200):
 
 Each `AiActionEvent` carries the post-action world snapshot plus animation metadata (damage, splash victims, move from→to) and combat-log explanations. The client (`replayAiTurn` in `client/aiTurn.ts`) replays the log through the AI playback bar — step/play/rewind/skip just navigate the precomputed events, computing nothing locally.
 
+### POST /api/match/create · POST /api/match/intent
+
+Authoritative match sessions (server-authority Phase 3, `server/matchApi.ts`). The server owns per-unit MP / acted / rotated state and whose turn it is, so it can reject acting twice, moving twice, overspending MP, or acting out of turn — the anti-cheat foundation for multiplayer.
+
+- `POST /api/match/create` `{ seed, factions, units, buildings? }` → `{ success, state: MatchState }`. Initialises each unit's turn budget and warms the authoritative tile cache.
+- `POST /api/match/intent` `{ matchId, expectedVersion?, intent }` → `MatchIntentResponse` with the updated state (+ combats/reactions/repair). `intent` is one of `move | attack | repair | endTurn`. Returns **409** when `expectedVersion` is stale or a concurrent write loses the optimistic-lock race.
+
+State is held in a `SessionStore` (`server/sessionStore.ts`). Production backend is **DynamoDB** (one versioned item per match); locally the Dynamo call is **mocked** in-memory behind the same interface, so deploying is a one-adapter swap. Tiles are regenerated from the trusted `seed`, never accepted from the client.
+
+> Status: implemented + verified, not yet on the live client path. The client `TurnManager` still owns turn state; wiring it to this API (and routing AI turns through sessions) is the next increment.
+
 ## See Also
 
 - [world-generation.md](world-generation.md) — what `generateWorld(seed)` does internally
