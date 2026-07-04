@@ -61,6 +61,7 @@ moved/acted this AI turn.
 | B | Engineer builds a bridge over an adjacent river hex |
 | C | Construct a building on the selected hex segment (one per faction per turn) |
 | E | Toggle EW coverage circles (all EW-bearing units & buildings, both factions) |
+| N | Toggle unit and building #N number labels (2D and 3D views) |
 | V | First-person view of selected unit (toggle; Esc exits) |
 | Ctrl+S | Save game |
 | Ctrl+L | Load game |

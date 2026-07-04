@@ -27,6 +27,22 @@ import { FlatTile } from './localMapProjection.js';
 import { getMaxMovement as sharedGetMaxMovement } from '../shared/movementConstants.js';
 import { spriteFacingForRender } from './facing.js';
 
+// ─── Entity-number label toggle ───────────────────────────────────────────────
+
+/** Whether unit and building #N labels are visible. Toggled by the N key. */
+let showEntityNumbers = true;
+
+/** Toggle unit/building number labels on or off. Returns the new state. */
+export function toggleEntityNumbers(): boolean {
+  showEntityNumbers = !showEntityNumbers;
+  return showEntityNumbers;
+}
+
+/** Returns the current show-entity-numbers state (for use by other views). */
+export function getShowEntityNumbers(): boolean {
+  return showEntityNumbers;
+}
+
 // ─── Segment geometry helpers ─────────────────────────────────────────────────
 
 /**
@@ -198,20 +214,22 @@ export function drawUnits(
     // Unit number label — same id suffix as the detail panel (#N)
     // Rendered in red when the unit has already used its move/action this turn
     // (no MP left, or marked as acted — e.g. an enemy unit during the AI turn).
-    const idSuffix = unit.id.replace(/^unit_/, '');
-    const fontSize = Math.max(6, size * 0.75);
-    const labelX = sx + size * 0.5;
-    const labelY = sy + size * 0.9 + fontSize;
-    const showRed = (movementPoints.get(unit.id) ?? 0) === 0 || actedUnits.has(unit.id);
-    ctx.save();
-    ctx.font = `${fontSize}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillText(`#${idSuffix}`, labelX + 1, labelY + 1);
-    ctx.fillStyle = showRed ? 'rgba(255,80,80,0.95)' : 'rgba(220,220,220,0.85)';
-    ctx.fillText(`#${idSuffix}`, labelX, labelY);
-    ctx.restore();
+    if (showEntityNumbers) {
+      const idSuffix = unit.id.replace(/^unit_/, '');
+      const fontSize = Math.max(6, size * 0.75);
+      const labelX = sx + size * 0.5;
+      const labelY = sy + size * 0.9 + fontSize;
+      const showRed = (movementPoints.get(unit.id) ?? 0) === 0 || actedUnits.has(unit.id);
+      ctx.save();
+      ctx.font = `${fontSize}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillText(`#${idSuffix}`, labelX + 1, labelY + 1);
+      ctx.fillStyle = showRed ? 'rgba(255,80,80,0.95)' : 'rgba(220,220,220,0.85)';
+      ctx.fillText(`#${idSuffix}`, labelX, labelY);
+      ctx.restore();
+    }
   }
 }
 
@@ -354,19 +372,21 @@ export function drawBuildings(
     }
 
     // Building number label — same format as unit labels (#N id suffix).
-    const idSuffix = b.id.replace(/^building_/, '');
-    const fontSize = Math.max(6, size * 0.75);
-    const labelX = sx + size * 0.5;
-    const labelY = sy + size * 0.9 + fontSize;
-    ctx.save();
-    ctx.font = `${fontSize}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillText(`#${idSuffix}`, labelX + 1, labelY + 1);
-    ctx.fillStyle = 'rgba(220,220,220,0.85)';
-    ctx.fillText(`#${idSuffix}`, labelX, labelY);
-    ctx.restore();
+    if (showEntityNumbers) {
+      const idSuffix = b.id.replace(/^building_/, '');
+      const fontSize = Math.max(6, size * 0.75);
+      const labelX = sx + size * 0.5;
+      const labelY = sy + size * 0.9 + fontSize;
+      ctx.save();
+      ctx.font = `${fontSize}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillText(`#${idSuffix}`, labelX + 1, labelY + 1);
+      ctx.fillStyle = 'rgba(220,220,220,0.85)';
+      ctx.fillText(`#${idSuffix}`, labelX, labelY);
+      ctx.restore();
+    }
   }
 }
 

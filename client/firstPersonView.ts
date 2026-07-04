@@ -71,6 +71,7 @@ import {
   avgHexRadius,
   roadSurfaceLift,
 } from './firstPersonTerrain.js';
+import { getShowEntityNumbers } from './localMapUnits.js';
 
 /**
  * Command wiring injected by main.ts so first-person can issue the same
@@ -1043,30 +1044,32 @@ export class FirstPersonView {
       });
 
       // Floating unit number label — matches the format used in 2D (#N suffix).
-      const idSuffix = unit.id.replace(/^unit_/, '');
-      const labelText = `#${idSuffix}`;
-      const cvs = document.createElement('canvas');
-      cvs.width = 128; cvs.height = 64;
-      const ctx2d = cvs.getContext('2d')!;
-      ctx2d.clearRect(0, 0, 128, 64);
-      ctx2d.fillStyle = 'rgba(0,0,0,0.65)';
-      ctx2d.beginPath();
-      ctx2d.roundRect(4, 4, 120, 56, 8);
-      ctx2d.fill();
-      ctx2d.fillStyle = '#dddddd';
-      ctx2d.font = 'bold 36px monospace';
-      ctx2d.textAlign = 'center';
-      ctx2d.textBaseline = 'middle';
-      ctx2d.fillText(labelText, 64, 32);
-      const labelTex = new THREE.CanvasTexture(cvs);
-      const labelMat = new THREE.SpriteMaterial({ map: labelTex, depthTest: false, transparent: true });
-      const sprite = new THREE.Sprite(labelMat);
-      const labelScale = HEX_WORLD_RADIUS * 0.35 * 0.25;
-      const labelY = groundY + groundLift + (drone ? DRONE_AIR_HEIGHT : 0) + labelScale * 0.9;
-      sprite.scale.set(labelScale, labelScale * 0.5, 1);
-      sprite.position.set(wx, labelY, wz);
-      group.add(sprite);
-      this.unitMats.push(labelMat);
+      if (getShowEntityNumbers()) {
+        const idSuffix = unit.id.replace(/^unit_/, '');
+        const labelText = `#${idSuffix}`;
+        const cvs = document.createElement('canvas');
+        cvs.width = 128; cvs.height = 64;
+        const ctx2d = cvs.getContext('2d')!;
+        ctx2d.clearRect(0, 0, 128, 64);
+        ctx2d.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx2d.beginPath();
+        ctx2d.roundRect(4, 4, 120, 56, 8);
+        ctx2d.fill();
+        ctx2d.fillStyle = '#dddddd';
+        ctx2d.font = 'bold 36px monospace';
+        ctx2d.textAlign = 'center';
+        ctx2d.textBaseline = 'middle';
+        ctx2d.fillText(labelText, 64, 32);
+        const labelTex = new THREE.CanvasTexture(cvs);
+        const labelMat = new THREE.SpriteMaterial({ map: labelTex, depthTest: false, transparent: true });
+        const sprite = new THREE.Sprite(labelMat);
+        const labelScale = HEX_WORLD_RADIUS * 0.35 * 0.25;
+        const labelY = groundY + groundLift + (drone ? DRONE_AIR_HEIGHT : 0) + labelScale * 0.9;
+        sprite.scale.set(labelScale, labelScale * 0.5, 1);
+        sprite.position.set(wx, labelY, wz);
+        group.add(sprite);
+        this.unitMats.push(labelMat);
+      }
     }
   }
 
@@ -1157,7 +1160,7 @@ export class FirstPersonView {
       });
 
       // Floating building number label — same id-suffix format as units (#N).
-      if (!ghost) {
+      if (!ghost && getShowEntityNumbers()) {
         const bIdSuffix = b.id.replace(/^building_/, '');
         const labelText = `#${bIdSuffix}`;
         const cvs = document.createElement('canvas');

@@ -10,6 +10,7 @@ import { dbg } from './debug.js';
 import { emitDebugEvent } from './gameDebug.js';
 import { advanceTurn } from './turnController.js';
 import { toggleEwGlobal } from './ewOverlay.js';
+import { toggleEntityNumbers } from './localMapUnits.js';
 import type { GameContext } from './gameContext.js';
 
 export function setupKeyboardShortcuts(ctx: GameContext): void {
@@ -165,6 +166,16 @@ export function setupKeyboardShortcuts(ctx: GameContext): void {
     e.preventDefault();
     toggleEwGlobal();
     localMap.render();
+  });
+
+  // N — toggle unit/building number labels in 2D and 3D views
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'n' && e.key !== 'N') return;
+    if ((e.target as HTMLElement).tagName === 'INPUT') return;
+    e.preventDefault();
+    toggleEntityNumbers();
+    localMap.render();
+    if (ctx.firstPerson.isActive) ctx.firstPerson.refresh();
   });
 
   // Ctrl+S — save; Ctrl+L — load
