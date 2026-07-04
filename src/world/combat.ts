@@ -24,7 +24,7 @@
  */
 
 import { Tile, Building } from './types.js';
-import { Unit, HexSegment } from './units.js';
+import { Unit, HexSegment, HP_PER_POINT } from './units.js';
 import { effectiveCombatDistance, segmentDistance } from './segmentGeometry.js';
 import { elevationRangeMultiplier } from '../../shared/rangeCheck.js';
 
@@ -789,6 +789,343 @@ export function evaluateWeaponOptions(
   }
 
   return options;
+}
+
+// ---------------------------------------------------------------------------
+// Combat preview — read-only attack evaluation (no state mutation)
+// ---------------------------------------------------------------------------
+
+/**
+ * Flat, presentation-agnostic result of evaluating an attack without resolving it.
+ * Contains every intermediate value needed for the client preview table AND the
+ * step-by-step combat log. The explainer becomes a pure formatter over this.
+ */
+export interface CombatPreview {
+  attackerId: string;
+  attackerLabel: string;
+  targetId: string;
+  targetLabel: string;
+  wasValid: boolean;
+  reasonInvalid?: string;
+
+  // ── Range ──
+  distance: number;
+  baseRangeThreshold: number;
+  elevationRangeMultiplier: number;
+  effectiveRangeThreshold: number;
+  inRange: boolean;
+
+  // ── Orientation ──
+  angleDiffDeg: number;
+  arc: AttackArc;
+  orientationArmourPenalty: number;
+  orientationLabel: string;
+
+  // ── Defence ──
+  defArmour: number;
+  defEW: number;
+  defEWRaw: number;
+  defEWMultiplier: number;
+  defTerrain: number;
+  defTotal: number;
+  effectiveDefence: number;
+
+  // ── Attack ──
+  chassisType: ChassisType;
+  chassisLabel: 'Tank' | 'Spider' | 'Drone';
+  chassisModifier: number;
+
+  // ── Weapon selection ──
+  weaponOptions: WeaponOption[];
+  chosenMode: WeaponMode | 'none';
+  baseWeapon: number;
+  rangeEfficiency: number;
+  attackTotal: number;
+
+  // ── Damage ──
+  /** Damage dealt to the primary target (0 if out of range). */
+  primaryTargetDamage: number;
+  /** Total damage score across all victims (for splash, sum of all). */
+  totalDamage: number;
+  /** Whether target is a drone. */
+  targetIsDrone: boolean;
+  /** Damage absorbed by drone evasion (0 if not drone or antiAir). */
+  droneEvasion: number;
+
+  // ── Health outcome ──
+  targetHealthBefore: number;
+  targetHealthAfter: number;
+  targetDestroyed: boolean;
+  targetMaxHp: number;
+
+  // ── Splash details ──
+  splashVictims: Array<{
+    unitId: string;
+    unitLabel: string;
+    damage: number;
+    healthBefore: number;
+    healthAfter: number;
+    destroyed: boolean;
+    maxHp: number;
+  }>;
+}
+
+/**
+ * Evaluate an attack without mutating any state. Returns a CombatPreview with
+ * every intermediate value — the single source of truth for both the hover
+ * preview and the combat log explanation.
+ *
+ * This function NEVER modifies unit health or any other game state.
+ */
+export function previewAttack(
+  attacker: Unit,
+  target: Unit,
+  ctx: CombatContext,
+): CombatPreview {
+  const { units: allUnits, tiles } = ctx;
+
+  const base: Pick<CombatPreview, 'attackerId' | 'attackerLabel' | 'targetId' | 'targetLabel'> = {
+    attackerId: attacker.id,
+    attackerLabel: attacker.label,
+    targetId: target.id,
+    targetLabel: target.label,
+  };
+
+  // ── Validation ──
+  if (attacker.currentHealth <= 0) {
+    return { ...base, ...invalidPreview('Attacker is destroyed') };
+  }
+  if (target.currentHealth <= 0) {
+    return { ...base, ...invalidPreview('Target is already destroyed') };
+  }
+  if (attacker.ownerId === target.ownerId) {
+    return { ...base, ...invalidPreview('Cannot attack a friendly unit') };
+  }
+
+  // Anti-Air-only validation
+  const hasAttack = (attacker.attributes.kinetic ?? 0) > 0;
+  const hasSplash = (attacker.attributes.splashAttack ?? 0) > 0;
+  const hasAntiAir = (attacker.attributes.antiAir ?? 0) > 0;
+  const hasRange = (attacker.attributes.rangeAttack ?? 0) > 0;
+  if (!hasAttack && !hasRange && !hasSplash && hasAntiAir && !isDrone(target)) {
+    return { ...base, ...invalidPreview('Anti-Air weapons can only target drones') };
+  }
+
+  // ── Range ──
+  const segDist = effectiveCombatDistance(tiles, attacker, target);
+  const elevMult = elevationRangeMultiplier(
+    tiles[attacker.tileIndex].height ?? 0,
+    tiles[target.tileIndex].height ?? 0,
+    isDrone(attacker) || isDrone(target),
+  );
+  const baseRangeThreshold = getSegmentRangeThreshold(attacker);
+  const effectiveRangeThreshold = baseRangeThreshold * elevMult;
+  const inRange = segDist <= effectiveRangeThreshold;
+
+  // ── Orientation ──
+  const orientationArmourPenalty = calculateOrientationArmourPenalty(tiles, attacker.tileIndex, target.tileIndex, target.facing, attacker.segment, target.segment);
+  const angleDiff = getAngularDifference(tiles, attacker.tileIndex, target.tileIndex, target.facing, attacker.segment, target.segment);
+  const arc: AttackArc = isNaN(angleDiff) ? 'unknown' : classifyArcFromAngle(angleDiff);
+  const angleDiffDeg = isNaN(angleDiff) ? 0 : Math.round((angleDiff * 180) / Math.PI);
+  const orientationLabel = formatArcLabel(angleDiffDeg);
+
+  // ── Defence ──
+  const attackerIsDrone = isDrone(attacker);
+  const defPower = getDefencePower(target, ctx, attackerIsDrone);
+  const targetIsDrone = isDrone(target);
+
+  // ── Chassis ──
+  const chassisType = getChassisType(attacker);
+  const chassisModifier = getChassisModifier(chassisType);
+  const chassisLabel: CombatPreview['chassisLabel'] =
+    chassisType === 'drone' ? 'Drone' : chassisType === 'spider' ? 'Spider' : 'Tank';
+
+  // ── Weapon evaluation ──
+  const weaponOptions = evaluateWeaponOptions(attacker, target, ctx, segDist, orientationArmourPenalty);
+
+  if (weaponOptions.length === 0) {
+    return {
+      ...base,
+      wasValid: false,
+      reasonInvalid: 'No valid weapon modes available',
+      distance: segDist,
+      baseRangeThreshold,
+      elevationRangeMultiplier: elevMult,
+      effectiveRangeThreshold,
+      inRange,
+      angleDiffDeg,
+      arc,
+      orientationArmourPenalty,
+      orientationLabel,
+      defArmour: defPower.armour,
+      defEW: defPower.ew,
+      defEWRaw: defPower.ewRaw,
+      defEWMultiplier: defPower.ewMultiplier,
+      defTerrain: defPower.terrain,
+      defTotal: defPower.total,
+      effectiveDefence: 0,
+      chassisType,
+      chassisLabel,
+      chassisModifier,
+      weaponOptions: [],
+      chosenMode: 'none',
+      baseWeapon: 0,
+      rangeEfficiency: 0,
+      attackTotal: 0,
+      primaryTargetDamage: 0,
+      totalDamage: 0,
+      targetIsDrone,
+      droneEvasion: 0,
+      targetHealthBefore: target.currentHealth,
+      targetHealthAfter: target.currentHealth,
+      targetDestroyed: false,
+      targetMaxHp: (target.attributes.size ?? 1) * HP_PER_POINT,
+      splashVictims: [],
+    };
+  }
+
+  const chosen = chooseWeaponOption(weaponOptions, target);
+
+  // ── Base weapon & damage breakdown from the chosen mode ──
+  let baseWeapon = 0;
+  if (chosen.mode === 'direct') baseWeapon = clamp(attacker.attributes.kinetic ?? 0, 1, 5);
+  else if (chosen.mode === 'splash') baseWeapon = clamp(attacker.attributes.splashAttack ?? 0, 1, 5);
+  else if (chosen.mode === 'antiAir') baseWeapon = clamp(attacker.attributes.antiAir ?? 0, 1, 5);
+
+  const bd = computeDamage({
+    mode: chosen.mode,
+    attackerChassis: chassisType,
+    baseWeaponValue: baseWeapon,
+    orientationArmourPenalty,
+    distance: segDist,
+    armour: defPower.armour,
+    defenceOther: defPower.ew + defPower.terrain,
+    targetIsDrone,
+  });
+
+  const totalDamage = chosen.score;
+  const primaryTargetDamage = chosen.mode === 'splash'
+    ? (chosen.damages.find((d) => d.unitId === target.id)?.damage ?? 0)
+    : totalDamage;
+
+  // Drone evasion: the difference between raw formula and final (when drone penalty applies)
+  let droneEvasion = 0;
+  if (targetIsDrone && chosen.mode !== 'antiAir') {
+    droneEvasion = Math.max(0, bd.rawFormulaDamage - bd.finalDamage);
+  }
+
+  const targetMaxHp = (target.attributes.size ?? 1) * HP_PER_POINT;
+  const healthAfter = inRange ? Math.max(0, target.currentHealth - primaryTargetDamage) : target.currentHealth;
+  const destroyed = inRange && healthAfter <= 0;
+
+  // ── Splash victims ──
+  const splashVictims: CombatPreview['splashVictims'] = [];
+  if (chosen.mode === 'splash') {
+    for (const { unitId, damage } of chosen.damages) {
+      if (unitId === target.id) continue; // primary target handled above
+      const victim = allUnits.find((u) => u.id === unitId);
+      if (!victim) continue;
+      const vMaxHp = (victim.attributes.size ?? 1) * HP_PER_POINT;
+      splashVictims.push({
+        unitId: victim.id,
+        unitLabel: victim.label,
+        damage,
+        healthBefore: victim.currentHealth,
+        healthAfter: Math.max(0, victim.currentHealth - damage),
+        destroyed: victim.currentHealth - damage <= 0,
+        maxHp: vMaxHp,
+      });
+    }
+  }
+
+  return {
+    ...base,
+    wasValid: !inRange ? true : true, // valid attack (may be out of range but structurally valid)
+    reasonInvalid: undefined,
+    distance: segDist,
+    baseRangeThreshold,
+    elevationRangeMultiplier: elevMult,
+    effectiveRangeThreshold,
+    inRange,
+    angleDiffDeg,
+    arc,
+    orientationArmourPenalty,
+    orientationLabel,
+    defArmour: defPower.armour,
+    defEW: defPower.ew,
+    defEWRaw: defPower.ewRaw,
+    defEWMultiplier: defPower.ewMultiplier,
+    defTerrain: defPower.terrain,
+    defTotal: defPower.total,
+    effectiveDefence: bd.effectiveDefence,
+    chassisType,
+    chassisLabel,
+    chassisModifier,
+    weaponOptions,
+    chosenMode: chosen.mode,
+    baseWeapon,
+    rangeEfficiency: bd.rangeEfficiency,
+    attackTotal: bd.attackPower,
+    primaryTargetDamage: inRange ? primaryTargetDamage : 0,
+    totalDamage: inRange ? totalDamage : 0,
+    targetIsDrone,
+    droneEvasion,
+    targetHealthBefore: target.currentHealth,
+    targetHealthAfter: healthAfter,
+    targetDestroyed: destroyed,
+    targetMaxHp,
+    splashVictims,
+  };
+}
+
+/** Build a CombatPreview for an invalid attack (validation failure). */
+function invalidPreview(reason: string): Omit<CombatPreview, 'attackerId' | 'attackerLabel' | 'targetId' | 'targetLabel'> {
+  return {
+    wasValid: false,
+    reasonInvalid: reason,
+    distance: 0,
+    baseRangeThreshold: 0,
+    elevationRangeMultiplier: 1,
+    effectiveRangeThreshold: 0,
+    inRange: false,
+    angleDiffDeg: 0,
+    arc: 'unknown',
+    orientationArmourPenalty: 0,
+    orientationLabel: '—',
+    defArmour: 0,
+    defEW: 0,
+    defEWRaw: 0,
+    defEWMultiplier: 0,
+    defTerrain: 0,
+    defTotal: 0,
+    effectiveDefence: 0,
+    chassisType: 'tank',
+    chassisLabel: 'Tank',
+    chassisModifier: 1,
+    weaponOptions: [],
+    chosenMode: 'none',
+    baseWeapon: 0,
+    rangeEfficiency: 0,
+    attackTotal: 0,
+    primaryTargetDamage: 0,
+    totalDamage: 0,
+    targetIsDrone: false,
+    droneEvasion: 0,
+    targetHealthBefore: 0,
+    targetHealthAfter: 0,
+    targetDestroyed: false,
+    targetMaxHp: 0,
+    splashVictims: [],
+  };
+}
+
+/** Format orientation arc label from angular difference in degrees. */
+function formatArcLabel(angleDiffDeg: number): string {
+  if (angleDiffDeg <= 40) return 'Front';
+  if (angleDiffDeg <= 80) return 'Front Flank';
+  if (angleDiffDeg <= 100) return 'Flank';
+  if (angleDiffDeg <= 140) return 'Rear Flank';
+  return 'Rear';
 }
 
 // ---------------------------------------------------------------------------
