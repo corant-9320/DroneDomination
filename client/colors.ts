@@ -22,24 +22,26 @@ function hexToRGB(hex: string): [number, number, number] {
 // ---------------------------------------------------------------------------
 
 /**
- * Canonical identity key for a tile — combines terrain type, elevation type,
+ * Canonical identity key for a tile — combines terrain type, height band,
  * and forestry presence into a single string.
  *
- * Format: "<terrain>:<elevType>[:forested]"
- * Examples:
- *   "grassland:flat"
- *   "grassland:flat:forested"
- *   "hills:hills"
- *   "mountain:mountain"
- *   "plains:rolling"
- *   "plains:rolling:forested"
+ * Format: "<terrain>:<band>[:forested]"
+ * where band = 'mountain' (h>=9) | 'hills' (h>=6) | 'rolling' (h>=3) | 'low' (h<3)
  *
- * Use this key to look up per-combination colours, movement costs, etc.
+ * Use this key to look up per-combination colours.
  * The colour lookup falls back from most-specific to least-specific:
- *   full key → terrain:elevType → terrain → '#555555'
+ *   full key → terrain:band → band → terrain → '#555555'
  */
-export function tileIdentity(tile: Pick<TileData, 'terrain' | 'elevType' | 'f'>): string {
-  const base = `${tile.terrain}:${tile.elevType}`;
+function heightBandLabel(tile: Pick<TileData, 'h'>): string {
+  const h = tile.h ?? 0;
+  if (h >= 9) return 'mountain';
+  if (h >= 6) return 'hills';
+  if (h >= 3) return 'rolling';
+  return 'low';
+}
+
+export function tileIdentity(tile: Pick<TileData, 'terrain' | 'h' | 'f'>): string {
+  const base = `${tile.terrain}:${heightBandLabel(tile)}`;
   return tile.f ? `${base}:forested` : base;
 }
 
@@ -64,7 +66,7 @@ export const BRIDGE_COLOR = '#8a5a2b';
  *   5. fallback       '#555555'
  *
  * Elevation type takes visual priority over terrain for non-ocean tiles:
- *   mountain → white, hills → grey, rolling → dark brown, flat → terrain colour
+ *   mountain → white, hills → grey, rolling → dark brown, lowlands → terrain colour
  */
 export const TILE_COLORS: Record<string, string> = {
   // --- elevation type overrides ---
@@ -86,7 +88,7 @@ export const TILE_COLORS: Record<string, string> = {
   'plains:hills': '#b3895a',
 
   // --- forested variants (grassland only — plains never forested) ---
-  'grassland:flat:forested':    '#3a7a1a',
+  'grassland:low:forested':    '#3a7a1a',
   'grassland:rolling:forested': '#3a6a1a',
   'grassland:hills:forested':   '#3a6a1a',
 };
@@ -97,7 +99,7 @@ export const TILE_COLORS: Record<string, string> = {
  * Ocean and tundra are excluded — their colour carries meaning on its own.
  */
 const ELEVATION_TINT: Record<string, number> = {
-  flat:     1.00,
+  low:      1.00,
   rolling:  1.10,
   hills:    1.22,
   mountain: 1.00, // already white
@@ -117,12 +119,12 @@ function brightenHex(hex: string, factor: number): string {
 
 /**
  * Return the display color for a tile.
- * Falls back through: full identity → terrain:elev → elevType → terrain → default.
+ * Falls back through: full identity → terrain:band → band → terrain → default.
  * Then applies an elevation brightness tint (rolling +10%, hills +22%).
  *
  * Ocean and tundra always use their terrain color — elevation does not override them.
  */
-export function tileColor(tile: Pick<TileData, 'terrain' | 'elevType' | 'f' | 'rv' | 'bridge'>): string {
+export function tileColor(tile: Pick<TileData, 'terrain' | 'h' | 'f' | 'rv' | 'bridge'>): string {
   // A bridged river hex is a wooden crossing — render as the bridge deck.
   if (tile.bridge) return BRIDGE_COLOR;
   // River hexes render as water regardless of their underlying land terrain.
@@ -130,24 +132,25 @@ export function tileColor(tile: Pick<TileData, 'terrain' | 'elevType' | 'f' | 'r
   const identity = tileIdentity(tile);
   if (TILE_COLORS[identity]) return TILE_COLORS[identity];
 
-  const terrainElev = `${tile.terrain}:${tile.elevType}`;
-  if (TILE_COLORS[terrainElev]) return TILE_COLORS[terrainElev];
+  const band = heightBandLabel(tile);
+  const terrainBand = `${tile.terrain}:${band}`;
+  if (TILE_COLORS[terrainBand]) return TILE_COLORS[terrainBand];
 
   // Ocean and tundra: terrain color takes priority over elevation override
   if (tile.terrain === 'ocean' || tile.terrain === 'tundra') {
     return TILE_COLORS[tile.terrain];
   }
 
-  if (TILE_COLORS[tile.elevType]) return TILE_COLORS[tile.elevType];
+  if (TILE_COLORS[band]) return TILE_COLORS[band];
 
   const base = TILE_COLORS[tile.terrain] ?? '#555555';
 
   // Apply elevation brightness tint for non-mountain land tiles
-  const tintFactor = ELEVATION_TINT[tile.elevType] ?? 1;
+  const tintFactor = ELEVATION_TINT[band] ?? 1;
   return brightenHex(base, tintFactor);
 }
 
-export function tileColorRGB(tile: Pick<TileData, 'terrain' | 'elevType' | 'f' | 'rv' | 'bridge'>): [number, number, number] {
+export function tileColorRGB(tile: Pick<TileData, 'terrain' | 'h' | 'f' | 'rv' | 'bridge'>): [number, number, number] {
   return hexToRGB(tileColor(tile));
 }
 
@@ -159,7 +162,7 @@ export function tileColorRGB(tile: Pick<TileData, 'terrain' | 'elevType' | 'f' |
  * Return the base terrain color without any elevation tint.
  * Use this for the local map's base fill; elevation is shown via triangle shading.
  */
-export function baseTerrainColor(tile: Pick<TileData, 'terrain' | 'elevType' | 'f' | 'rv' | 'bridge'>): string {
+export function baseTerrainColor(tile: Pick<TileData, 'terrain' | 'h' | 'f' | 'rv' | 'bridge'>): string {
   // A bridged river hex is a wooden crossing — render as the bridge deck.
   if (tile.bridge) return BRIDGE_COLOR;
   // River hexes render as water regardless of their underlying land terrain.
@@ -168,9 +171,10 @@ export function baseTerrainColor(tile: Pick<TileData, 'terrain' | 'elevType' | '
   const identity = tileIdentity(tile);
   if (TILE_COLORS[identity]) return TILE_COLORS[identity];
 
-  // Check terrain:elev combination
-  const terrainElev = `${tile.terrain}:${tile.elevType}`;
-  if (TILE_COLORS[terrainElev]) return TILE_COLORS[terrainElev];
+  // Check terrain:band combination
+  const band = heightBandLabel(tile);
+  const terrainBand = `${tile.terrain}:${band}`;
+  if (TILE_COLORS[terrainBand]) return TILE_COLORS[terrainBand];
 
   // Ocean and tundra: terrain color only
   if (tile.terrain === 'ocean' || tile.terrain === 'tundra') {
@@ -178,7 +182,7 @@ export function baseTerrainColor(tile: Pick<TileData, 'terrain' | 'elevType' | '
   }
 
   // Mountain is already white in TILE_COLORS
-  if (tile.elevType === 'mountain') return TILE_COLORS['mountain'];
+  if ((tile.h ?? 0) >= 9) return TILE_COLORS['mountain'];
 
   // Otherwise return base terrain color (no tint)
   return TILE_COLORS[tile.terrain] ?? '#555555';

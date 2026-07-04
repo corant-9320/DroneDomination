@@ -42,6 +42,7 @@ import {
   getSegmentCentroid,
   getSegmentIconSize,
   drawUnits as _drawUnits,
+  drawUnitSelectionRings as _drawUnitSelectionRings,
   drawBuildings as _drawBuildings,
   drawPlannedBuildings as _drawPlannedBuildings,
   drawCombatHighlight as _drawCombatHighlight,
@@ -587,6 +588,16 @@ export class LocalMapView implements MapViewInterface {
       this.hiddenUnits,
       (wx, wy) => this.worldToScreen(wx, wy),
       this.aiActedUnits,
+      this.unitMoveAnims,
+    );
+
+    // Draw selection rings unclipped so they don't get cropped on slopes
+    _drawUnitSelectionRings(
+      this.ctx,
+      this.world,
+      this.flatTiles,
+      this.selectedUnits,
+      (wx, wy) => this.worldToScreen(wx, wy),
       this.unitMoveAnims,
     );
 

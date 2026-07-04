@@ -4,6 +4,388 @@ Append-only record of design decisions, gotchas, and known issues. The game's
 rules are invented as we go — this log is how that intent survives across
 sessions so agents stop re-discovering (or re-breaking) the same things.
 
+## 2026-07-04 — Removed ElevationType; switched to numeric height throughout
+
+**Decision:** Deleted `ElevationType` (the 4-band string enum) and the `elevationType`
+field from `Tile`. Deleted `elevType` from `WireTile`. All game logic and rendering
+now use the numeric `height` (0–11) directly. Combat range multiplier uses per-unit
+height difference (finer granularity: `ELEVATION_RANGE_PER_LEVEL = 0.5/11`). Client
+rendering uses `h >= 9` for mountain texture/color, `h >= 6` for hills shading, etc.
+
+**Why:** The 4-band model added an indirection layer with no gameplay benefit. Height
+integers and per-segment steepness already drove movement. Collapsing to one model
+reduces code, removes string-matching bugs, and gives smoother elevation range scaling.
+
+**Impact:** 
+- `shared/rangeCheck.ts` — `elevationRangeMultiplier(attackerHeight, defenderHeight)`
+- `shared/movementConstants.ts` — removed `bandToHeight`, `heightToBand`, `isHill`;
+  `MovementTile` no longer carries `elevationType`/`elevType`
+- `shared/wireTypes.ts` — `WireTile.elevType` removed; `h` is now required
+- `src/world/types.ts` — `Tile.elevationType` removed; `height` is now required (not optional)
+- `src/world/combat.ts` — `getElevationLevel` removed
+- `src/world/movement.ts` — `isHillTerrain` removed (was dead code)
+- `client/colors.ts` — uses `heightBandLabel(tile)` for color keys
+- All client rendering uses `tile.h` with numeric thresholds
+
+## 2026-07-04 — Cities placed on lowlands hex platform (radius 3)
+
+**Decision:** After city placement, all tiles within BFS radius 3 of each city centre
+are flattened to height ≤ 2 (elevationType `'lowlands'`). Ocean/river tiles within the
+platform are converted to `'plains'`. The river drainage pass uses the full radius-3
+forbidden set so rivers route around the platform rather than through it.
+
+**Why:** Cities need a clear, level deployment area for units and buildings. A
+radius-3 lowlands platform guarantees space for initial 6-unit spawn (radius 1) plus
+future city expansion without units spawning on cliffs or impassable terrain.
+
+**Impact:** `generateWorld` in `src/world/generate.ts` — Step 6 rewritten from
+radius-1 neighbour sanitisation to radius-3 BFS flattening. `tilesWithinRadius`
+imported from pathfinding. Existing tests pass unchanged (they assert structural
+invariants, not specific elevation values).
+
+## 2026-07-04 — Same-hex orientation bonus now uses segment centroids
+
+**Decision:** `calculateOrientationBonus` and `getAngularDifference` in `src/world/combatFacing.ts`
+previously returned 0 / NaN when attacker and defender shared a tile, because bearing between two
+coincident `position3d` values is undefined. Now accepts optional `attackerSegment` / `defenderSegment`
+parameters; when same-tile, computes bearing from the 3D segment centroids (via `getSegmentCentroid3D`
+from `segmentGeometry.ts`) so the orientation bonus matches what the player sees in the 2D view
+(unit icons visually face specific directions relative to each other within the hex).
+
+**Why:** Player reported that a visually clear rear attack (attacker behind the defender within the
+same hex) showed orientation bonus 0 in the combat preview. The game already had segment-aware
+distance (range falloff); only orientation was hard-coded for same-hex. Now all three arc
+classifications (front/side/rear) work identically whether units are on the same hex or different
+hexes — no special-case.
+
+**Impact:** Same-hex attacks now carry orientation bonuses of 0–2 based on real geometry (segment
+positions vs defender facing), exactly as cross-hex attacks do. This is a balance change: same-hex
+flanking is now rewarded. All existing callers in `combat.ts`, `server/combatExplainer.ts`, and
+`server/__tests__/combatApi.test.ts` pass segments through. When segments are omitted (legacy path,
+e.g. tests with no boundary data), the old behaviour (0 / NaN for same-tile) is preserved.
+
+## 2026-07-03 — Fix: units invisible on shore-adjacent segments (sunk to ocean floor)
+
+**Decision:** `rebuildUnits` and `unitWorldPos` in `client/firstPersonView.ts` sampled ground height
+via `sampleSurface(...)` with no floor, unlike building placement. On a city hex sharing a polygon
+vertex with an ocean tile, `buildVertexHeight` pins that vertex to the waterline (by design — this
+is what draws shore slopes, see 2026-07-01 entries below), so `sampleSurface`'s barycentric
+interpolation could return a height far below the tile's plateau (observed: unit segment on tile 176
+sampled to y≈-6.6 instead of the ~0 plateau). The unit model rendered underground/behind the cliff
+terrain and was completely invisible, while its `#N` label sprite (`depthTest:false`) stayed visible
+above the ground — matching the reported symptom exactly (numbers visible, no unit models). Fix:
+apply the same `Math.max(sampled.height, fallbackTop)` clamp already used for buildings
+(2026-07-01 "restore shore slopes" entry) to both unit placement sites; when the clamp trips, use an
+upright normal instead of the (invalid) sampled slope normal so the model doesn't tilt into a cliff.
+
+**Why:** This gap was explicitly flagged as a known follow-up in the 2026-07-01 building fix entry
+("If a unit visibly wades into a shore, apply the same clamp at the unit placement site") but never
+applied. Confirmed via `window.__DD_FIRSTPERSON__.heightOf(176, vertex)` in the browser console —
+two of the hex's six polygon vertices were pinned to -6.6 (ocean floor) while the others sat at the
+correct ~0.05-0.1 plateau height.
+
+**Impact:** Units and drones standing on any segment of a shore-adjacent hex (common in coastal
+cities) render correctly instead of disappearing underground. Visual only — no gameplay impact.
+
+## 2026-07-03 — Fix: units invisible on non-cliff slopes in first-person view (cliff skirt drawn on every edge)
+
+**Decision:** `buildTerrainMesh` in `client/firstPersonTerrain.ts` computed `isCliff` per edge with
+`world.tiles[ft.tileIndex].n && world.tiles[ft.tileIndex].n.length > 0` — true for virtually every
+tile, so a full-height textured skirt wall was emitted on every hex edge, not just genuine cliffs.
+On steep (but non-cliff) slopes, this skirt ran almost coincident with the tile's own sloped face
+and occluded anything standing on it, including unit models. Their floating `#N` label sprite uses
+`depthTest: false` so it stayed visible, producing "labels with no unit" on slopes. Fixed by finding
+the real neighbour across each edge (same outward-direction match as the 2D renderer's
+`neighbourAcrossSegment`) and gating the skirt on the existing `isCliffEdge(a, b)` helper (now
+exported) — the same test `buildVertexHeight` already uses to decide whether to average shared
+vertex heights across a border. Non-cliff edges already join seamlessly via that averaging, so no
+skirt is needed there at all; removed the dead vertex-coloured-skirt branch (it was unreachable
+under the old broken flag) along with its now-unused buffers.
+
+**Why:** Confirmed via `[FP-UNIT-DEBUG]` placement logging that unit models were positioned exactly
+at the sampled ground height in every case (not mispositioned) — the invisibility was purely a
+downstream occlusion issue in the terrain mesh, not the unit placement math.
+
+**Impact:** Units, buildings, and any other geometry standing on a steep-but-not-cliff slope are no
+longer hidden behind a spurious skirt wall. Skirts now render only at true elevation-step cliffs,
+matching the visual cliff cue already used elsewhere (2D `drawSteepBorderLines`, `buildVertexHeight`).
+
+## 2026-07-01 — Move the anti-sink fix from the mesh to the placement layer (restore shore slopes)
+
+**Decision:** Reverted the `buildVertexHeight` land-clamp added in the entry below and moved the
+"don't sink" protection to building placement in `client/firstPersonView.ts`. `buildVertexHeight`
+again pins every tile in a water cluster to the water level (`acc.water ?? avg`), so a coastal land
+tile slopes DOWN to the waterline — the shore slope is back. Buildings no longer sink because their
+resting height is now clamped at placement: `groundY = max(sampleSurface(...), fallbackTop)` where
+`fallbackTop = elevationWorldHeight(tile)` (the tile plateau). Applied at both building placement
+sites (`buildingWorldPosition` and the `rebuildBuildings` render loop).
+
+**Why:** The previous fix clamped land vertices UP to their own elevation inside the shared
+vertex-height function. That function feeds the terrain mesh too, so it flattened every shore into a
+vertical drop (reported: "the building fix broke hex slope rendering"). It also silently diverged
+from the authoritative server steepness pass (`src/world/segmentSteepness.ts`), which still pins the
+old way — so the rendered slope and the gameplay steepness gate would have disagreed at coasts.
+
+**Impact:**
+- Shore slopes render again; client mesh and `segmentSteepness.ts` are back in sync (both pin water
+  clusters flat, no land-clamp).
+- Buildings on shore segments rest on the tile plateau (dry) instead of sinking. Buildings already
+  render upright (they don't tilt with the slope), so sitting at plateau height is consistent.
+- Units are unchanged — they still conform to the drawn surface. If a unit visibly wades into a
+  shore, apply the same `max(..., fallbackTop)` clamp at the unit placement site.
+
+## 2026-07-01 — Fix: coastal land vertices dragged to ocean floor in first-person view
+
+**Decision:** `buildVertexHeight` in `client/firstPersonTerrain.ts` was pinning every tile in a
+water-containing cluster to the water height — including land tiles. A rolling tile (`h=4`) sharing
+a vertex with an ocean neighbour (no cliff edge between them) got that vertex set to `-0.718`,
+submerging any building or unit placed on that segment. Fix: land tiles in a water-containing
+cluster now use `max(waterLevel, ownElevation)` instead of `waterLevel`. Only water tiles
+themselves sit at the waterline; adjacent land tiles are clamped above it.
+
+**Why:** Confirmed via `[BLDG-POS]` debug log: `groundY=-0.718`, `fallbackTop=0.462`,
+`sampleHitFallback=false` — the sample hit a real triangle whose vertex heights had been dragged
+down by the water-pinning logic.
+
+**Impact:** Coastal city buildings and units near ocean edges no longer sink into the ground in the
+first-person view. Visual only — no gameplay impact.
+
+## 2026-07-01 — Replaced height-delta climb gate with per-segment steepness gate
+
+**Decision:** Removed `MAX_CLIMB_WHEELED`/`MAX_CLIMB_LIMB` (height-delta border gate) and replaced
+it with a per-segment steepness gate (`MAX_STEEP_WHEELED`, `MAX_STEEP_LIMB`). Each tile now carries
+`segSteep: number[6]` (radians per segment), computed once at world generation by
+`computeSegmentSteepness()` in `src/world/segmentSteepness.ts`, and delivered to client/server via
+`WireTile.ss`. `segmentCost` now takes `(toTile, toSegment, mode)` — the gate is on the
+destination segment, not the border edge. The hills movement surcharge (`COST_TANK_HILLS`) is
+removed; tanks pay flat everywhere. The building placement validator gains a `too-steep` rejection
+path via `MAX_BUILD_STEEPNESS` in `shared/buildings.ts`.
+
+**Why:** The old tile-level height-delta gate was coarse and didn't match the slope the player
+actually saw in the 3D view. The new gate uses the exact same elevated-vertex model as
+`client/firstPersonTerrain.ts` (cliff-aware cluster averaging, water pinning, `ELEV_CURVE_EXP=4`,
+`STEEP_VERTICAL_EXAGGERATION=4.4`) so the gameplay gate matches the rendered terrain.
+
+**Impact:**
+- `segmentCost` signature changed — all call sites updated in this commit.
+- Mountains are no longer categorically impassable; only truly steep segments block.
+- `src/world/validate.ts` now checks `segSteep` integrity.
+- Wire format grows by up to 6 rounded numbers per tile (`ss` field).
+- Re-run `node scripts/calibrateSteepness.js` if `ELEV_CURVE_EXP`, `STEEP_VERTICAL_EXAGGERATION`,
+  or terrain generation changes.
+- `STEEP_VERTICAL_EXAGGERATION` in `segmentSteepness.ts` must stay in sync with
+  `ELEV_WORLD_SCALE / HEX_WORLD_RADIUS` in `client/firstPersonView.ts` (currently 4.4).
+
+## 2026-07-01 — 3D terrain slopes too extreme (ease-in curve + render cliff threshold)
+
+**Problem:** In the first-person 3D view, modest elevation steps rendered as
+absurd ramps. A coastal city plateau at only height 4 (with water at 0) became a
+mesa taller than a hex is wide (`4/11 × ELEV_WORLD_SCALE = 9.6` world units,
+~1.6× the hex radius), with buildings and roads draping down 40° faces.
+
+**Root causes (two):**
+1. **Linear height map.** `elevationWorldHeight` mapped height 0–11 linearly to
+   world height, so mid-range steps were already steep.
+2. **Coastal hex tilting.** In `buildVertexHeight`, a city (h4) touching water
+   (h0) was within the old cliff threshold (`MAX_CLIMB_LIMB = 8`), so they
+   clustered together; a cluster containing water is pinned to the waterline, so
+   the city's outer vertices got yanked to 0 while its centre stayed at h4 —
+   tilting the whole perimeter hex into a ramp (hence the draped roads).
+
+**Decision (rendering-only, gameplay untouched):**
+- **Ease-in height curve** (`ELEV_CURVE_EXP = 4`) in `elevationWorldHeight`:
+  `world = (h/11)^4 × scale`. Extremely compresses low terrain (h1–h4 span
+  only ~0.025 → ~0.8 units, nearly invisible) while preserving mountains (h11
+  unchanged at 26.4, h9 ~12 units). The base landscape is nearly flat; mountains
+  rise steeply from a featureless plain. Tuned through 1.6 → 2.4 → 3 → 4.
+- **Dedicated render cliff threshold** `MAX_SLOPE_RENDER = 3`, decoupled from the
+  gameplay climb limits. `isCliffEdge` now uses it instead of `MAX_CLIMB_LIMB`.
+  Steps > 3 levels render as a clean vertical cliff (flat top + skirt) instead of
+  a melting ramp; a coastal h4→water drop is now a flat-topped bluff, so
+  buildings/roads stay level.
+
+**Why not 0–63 height range:** considered widening the discrete height range for
+finer worldgen control, but it would ripple through movement climb limits, the
+combat band thresholds, the wire format, and their tests. The curve + threshold
+achieve the visual goal with zero gameplay/balance impact.
+
+**Impact:** `client/firstPersonTerrain.ts` only. Gameplay reads discrete
+`tileHeight` directly and is unaffected (combat elevation uses the 4-way band).
+All 503 unit tests pass.
+
+**Known follow-ups:**
+- The cliff-skirt classifier in `buildTerrainMesh` still has a stubbed `isCliff`
+  check (`tile.n && tile.n.length > 0`, always true) — every skirt is textured as
+  cliff rock rather than split into textured-cliff vs vertex-coloured slope. Reads
+  fine on the vertical faces but isn't using the real per-edge cliff test.
+- The 2D views (`terrainTextures.ts`, `terrainRelief.ts`) still key cliffs off
+  `MAX_CLIMB_LIMB` (8), so 2D and 3D cliff cut-offs no longer match. Align if the
+  mismatch shows.
+
+## 2026-07-01 — Building 2D sprites not rendering (texture deadlock fix)
+
+**Bug:** 2D map showed placeholder vector blocks instead of 3D building sprites. `preRenderBuildings` timed out on every building.
+
+**Root cause:** `waitForBuildingTextures` used `THREE.TextureLoader` which fires its `'update'` event only after a GPU render call — but we're waiting for textures *before* rendering, creating a deadlock. The fallback `img.load` listener was also broken because `tex.image` is `undefined` at the moment the listener is attached (Three.js hasn't assigned it yet).
+
+**Fix:** `getOrLoadTexture` in `buildingModel.ts` now creates an `HTMLImageElement` explicitly, sets `img.src`, and resolves the promise in `img.onload`. The Three.js `Texture` is constructed with that image and `texture.needsUpdate = true` is set on load. No more reliance on Three.js event timing.
+
+**Impact:** `buildingModel.ts` only.
+
+## 2026-07-01 — Ground units blocked by building-occupied segments
+
+**Decision:** Tanks (wheeled) and spiders (limb) cannot pass through a hex segment that contains a building. Drones (flight) are unaffected.
+
+**Why:** Buildings are permanent full-segment occupants on city hexes. Without the block, ground units could clip through them, violating the "road-only pathing inside cities" rule.
+
+**Impact:** Both segment-level Dijkstra functions (`computeMovementRange` and `computeMovementCostRoute` in `client/movementRange.ts` / `client/movementRoute.ts`) now call `buildBuildingSegmentSet(world)` (flight mode skips this) and skip building-occupied segments in intra-hex pivot and cross-hex arrival candidate checks. The `reachableSegments` output also filters them so the movement overlay never highlights a building segment as a valid destination.
+
+## 2026-07-01 — Orientation is now an armour penalty, not an attack boost
+
+**Decision:** Orientation no longer adds to attack power. Instead it subtracts
+from the defender's **armour** component before the defence is scaled:
+`effectiveArmour = max(0, armour − orientationArmourPenalty)`. Front attack = 0
+penalty, pure rear = −3 armour (clamped at 0), linear in between (`(angle/180°)
+× 3`, rounded to 1 dp). Only armour is affected — EW and terrain are untouched.
+
+**Why:** More intuitive model — flanking exposes weak armour rather than
+magically making the weapon stronger. Keeps attack power tied purely to the
+weapon/chassis/range.
+
+**Impact:**
+- `combatFacing.ts`: added `calculateOrientationArmourPenalty` +
+  `MAX_ORIENTATION_ARMOUR_PENALTY = 3`. Legacy `calculateOrientationBonus`
+  (0–2) retained for tests only.
+- `combatFormula.ts`: `modifiedAttackPower` dropped its orientation arg; added
+  `effectiveDefenceWithOrientation(armour, otherDefence, penalty)`. `DamageInput`
+  now takes `armour` + `defenceOther` + `orientationArmourPenalty` instead of
+  `effectiveDefence` + `orientationBonus`.
+- `combat.ts`, `combatExplainer.ts` updated to compose defence with the penalty.
+- Wire type `CombatBreakdown.orientationBonus` → `orientationArmourPenalty`;
+  client `combatBreakdownView.ts` shows it on the **defence** side.
+- **Side effect:** with orientation out of attack power, `AttackPower` now caps
+  at 5.0, so the `MAX_DAMAGE = 50` clamp (2026-07-01) is unreachable via the
+  formula (tops out at 30 vs zero defence). Rear attacks now raise damage by
+  lowering effective defence, not by raising AttackPower.
+
+## 2026-07-01 — Damage ceiling increased to 50
+
+**Decision:** Maximum damage per attack increased from 30 to 50.
+
+**Why:** Scale up combat impact for endgame units and to make strong attack builds more rewarding. Also applied to splash damage (via splash scale 0.3) — now capped at max 15 per-target.
+
+**Impact:** Affected constants: `MAX_DAMAGE` (combatFormula.ts), documentation (COMBAT_RULES.md §6), UI tooltips (refitModal.ts). All tests updated to expect max 50.
+
+## 2026-06-30 — Road texture on open city street segments
+
+**Decision:** City hexes now paint a road texture (`artifacts/road.webp`) onto
+every triangular segment that does **not** hold a building. The road is oriented
+radially — from the hex centre out to the segment's outer-edge midpoint — and
+clipped to the triangle.
+
+**Why:** Open (building-free) segments are the city's street network
+(through-street model, §"Capital hex exempt…"). Painting them as roads makes the
+street layout legible. Radial orientation = "flow of the road": adjacent open
+segments meet at the hex centre, and a segment's road continues across its shared
+outer edge into the neighbouring hex's facing segment, so traffic reads as
+flowing centre↔edge↔centre across the city.
+
+**How:** `terrainTextures.ts` loads a new `road` key (fetched directly via
+`get('road')`, never returned by `keyForTile`). `TerrainRenderer.drawCityRoads`
+(`localMapTerrain.ts`), called from `drawAllTiles` for `tile.city` hexes, clips
+to each open segment's triangle and maps image-space→screen via a basis matrix:
+image height (top→bottom, along the road) → along the outer edge direction,
+image width → inward depth from edge to centre. On a fully-open hex the six
+strips together form a small inner hexagon — road centrelines flow segment to
+adjacent segment. Drawn during the terrain pass, so buildings/units render on top.
+
+**Gotcha:** Building-occupancy is checked against real `world.buildings` only —
+planned (ghost) buildings still show a road beneath them.
+
+## 2026-06-29 — First-person selection/faction rings conform to slope
+
+**Decision:** The 3D first-person view rings (white selection ring + faction
+colour ring under each unit) now lie flush with the terrain surface instead of
+on a flat horizontal plane.
+
+**Why:** On a slope the flat ring (`rotation.x = -π/2`) had its uphill half
+buried in the hillside — it looked cropped. The unit model already conformed to
+the slope via `orientToSurface`; the rings didn't.
+
+**How:** `firstPersonView.ts` rebuildUnits — orient each ring with
+`quaternion.setFromUnitVectors((0,0,1), normal)` (RingGeometry faces +Z) using
+the same `normal` from `sampleSurface` that orients the model, and lift the ring
+along that normal rather than straight up in Y.
+
+**Gotcha:** The 2D local-map selection ring (`localMapUnits.drawUnitSelectionRings`)
+is a separate code path and intentionally stays a flat circle — the original
+"cropped on a slope" report was about the **3D** view, not the 2D map.
+
+**Impact:** Visual only. No gameplay change.
+
+## 2026-06-29 — Cliff texture rendering (hybrid 2D+3D)
+
+**Decision:** Added `cliffs.webp` as a terrain texture applied to sheer mountain faces:
+- **2D Local Map:** Tiles adjacent to a neighbor at steepness > MAX_CLIMB_LIMB (unclimbable) render with cliff texture overlay instead of terrain.
+- **3D First-Person:** Cliff skirts (vertical faces between hex plateaus) are textured with `cliffs.webp` instead of vertex-colored, giving them rocky visual detail.
+
+**Why:** Cliff texture provides visual clarity and immersion — steep unclimbable slopes now read as distinct geological features rather than color gradients.
+
+**How it works:**
+- `TerrainTextures.keyForTile()` checks neighbor heights and returns `'cliffs'` key when a steepness threshold is exceeded.
+- `firstPersonTerrain.ts` separates cliff skirts into two meshes: textured (steep edges) and vertex-colored (gentle slopes).
+- Cliff material uses standard Three.js with roughness 0.9 + anisotropy to simulate weathered stone.
+
+**Impact:** Visual / immersion only. No gameplay change.
+
+## 2026-06-29 — Validator crashed on out-of-bounds indices (bugfix)
+
+**Decision:** `validateWorld` (`src/world/validate.ts`) now bounds-checks every
+index it takes from the world data before dereferencing it: the
+adjacency-symmetry check guards `tiles[n]`, the BFS connectivity walk skips
+out-of-range neighbour ids and an out-of-range `current`, and the city checks
+(tiles-marked, no-pentagon, no-adjacent-pentagon) guard `tiles[city.tileIndex]`.
+
+**Why:** A structurally malformed world carrying an out-of-bounds `neighbour`
+id or `city.tileIndex` made these accesses return `undefined`; the following
+property read threw a `TypeError`, so the validator crashed instead of doing
+its job and rejecting the world with `passed: false`.
+
+**Impact:** Validation-only. Malformed indices are now reported as a failed
+check rather than faulting; well-formed worlds validate exactly as before.
+
+## 2026-06-29 — Splash Fire explanation omitted AttackPower (bugfix)
+
+**Decision:** Added the computed splash attack power to the Splash Fire step of
+`explainAttack` (`server/combatExplainer.ts`), so its breakdown renders
+`AttackPower = (base × chassis × rangeEff) + orientation = …` like the Direct
+Fire and Anti-Air Fire branches.
+
+**Why:** The splash branch computed `rangeEff`/`edSplash`/`splashAttack` but
+never surfaced attack power, leaving its breakdown inconsistent with the other
+two weapon modes. Caught by the new Property 17 test ("rendered explanation
+contains every breakdown component, including attack power") in the
+`unit-test-coverage` spec, which failed for splash mode.
+
+**Impact:** Display/formatting only — combat math and all other branches
+unchanged. Splash power is computed the same way the per-victim `explainSplash`
+formatter does (`clamp(splashAttack,1,5)` → `calculateModifiedAttackPower`).
+
+## 2026-06-29 — Unit test coverage tooling (report-only)
+
+**Decision:** Added `@vitest/coverage-v8` with coverage config in
+`vite.config.ts` and scripts `test:cov` (one-shot) and `test:watch` (dev loop).
+Coverage is scoped to `src/**`, `shared/**`, `server/**`; `client/**` is
+excluded as e2e/snapshot territory (per `conventions.md`).
+
+**Why:** Coverage is a map for finding untested branches, not a score to chase.
+Including 3D/DOM-heavy client code would drown the signal.
+
+**Impact:** Report-only — no thresholds yet. Baseline at introduction: ~57%
+stmts / 49% branch / 60% lines. Reports write to `coverage/` (gitignored).
+The `unit-test-maintenance` hook now runs `test:cov`, reads the report to locate
+gaps, and remediates them. Revisit thresholds once the baseline is trusted.
+
 ## 2026-06-29 — Server-authority Phase 3 (foundation): authoritative match sessions
 
 **Decision:** Introduced server-held authoritative match state behind a

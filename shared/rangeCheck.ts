@@ -23,37 +23,28 @@ export const SEGMENT_RANGE_BASE = 1.0;
 // scales the range threshold and is shared by client and server so they agree.
 
 /**
- * Range multiplier per level of elevation difference. Max elevation delta is 3
- * (mountain vs flat): attacker +3 levels → ×1.5 range, −3 → ×0.5 range.
+ * Range multiplier per unit of height difference. Heights range 0–11;
+ * max delta = 11 → attacker +11 levels → ×1.5 range, −11 → ×0.5 range.
+ * This gives finer granularity than the old 4-band model.
  */
-export const ELEVATION_RANGE_PER_LEVEL = 0.5 / 3;
+export const ELEVATION_RANGE_PER_LEVEL = 0.5 / 11;
 /** Clamp bounds for the elevation range multiplier. */
 export const ELEVATION_RANGE_MIN = 0.5;
 export const ELEVATION_RANGE_MAX = 1.5;
 
-/** Map an elevation type to a numeric level (flat 0 … mountain 3). */
-export function elevationLevel(elevationType: string | undefined): number {
-  switch (elevationType) {
-    case 'rolling':  return 1;
-    case 'hills':    return 2;
-    case 'mountain': return 3;
-    default:         return 0; // 'flat' / unknown
-  }
-}
-
 /**
- * Elevation range multiplier from the attacker's and defender's elevation types.
- * multiplier = clamp(1 + (attackerLevel − defenderLevel) × ELEVATION_RANGE_PER_LEVEL,
+ * Elevation range multiplier from the attacker's and defender's terrain heights.
+ * multiplier = clamp(1 + (attackerHeight − defenderHeight) × ELEVATION_RANGE_PER_LEVEL,
  *                    ELEVATION_RANGE_MIN, ELEVATION_RANGE_MAX).
  * Returns 1.0 when either combatant is airborne (a drone) — pass eitherIsDrone.
  */
 export function elevationRangeMultiplier(
-  attackerElevationType: string | undefined,
-  defenderElevationType: string | undefined,
+  attackerHeight: number,
+  defenderHeight: number,
   eitherIsDrone = false,
 ): number {
   if (eitherIsDrone) return 1.0;
-  const delta = elevationLevel(attackerElevationType) - elevationLevel(defenderElevationType);
+  const delta = attackerHeight - defenderHeight;
   const m = 1 + delta * ELEVATION_RANGE_PER_LEVEL;
   return Math.max(ELEVATION_RANGE_MIN, Math.min(m, ELEVATION_RANGE_MAX));
 }

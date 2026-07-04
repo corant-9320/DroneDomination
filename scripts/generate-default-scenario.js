@@ -211,6 +211,15 @@ function findOrphanedPockets(cityHexes, buildingSet) {
   return [...orphanedHexes];
 }
 
+/** Per-segment steepness in radians (from wire field `ss`). Falls back to 0. */
+function segmentSteepness(tileIdx, segment) {
+  const t = tileByIndex.get(tileIdx);
+  if (!t || !t.ss) return 0;
+  return t.ss[segment] ?? 0;
+}
+
+const MAX_BUILD_STEEPNESS = 0.44; // must match shared/buildings.ts
+
 /**
  * Pure placement validation (faithful port). `state` carries the live building
  * set, unit set, the faction's building tiles, and its owned city hexes.
@@ -220,6 +229,7 @@ function validatePlacement(state, tileIdx, segment, founding) {
   const sides = sidesOf(tileIdx);
   if (segment < 0 || segment >= sides) return false;
   if (!groundPassable(tileIdx)) return false;
+  if (segmentSteepness(tileIdx, segment) > MAX_BUILD_STEEPNESS) return false;
 
   const key = segKey(tileIdx, segment);
   if (state.unitSet.has(key)) return false;

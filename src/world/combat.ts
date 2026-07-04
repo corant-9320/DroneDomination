@@ -8,11 +8,11 @@
  *
  * Key properties:
  * - Minimum damage is always 1 (weak attacks are never useless)
- * - Maximum damage is 30
- * - Weak attacks can no longer deal 30 damage against undefended targets
- * - Strong attacks (AttackPower ≥ 5) can still reach 30 against undefended targets
+ * - Maximum damage is 50
+ * - Weak attacks can no longer deal 50 damage against undefended targets
+ * - Strong attacks (AttackPower ≥ 5) can still reach 50 against undefended targets
  * - Defence uses a 0.75 scale factor to stay meaningful without being overwhelming
- * - Orientation is additive: front +0, side +1, rear +2
+ * - Orientation degrades defender armour: front −0, side −1.5, rear −3 (clamped at 0)
  *
  * The pure, self-contained damage formula lives in combatFormula.ts.
  * Arc/facing geometry lives in combatFacing.ts.
@@ -23,7 +23,7 @@
  * the pure formula functions, kept for backward compatibility.
  */
 
-import { Tile, ElevationType, Building } from './types.js';
+import { Tile, Building } from './types.js';
 import { Unit, HexSegment } from './units.js';
 import { effectiveCombatDistance, segmentDistance } from './segmentGeometry.js';
 import { elevationRangeMultiplier } from '../../shared/rangeCheck.js';
@@ -53,6 +53,7 @@ export {
   clamp,
   applyDamage,
   calculateFormulaDamage,
+  effectiveDefenceWithOrientation,
   computeDamage,
   // Types
   type ChassisType,
@@ -72,6 +73,8 @@ export {
   getFacingModifier,
   getCrossfireBonus,
   calculateOrientationBonus,
+  calculateOrientationArmourPenalty,
+  MAX_ORIENTATION_ARMOUR_PENALTY,
   classifyArcFromAngle,
   getAngularDifference,
   getBearingBetweenTiles,
@@ -89,6 +92,7 @@ import {
   getChassisModifier,
   calculateRangeEfficiency,
   modifiedAttackPower,
+  effectiveDefenceWithOrientation,
   droneIncomingDamageModifier,
   segmentRangeThreshold,
   clamp,
@@ -103,6 +107,7 @@ import {
   classifyAttackArc,
   getFacingModifier,
   calculateOrientationBonus,
+  calculateOrientationArmourPenalty,
   classifyArcFromAngle,
   getAngularDifference,
 } from './combatFacing.js';
@@ -151,31 +156,19 @@ export function getChassisAttackModifier(unit: Unit): number {
 
 /**
  * Modified attack power for a unit's weapon (adapter over combatFormula).
+ * Orientation no longer affects attack power (it degrades defender armour).
  * @param distance graph distance for range falloff (1 = no falloff).
  */
 export function calculateModifiedAttackPower(
   unit: Unit,
   baseWeaponValue: number,
-  orientationBonus: number,
   distance: number = 1,
 ): number {
   return modifiedAttackPower(
     getChassisAttackModifier(unit),
     baseWeaponValue,
-    orientationBonus,
     calculateRangeEfficiency(distance),
   );
-}
-
-/** Map elevation type to a numeric level for comparison. */
-export function getElevationLevel(elevationType: ElevationType): number {
-  switch (elevationType) {
-    case 'flat':     return 0;
-    case 'rolling':  return 1;
-    case 'hills':    return 2;
-    case 'mountain': return 3;
-    default:         return 0;
-  }
 }
 
 /** Apply the drone incoming damage modifier (adapter — resolves isDrone). */
@@ -268,7 +261,7 @@ export function getEWProtection(target: Unit, ctx: CombatContext): number {
   for (const building of buildings) {
     total += contribution(building.ownerId, building.tileIndex, building.attributes?.defence ?? 0);
   }
-  return total;
+  return Math.min(total, 5);
 }
 
 // ---------------------------------------------------------------------------
@@ -335,7 +328,8 @@ export function getDefencePower(
  * Calculate direct damage from attacker to target using full game state.
  * Returns the damage amount along with breakdown info.
  *
- * AttackPower = (attack × chassisModifier × rangeEfficiency) + orientationBonus
+ * AttackPower = attack × chassisModifier × rangeEfficiency.
+ * Orientation degrades the defender's armour (0 front → 3 rear, clamped at 0).
  * If the target is a drone, Direct Fire damage is multiplied by
  * DRONE_DIRECT_FIRE_DAMAGE_MULTIPLIER (0.33).
  *
@@ -346,13 +340,13 @@ export function calculateDirectDamage(
   target: Unit,
   ctx: CombatContext,
   distance: number = 1,
-): { damage: number; arc: AttackArc; orientationBonus: number; defencePower: ReturnType<typeof getDefencePower>; antiDronePenaltyApplied: boolean } {
+): { damage: number; arc: AttackArc; orientationArmourPenalty: number; defencePower: ReturnType<typeof getDefencePower>; antiDronePenaltyApplied: boolean } {
   const { tiles } = ctx;
-  // New bearing-based orientation bonus (continuous 0–2)
-  const orientationBonus = calculateOrientationBonus(tiles, attacker.tileIndex, target.tileIndex, target.facing);
+  // Bearing-based orientation armour penalty (continuous 0–3, subtracted from armour)
+  const orientationArmourPenalty = calculateOrientationArmourPenalty(tiles, attacker.tileIndex, target.tileIndex, target.facing, attacker.segment, target.segment);
 
   // Classify arc for UI/wire display from the angular difference
-  const angleDiff = getAngularDifference(tiles, attacker.tileIndex, target.tileIndex, target.facing);
+  const angleDiff = getAngularDifference(tiles, attacker.tileIndex, target.tileIndex, target.facing, attacker.segment, target.segment);
   const arc: AttackArc = isNaN(angleDiff) ? 'unknown' : classifyArcFromAngle(angleDiff);
 
   // EW (radius anti-drone screen) only applies when the attacker is a drone.
@@ -363,22 +357,23 @@ export function calculateDirectDamage(
     mode: 'direct',
     attackerChassis: getChassisType(attacker),
     baseWeaponValue: attacker.attributes.kinetic ?? 0,
-    orientationBonus,
+    orientationArmourPenalty,
     distance,
-    effectiveDefence: defencePower.total * DEFENCE_SCALE,
+    armour: defencePower.armour,
+    defenceOther: defencePower.ew + defencePower.terrain,
     targetIsDrone: antiDronePenaltyApplied,
   });
 
-  return { damage: finalDamage, arc, orientationBonus, defencePower, antiDronePenaltyApplied };
+  return { damage: finalDamage, arc, orientationArmourPenalty, defencePower, antiDronePenaltyApplied };
 }
 
 /**
  * Calculate splash damage for one enemy unit in the target hex.
  *
- * Orientation bonus applies only to the originally selected target.
- * All other units in the hex use front orientation (orientationBonus = 0).
+ * The orientation armour penalty applies only to the originally selected
+ * target. All other units in the hex use front orientation (penalty 0).
  *
- * AttackPower = (splashAttack × chassisModifier × rangeEfficiency) + orientationBonus
+ * AttackPower = splashAttack × chassisModifier × rangeEfficiency.
  * If the victim is a drone, splash damage is multiplied by
  * DRONE_SPLASH_FIRE_DAMAGE_MULTIPLIER (0.50) after splash scaling.
  *
@@ -395,9 +390,9 @@ export function calculateSplashDamage(
   const splashPower = attacker.attributes.splashAttack ?? 0;
   if (splashPower <= 0) return 0;
 
-  // Orientation bonus only for the originally selected target (bearing-based)
-  const orientationBonus = victim.id === selectedTarget.id
-    ? calculateOrientationBonus(tiles, attacker.tileIndex, victim.tileIndex, victim.facing)
+  // Orientation armour penalty only for the originally selected target (bearing-based)
+  const orientationArmourPenalty = victim.id === selectedTarget.id
+    ? calculateOrientationArmourPenalty(tiles, attacker.tileIndex, victim.tileIndex, victim.facing, attacker.segment, victim.segment)
     : 0;
 
   // EW (radius anti-drone screen) only applies when the attacker is a drone.
@@ -407,9 +402,10 @@ export function calculateSplashDamage(
     mode: 'splash',
     attackerChassis: getChassisType(attacker),
     baseWeaponValue: splashPower,
-    orientationBonus,
+    orientationArmourPenalty,
     distance,
-    effectiveDefence: defPower.total * DEFENCE_SCALE,
+    armour: defPower.armour,
+    defenceOther: defPower.ew + defPower.terrain,
     targetIsDrone: isDrone(victim),
   });
 
@@ -569,8 +565,8 @@ export function resolveBuildingDirectFire(
   // Range gate — same segment-distance + elevation rules as unit Direct Fire.
   const segDist = effectiveCombatDistance(tiles, attacker, { tileIndex: building.tileIndex, segment: building.segment as HexSegment });
   const elevRangeMult = elevationRangeMultiplier(
-    tiles[attacker.tileIndex].elevationType,
-    tiles[building.tileIndex].elevationType,
+    tiles[attacker.tileIndex].height ?? 0,
+    tiles[building.tileIndex].height ?? 0,
     isDrone(attacker),
   );
   const rangeThreshold = getSegmentRangeThreshold(attacker) * elevRangeMult;
@@ -675,8 +671,8 @@ export function resolveSplashHex(
   // Range gate to the target hex (representative segment 0), with elevation.
   const segDist = segmentDistance(tiles, attacker.tileIndex, attacker.segment, tileIndex, 0 as HexSegment);
   const elevRangeMult = elevationRangeMultiplier(
-    tiles[attacker.tileIndex].elevationType,
-    tiles[tileIndex].elevationType,
+    tiles[attacker.tileIndex].height ?? 0,
+    tiles[tileIndex].height ?? 0,
     isDrone(attacker),
   );
   if (segDist > getSegmentRangeThreshold(attacker) * elevRangeMult) {
@@ -749,7 +745,7 @@ export function evaluateWeaponOptions(
   target: Unit,
   ctx: CombatContext,
   dist: number,
-  orientationBonus: number,
+  orientationArmourPenalty: number,
 ): WeaponOption[] {
   const { units: allUnits } = ctx;
   const options: WeaponOption[] = [];
@@ -793,9 +789,10 @@ export function evaluateWeaponOptions(
       mode: 'antiAir',
       attackerChassis: getChassisType(attacker),
       baseWeaponValue: attacker.attributes.antiAir!,
-      orientationBonus,
+      orientationArmourPenalty,
       distance: dist,
-      effectiveDefence: defencePower.total * DEFENCE_SCALE,
+      armour: defencePower.armour,
+      defenceOther: defencePower.ew + defencePower.terrain,
       targetIsDrone: true,
     });
     options.push({
@@ -849,8 +846,8 @@ export function resolveAttack(
   // shoots farther; lower ground shorter). No elevation effect for drones.
   const segDist = effectiveCombatDistance(tiles, attacker, target);
   const elevRangeMult = elevationRangeMultiplier(
-    tiles[attacker.tileIndex].elevationType,
-    tiles[target.tileIndex].elevationType,
+    tiles[attacker.tileIndex].height ?? 0,
+    tiles[target.tileIndex].height ?? 0,
     isDrone(attacker) || isDrone(target),
   );
   const rangeThreshold = getSegmentRangeThreshold(attacker) * elevRangeMult;
@@ -858,15 +855,15 @@ export function resolveAttack(
     return invalidResult(attackerId, targetId, 'Target out of range');
   }
 
-  // Orientation info (shared across weapon modes) — bearing-based
-  const orientationBonus = calculateOrientationBonus(tiles, attacker.tileIndex, target.tileIndex, target.facing);
-  const angleDiff = getAngularDifference(tiles, attacker.tileIndex, target.tileIndex, target.facing);
+  // Orientation info (shared across weapon modes) — bearing-based armour penalty
+  const orientationArmourPenalty = calculateOrientationArmourPenalty(tiles, attacker.tileIndex, target.tileIndex, target.facing, attacker.segment, target.segment);
+  const angleDiff = getAngularDifference(tiles, attacker.tileIndex, target.tileIndex, target.facing, attacker.segment, target.segment);
   const arc: AttackArc = isNaN(angleDiff) ? 'unknown' : classifyArcFromAngle(angleDiff);
   // EW (radius anti-drone screen) only applies when the attacker is a drone.
   const defencePower = getDefencePower(target, ctx, isDrone(attacker));
 
   // Evaluate all valid weapon options (shared with explainer)
-  const validOptions = evaluateWeaponOptions(attacker, target, ctx, segDist, orientationBonus);
+  const validOptions = evaluateWeaponOptions(attacker, target, ctx, segDist, orientationArmourPenalty);
 
   if (validOptions.length === 0) {
     return invalidResult(attackerId, targetId, 'No valid weapon modes available');
@@ -912,7 +909,7 @@ export function resolveAttack(
     targetId,
     wasValid: true,
     attackArc: arc,
-    facingModifier: orientationBonus,
+    facingModifier: orientationArmourPenalty,
     targetArmour: defencePower.armour,
     targetEffectiveDefense: defencePower.total,
     directDamage: totalDamage,
@@ -983,16 +980,16 @@ export function calculateAntiAirReactionDamage(
 ): number {
   // Anti-air reaction: EW only applies if the reacting attacker is itself a drone.
   const defPower = getDefencePower(drone, ctx, isDrone(reactingUnit));
-  // Terrain is 0 for airborne drones (formation bonus deprecated — see getDefencePower)
-  const airborneDefence = (defPower.armour + defPower.ew) * DEFENCE_SCALE;
-
+  // Terrain is 0 for airborne drones (formation bonus deprecated — see getDefencePower).
+  // Reaction fire is a front snap shot — no orientation armour penalty (isReactionFire).
   const { finalDamage } = computeDamage({
     mode: 'antiAir',
     attackerChassis: getChassisType(reactingUnit),
     baseWeaponValue: reactingUnit.attributes.antiAir ?? 0,
-    orientationBonus: 0,
+    orientationArmourPenalty: 0,
     distance: 1,
-    effectiveDefence: airborneDefence,
+    armour: defPower.armour,
+    defenceOther: defPower.ew, // terrain 0 for airborne drone
     targetIsDrone: true,
     isReactionFire: true,
   });

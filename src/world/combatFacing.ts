@@ -25,7 +25,8 @@
  */
 
 import { Tile, Vec3 } from './types.js';
-import { Unit } from './units.js';
+import { Unit, HexSegment } from './units.js';
+import { getSegmentCentroid3D } from './segmentGeometry.js';
 
 // ---------------------------------------------------------------------------
 // Orientation types
@@ -41,8 +42,15 @@ export type AttackArc = 'front' | 'side' | 'rear' | 'unknown';
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Maximum orientation bonus (perfect rear attack). */
+/** Maximum orientation bonus (perfect rear attack). Legacy attack-power model. */
 const MAX_ORIENTATION_BONUS = 2;
+
+/**
+ * Maximum orientation-based armour penalty (perfect rear attack).
+ * Orientation now degrades the defender's armour rather than boosting attack:
+ * front = 0 penalty, pure rear = −3 armour (clamped at 0), linear between.
+ */
+export const MAX_ORIENTATION_ARMOUR_PENALTY = 3;
 
 // ---------------------------------------------------------------------------
 // Vec3 helpers (local, avoids import cycle with vec3.ts)
@@ -171,6 +179,10 @@ export function getFacingAngle(
  * Angular difference of 180° (perfect rear shot) → bonus MAX_ORIENTATION_BONUS (2)
  * Linear interpolation between.
  *
+ * For same-hex attacks (attacker and defender on the same tile), the bearing is
+ * computed from the segment centroids instead of tile centers, so orientation
+ * matches what the player sees in the 2D view. Requires segments to be passed.
+ *
  * The result is rounded to 1 decimal place for clean combat numbers.
  */
 export function calculateOrientationBonus(
@@ -178,12 +190,25 @@ export function calculateOrientationBonus(
   attackerTileIndex: number,
   defenderTileIndex: number,
   defenderFacing: number,
+  attackerSegment?: HexSegment,
+  defenderSegment?: HexSegment,
 ): number {
-  if (attackerTileIndex === defenderTileIndex) return 0;
-
-  // Bearing from defender toward attacker (approach direction)
-  const approachBearing = getBearingBetweenTiles(tiles, defenderTileIndex, attackerTileIndex);
-  if (isNaN(approachBearing)) return 0;
+  // Compute approach bearing — use segment centroids for same-hex, tile positions otherwise
+  let approachBearing: number;
+  if (attackerTileIndex === defenderTileIndex) {
+    if (attackerSegment === undefined || defenderSegment === undefined) return 0;
+    if (attackerSegment === defenderSegment) return 0;
+    const tile = tiles[defenderTileIndex];
+    const defPos = getSegmentCentroid3D(tile, defenderSegment);
+    const atkPos = getSegmentCentroid3D(tile, attackerSegment);
+    const [tx, ty] = tangentProject(defPos, atkPos);
+    const len = Math.sqrt(tx * tx + ty * ty);
+    if (len < 1e-12) return 0;
+    approachBearing = (Math.atan2(tx, ty) + 2 * Math.PI) % (2 * Math.PI);
+  } else {
+    approachBearing = getBearingBetweenTiles(tiles, defenderTileIndex, attackerTileIndex);
+    if (isNaN(approachBearing)) return 0;
+  }
 
   // Defender's facing angle
   const facingAngle = getFacingAngle(tiles, defenderTileIndex, defenderFacing);
@@ -221,18 +246,34 @@ export function classifyArcFromAngle(angleDiffRadians: number): AttackArc {
 
 /**
  * Get the angular difference (0 to π radians) between the approach bearing
- * and the defender's facing. Returns NaN if positions are coincident.
+ * and the defender's facing. Returns NaN if positions are coincident (same
+ * segment on the same tile with no segment data).
+ *
+ * For same-hex attacks, uses segment centroids when segments are provided.
  */
 export function getAngularDifference(
   tiles: Tile[],
   attackerTileIndex: number,
   defenderTileIndex: number,
   defenderFacing: number,
+  attackerSegment?: HexSegment,
+  defenderSegment?: HexSegment,
 ): number {
-  if (attackerTileIndex === defenderTileIndex) return NaN;
-
-  const approachBearing = getBearingBetweenTiles(tiles, defenderTileIndex, attackerTileIndex);
-  if (isNaN(approachBearing)) return NaN;
+  let approachBearing: number;
+  if (attackerTileIndex === defenderTileIndex) {
+    if (attackerSegment === undefined || defenderSegment === undefined) return NaN;
+    if (attackerSegment === defenderSegment) return NaN;
+    const tile = tiles[defenderTileIndex];
+    const defPos = getSegmentCentroid3D(tile, defenderSegment);
+    const atkPos = getSegmentCentroid3D(tile, attackerSegment);
+    const [tx, ty] = tangentProject(defPos, atkPos);
+    const len = Math.sqrt(tx * tx + ty * ty);
+    if (len < 1e-12) return NaN;
+    approachBearing = (Math.atan2(tx, ty) + 2 * Math.PI) % (2 * Math.PI);
+  } else {
+    approachBearing = getBearingBetweenTiles(tiles, defenderTileIndex, attackerTileIndex);
+    if (isNaN(approachBearing)) return NaN;
+  }
 
   const facingAngle = getFacingAngle(tiles, defenderTileIndex, defenderFacing);
   if (isNaN(facingAngle)) return NaN;
@@ -240,6 +281,36 @@ export function getAngularDifference(
   let diff = Math.abs(approachBearing - facingAngle);
   if (diff > Math.PI) diff = 2 * Math.PI - diff;
   return diff;
+}
+
+/**
+ * Calculate the continuous orientation armour penalty (0 to
+ * MAX_ORIENTATION_ARMOUR_PENALTY) based on the angular difference between the
+ * approach bearing and the defender's facing.
+ *
+ * Front attack (0° difference) → penalty 0 (full armour).
+ * Perfect rear shot (180°) → penalty MAX_ORIENTATION_ARMOUR_PENALTY (3).
+ * Linear interpolation between. The penalty is subtracted from the defender's
+ * armour component (clamped at 0) before the defence is scaled — see
+ * combatFormula.effectiveDefenceWithOrientation.
+ *
+ * Returns 0 for coincident/same-segment attacks (no meaningful bearing).
+ * Rounded to 1 decimal place for clean combat numbers.
+ */
+export function calculateOrientationArmourPenalty(
+  tiles: Tile[],
+  attackerTileIndex: number,
+  defenderTileIndex: number,
+  defenderFacing: number,
+  attackerSegment?: HexSegment,
+  defenderSegment?: HexSegment,
+): number {
+  const diff = getAngularDifference(
+    tiles, attackerTileIndex, defenderTileIndex, defenderFacing, attackerSegment, defenderSegment,
+  );
+  if (isNaN(diff)) return 0;
+  const raw = (diff / Math.PI) * MAX_ORIENTATION_ARMOUR_PENALTY;
+  return Math.round(raw * 10) / 10;
 }
 
 // ---------------------------------------------------------------------------

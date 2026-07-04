@@ -116,7 +116,7 @@ describe('terrain', () => {
       const r2 = generateTerrain(chainPositions, chainNeighbours, chainSides, 2);
       // At least one position should differ
       const same = r1.every(
-        (v, i) => v.terrainType === r2[i].terrainType && v.elevationType === r2[i].elevationType
+        (v, i) => v.terrainType === r2[i].terrainType && v.height === r2[i].height
       );
       expect(same).toBe(false);
     });

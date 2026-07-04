@@ -10,6 +10,7 @@ Scoped guidance for AI agents working on Drone Domination.
 
 | File | Loads when | One-line summary |
 |------|-----------|-----------------|
+| `context7.md` | Always | When and how to use Context7 for external library docs |
 | `conventions.md` | Always | Build/test commands, import rules, post-change checklists |
 | `debugging.md` | Always | Stop guessing at root cause — instrument and hand back to human for manual repro |
 | `docs-as-we-go.md` | Always | When to log decisions, where docs live, headless debug workflow |

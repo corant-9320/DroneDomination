@@ -180,8 +180,21 @@ describe('units', () => {
       expect(keys).toContain('repair');
     });
 
-    it('ATTRIBUTE_RANGES has 12 total attribute keys', () => {
-      expect(Object.keys(ATTRIBUTE_RANGES)).toHaveLength(12);
+    it('every attribute range is well-formed (min ≤ max, within 0–5)', () => {
+      // Replaces a brittle "has exactly 12 keys" count assertion: a hard-coded
+      // total breaks when an attribute is added/removed without signalling any
+      // real defect. This checks a genuine invariant of every defined range.
+      for (const [, [min, max]] of Object.entries(ATTRIBUTE_RANGES)) {
+        expect(min).toBeLessThanOrEqual(max);
+        expect(min).toBeGreaterThanOrEqual(0);
+        expect(max).toBeLessThanOrEqual(5);
+      }
+    });
+
+    it('ATTRIBUTE_RANGES defines a range for every movement attribute', () => {
+      for (const key of MOVEMENT_ATTRIBUTES) {
+        expect(ATTRIBUTE_RANGES).toHaveProperty(key);
+      }
     });
   });
 

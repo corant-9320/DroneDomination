@@ -2,7 +2,7 @@
  * CLI entry point: load a saved world and validate it.
  */
 
-import { World, Tile, City, Vec3, TerrainType, ElevationType } from './world/types.js';
+import { World, Tile, City, Vec3, TerrainType } from './world/types.js';
 import { validateWorld, printValidation } from './world/validate.js';
 import type { WireTile, WireWorld } from '../shared/wireTypes.js';
 import { readFileSync } from 'fs';
@@ -27,8 +27,7 @@ const tiles: Tile[] = raw.tiles.map((t: WireTile) => ({
   position3d: { x: t.pos[0], y: t.pos[1], z: t.pos[2] } as Vec3,
   boundary: t.b.map((v) => ({ x: v[0], y: v[1], z: v[2] }) as Vec3),
   terrainType: t.terrain as TerrainType,
-  elevationType: t.elevType as ElevationType,
-  height: t.h,
+  height: t.h ?? 0,
   forested: t.f ?? false,
   riverTo: t.rv,
   cityId: t.city,

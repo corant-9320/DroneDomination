@@ -82,8 +82,8 @@ export interface CombatBreakdown {
   chassisModifier: number;
   /** Range efficiency (0–1). */
   rangeEfficiency: number;
-  /** Orientation bonus (+0 front, +1 side, +2 rear). Now continuous 0–2. */
-  orientationBonus: number;
+  /** Orientation armour penalty (−0 front, −1.5 side, −3 rear). Continuous 0–3, subtracted from defender armour. */
+  orientationArmourPenalty: number;
   /** Human-readable orientation label (e.g. 'Front', 'Front Flank', 'Rear Flank', 'Rear'). */
   orientationLabel: string;
   /** @deprecated — always 0, kept for wire compatibility. Will be removed. */

@@ -197,23 +197,28 @@ Orientation bonus is calculated from the **straight-line bearing** between attac
 1. Compute the **approach bearing**: the compass bearing from the defender's tile center toward the attacker's tile center (flat projection).
 2. Compute the **facing angle**: the bearing from the defender's tile toward the neighbour indicated by its `facing` index.
 3. Compute the **angular difference**: the absolute angle between approach bearing and facing angle (0° to 180°).
-4. The **orientation bonus** is linearly interpolated:
+4. The **orientation armour penalty** is linearly interpolated:
 
 ```
 angularDifference = abs(approachBearing - facingAngle)  // wrapped to [0°, 180°]
-orientationBonus = (angularDifference / 180°) × 2
-orientationBonus = round(orientationBonus, 1 decimal place)
+orientationArmourPenalty = (angularDifference / 180°) × 3
+orientationArmourPenalty = round(orientationArmourPenalty, 1 decimal place)
 ```
 
-| Angular Difference | Orientation Bonus | Arc Label |
-|--------------------|-------------------|-----------|
-| 0° (head-on)      | 0.0               | Front     |
-| 45°               | 0.5               | Front     |
-| 60°               | 0.7               | Front/Side boundary |
-| 90° (perpendicular)| 1.0              | Side      |
-| 120°              | 1.3               | Side/Rear boundary |
-| 135°              | 1.5               | Rear      |
-| 180° (perfect rear)| 2.0              | Rear      |
+Orientation is a **defence-side penalty**, not an attack boost. The penalty is
+subtracted from the defender's **armour** component (clamped at 0) before the
+defence is scaled — see §5. A pure rear attack strips up to 3 armour; a head-on
+attack strips none.
+
+| Angular Difference | Armour Penalty | Arc Label |
+|--------------------|----------------|-----------|
+| 0° (head-on)      | 0.0            | Front     |
+| 45°               | 0.75           | Front     |
+| 60°               | 1.0            | Front/Side boundary |
+| 90° (perpendicular)| 1.5           | Side      |
+| 120°              | 2.0            | Side/Rear boundary |
+| 135°              | 2.25           | Rear      |
+| 180° (perfect rear)| 3.0           | Rear      |
 
 #### Arc Classification (Display Only)
 
@@ -230,28 +235,34 @@ The bearing is computed by projecting tile positions onto a tangent plane at the
 ### Attack Power
 
 ```
-AttackPower = (BaseWeaponValue × ChassisAttackModifier × rangeEfficiency) + orientationBonus
+AttackPower = BaseWeaponValue × ChassisAttackModifier × rangeEfficiency
 ```
 
-Where `BaseWeaponValue` is `kinetic`, `splashAttack`, or `antiAir` depending on weapon mode, clamped to [1, 5]. `ChassisAttackModifier` is based on movement type (see §7). `rangeEfficiency` is based on attack distance (see §3). `orientationBonus` is a continuous value from 0.0 to 2.0. AttackPower may be a decimal — do not round before the damage formula.
+Where `BaseWeaponValue` is `kinetic`, `splashAttack`, or `antiAir` depending on weapon mode, clamped to [1, 5]. `ChassisAttackModifier` is based on movement type (see §7). `rangeEfficiency` is based on attack distance (see §3). Orientation does **not** enter AttackPower — it degrades the defender's armour instead (see §5). AttackPower may be a decimal — do not round before the damage formula.
 
-For distance 1 attacks, `rangeEfficiency = 1.00`. For Anti-Air Reaction Fire, `orientationBonus` is 0 and `rangeEfficiency` is not used.
+For distance 1 attacks, `rangeEfficiency = 1.00`. For Anti-Air Reaction Fire, the orientation armour penalty is 0 and `rangeEfficiency` is not used.
 
 ---
 
 ## 5. Defence Power
 
-Defence Power is the sum of four components, each individually clamped:
+Defence Power sums the armour (after the orientation penalty), EW, and terrain
+components:
 
 ```
-DefencePower = armour + EW + terrain
+effectiveArmour = max(0, armour − orientationArmourPenalty)
+DefencePower    = effectiveArmour + EW + terrain
 ```
 
 | Component | Source | Range |
 |-----------|--------|-------|
-| Armour | Target unit's `armour` attribute | 0–5 |
-| EW | Radius anti-drone screen (see §12). Only reduces damage from drone attackers. | 0+ (additive) |
+| Armour | Target unit's `armour` attribute, minus the orientation penalty (§4), clamped at 0 | 0–5 |
+| EW | Radius anti-drone screen (see §12). Only reduces damage from drone attackers. Capped at 5. | 0–5 |
 | Terrain | Based on tile's forest cover (see §13) | 0–1 |
+
+The **orientation armour penalty** (§4) is subtracted from `armour` only — EW and
+terrain are unaffected. Front attacks leave armour intact; rear attacks strip up
+to 3 armour (never below 0).
 
 > **Deprecated (2026-06-21):** the *Defensive Formation* term (defence for
 > having adjacent friendly units) has been removed — it is unrealistic in
@@ -272,20 +283,20 @@ The 0.75 scale factor ensures defence is meaningful without being overwhelming.
 The same ratio-based curve is used by all three weapon modes (Direct Fire, Splash Fire, Anti-Air Fire). The maximum possible damage is scaled by AttackPower:
 
 ```
-MaxFormulaDamage = min(30, 6 × AttackPower)
+MaxFormulaDamage = min(50, 6 × AttackPower)
 Damage = round(1
              + (MaxFormulaDamage - 1)
              × AttackPower²
              / (AttackPower² + EffectiveDefence²))
-Damage = clamp(Damage, 1, 30)
+Damage = clamp(Damage, 1, 50)
 ```
 
 ### Properties
 
 - **Minimum damage**: 1 (weak attacks are never useless).
-- **Maximum damage**: 30.
-- **Weak attacks** can no longer deal 30 damage just because the target has zero defence.
-- **Strong attacks** (AttackPower ≥ 5) can still reach 30 against undefended targets.
+- **Maximum damage**: 50.
+- **Weak attacks** can no longer deal 50 damage just because the target has zero defence.
+- **Strong attacks** (AttackPower ≥ 5) can still reach 50 against undefended targets.
 - AttackPower now affects both the attack/defence ratio **and** the maximum possible damage ceiling.
 - When `AttackPower = EffectiveDefence`: Damage ≈ MaxFormulaDamage / 2.
 
@@ -298,8 +309,13 @@ Damage = clamp(Damage, 1, 30)
 | 3 | 18 | 18 |
 | 4 | 24 | 24 |
 | 5 | 30 | 30 |
-| 6 | 30 | 30 |
-| 7 | 30 | 30 |
+
+> **Note:** Since orientation no longer boosts attack power (it degrades the
+> defender's armour instead — §4/§5), `AttackPower = base × chassisMod ×
+> rangeEff` is capped at **5.0** in practice (base ≤ 5, chassisMod ≤ 1,
+> rangeEff ≤ 1). The `MAX_DAMAGE = 50` clamp is therefore a safety ceiling; the
+> formula tops out at 30 against zero defence. Rear attacks increase damage by
+> lowering the defender's effective defence, not by raising AttackPower.
 
 ### Input Clamping
 
@@ -518,18 +534,17 @@ any friendly EW-bearing building projects the same radius screen as a unit:
 ```
 contribution(source) = max(0, source.defence − hopDistance(source, defender))
 EW_raw = Σ contribution(source)   over all living friendly units + buildings
-EW     = EW_raw × (attackerIsDrone ? 1 : 0)
+EW     = min(5, EW_raw) × (attackerIsDrone ? 1 : 0)
 ```
 
 - `hopDistance` is the BFS tile-hop distance (same tile = 0).
-- Contributions are **additive** across overlapping screens, with **no explicit
-  cap** — geometry limits it (only so many sources can be close).
+- Contributions are **additive** across overlapping screens until the **5-unit cap**.
 - A source contributes 0 beyond its own radius (`defence` hops).
 
 ### Example
 
 A defender adjacent (1 hop) to three EW-5 screens receives
-`3 × max(0, 5 − 1) = 12` EW — but only when the attacker is a drone.
+`min(5, 3 × max(0, 5 − 1)) = min(5, 12) = 5` EW — but only when the attacker is a drone.
 
 ### Rules
 

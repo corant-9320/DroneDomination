@@ -181,7 +181,7 @@ export function addSplashAttack(
       baseZ = turretFrontZ + 0.08;
       break;
     case 'building':
-      baseY = turretY + 0.18;
+      baseY = turretY;
       baseZ = turretFrontZ + 0.08;
       break;
   }
@@ -248,29 +248,115 @@ export function addSplashAttack(
 export function addArmour(group: THREE.Group, level: number, chassisType: ChassisType, factionHex?: string): void {
   if (level === 0) return;
 
-  // Building armour — flat reinforcement plates bolted to the four walls.
-  // Thickness scales with level; deliberately plain to match the basic block.
+  // Building armour — cage frames on the roof edge, similar to vehicle cage armour.
+  // Rail count, post density, and cage outset all scale with level.
   if (chassisType === 'building') {
-    const t = level / 5;
-    const bodyW = 1.5, bodyH = 1.2, bodyD = 1.5;
-    const plateThick = 0.05 + t * 0.12;
-    const plateH = bodyH * 0.82;
-    const plateY = bodyH * 0.5;
-    const plateColor = factionHex ? hexToColor(factionHex) : new THREE.Color(0x7a8a6a);
-    const plateMat = new THREE.MeshStandardMaterial({ color: plateColor, roughness: 0.55, metalness: 0.45 });
+    const cageColor = factionHex ? hexToColor(factionHex) : new THREE.Color(0x7a8a6a);
+    const cageMat = new THREE.MeshStandardMaterial({ color: cageColor, roughness: 0.5, metalness: 0.55 });
 
-    // Front + back plates (span X)
-    for (const z of [-(bodyD / 2 + plateThick / 2), bodyD / 2 + plateThick / 2]) {
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(bodyW * 0.92, plateH, plateThick), plateMat);
-      plate.position.set(0, plateY, z);
-      group.add(plate);
+    // Building body constants — must match buildingModel.ts BODY_* values.
+    const bodyW = 1.5;
+    const bodyH = 1.2;
+    const bodyD = 1.5;
+
+    // How far the cage stands proud of the roof perimeter (grows with level).
+    const t = (level - 1) / 4;  // 0 at level 1, 1 at level 5
+    const outset   = 0.08 + t * 0.14;   // horizontal gap beyond wall face
+    const cageH    = 0.18 + t * 0.22;   // height of the cage above roof plane
+    const railR    = 0.014 + t * 0.016; // rail cylinder radius
+    const postW    = 0.028 + t * 0.018; // vertical post cross-section
+    const roofY    = bodyH;             // Y of the roof surface
+
+    // Half-extents of the cage frame (outside of cage, from centreline)
+    const hx = bodyW / 2 + outset;
+    const hz = bodyD / 2 + outset;
+
+    // ── Vertical post count along each edge (scales with level) ──────────
+    // level 1 → just corners; level 2+ → intermediate posts added
+    const postsPerEdge = level;   // 1..5 posts including corners for each edge run
+
+    // Helper: place a thin box post at (x, y-centre, z)
+    const addPost = (x: number, z: number) => {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(postW, cageH, postW),
+        cageMat
+      );
+      mesh.position.set(x, roofY + cageH / 2, z);
+      group.add(mesh);
+    };
+
+    // Helper: add a horizontal rail cylinder along an axis
+    const addRailX = (z: number, y: number, length: number) => {
+      const mesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(railR, railR, length, 6),
+        cageMat
+      );
+      mesh.rotation.z = Math.PI / 2;
+      mesh.position.set(0, y, z);
+      group.add(mesh);
+    };
+    const addRailZ = (x: number, y: number, length: number) => {
+      const mesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(railR, railR, length, 6),
+        cageMat
+      );
+      mesh.rotation.x = Math.PI / 2;
+      mesh.position.set(x, y, 0);
+      group.add(mesh);
+    };
+
+    // ── How many horizontal rail rows? (1 at level 1, up to 3 at level 5) ──
+    const railRows = level <= 1 ? 1 : level <= 3 ? 2 : 3;
+    const railYs: number[] = [];
+    for (let r = 0; r < railRows; r++) {
+      railYs.push(roofY + cageH * (r + 1) / (railRows + 1) + cageH * 0.1);
     }
-    // Left + right plates (span Z)
-    for (const x of [-(bodyW / 2 + plateThick / 2), bodyW / 2 + plateThick / 2]) {
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(plateThick, plateH, bodyD * 0.92), plateMat);
-      plate.position.set(x, plateY, 0);
-      group.add(plate);
+
+    // ── Perimeter rails — four sides ─────────────────────────────────────
+    const sideRailLen = bodyD + outset * 2;   // Z-running rails on ±X faces
+    const frontRailLen = bodyW + outset * 2;  // X-running rails on ±Z faces
+    for (const y of railYs) {
+      addRailZ(-hx, y, sideRailLen);
+      addRailZ( hx, y, sideRailLen);
+      addRailX(-hz, y, frontRailLen);
+      addRailX( hz, y, frontRailLen);
     }
+
+    // ── Vertical posts along each edge ───────────────────────────────────
+    // +X and -X edges: posts spaced along Z
+    for (const x of [-hx, hx]) {
+      for (let i = 0; i < postsPerEdge; i++) {
+        const frac = postsPerEdge === 1 ? 0.5 : i / (postsPerEdge - 1);
+        const z = -hz + frac * (hz * 2);
+        addPost(x, z);
+      }
+    }
+    // +Z and -Z edges: posts spaced along X (skip corners already placed)
+    for (const z of [-hz, hz]) {
+      const inner = postsPerEdge - 1;
+      for (let i = 1; i < inner; i++) {
+        const frac = i / inner;
+        const x = -hx + frac * (hx * 2);
+        addPost(x, z);
+      }
+    }
+
+    // ── Cross-bracing rails on the roof interior (level 4+) ──────────────
+    if (level >= 4) {
+      const topY = roofY + cageH * 0.92;
+      // Two rails running X across the roof
+      for (const z of [-hz * 0.38, hz * 0.38]) {
+        addRailX(z, topY, frontRailLen);
+      }
+    }
+    // Full grid cross at level 5
+    if (level >= 5) {
+      const topY = roofY + cageH * 0.92;
+      for (const x of [-hx * 0.38, hx * 0.38]) {
+        addRailZ(x, topY, sideRailLen);
+      }
+    }
+
     return;
   }
 
@@ -522,7 +608,7 @@ export function addAntiAir(
       baseZ = 0;
       break;
     case 'building':
-      baseY = 1.2;
+      baseY = turretY;
       baseZ = 0;
       break;
   }

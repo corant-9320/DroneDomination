@@ -184,7 +184,7 @@ export class GlobeView {
         : GlobeView.heightScale(tile.h ?? 0);
       tileRGB[ti] = tile.city
         ? factionColorRGB(this.world, tile.city)
-        : (tile.terrain !== 'ocean' && tile.elevType === 'mountain')
+        : (tile.terrain !== 'ocean' && (tile.h ?? 0) >= 9)
           ? GlobeView.mountainColorRGB(tile.h ?? 8)
           : tileColorRGB(tile);
     }

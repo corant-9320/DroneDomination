@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import fc from 'fast-check';
 import {
   roundHalfUp,
   calculateRepairAmount,
@@ -6,7 +7,7 @@ import {
   validateRepair,
   resolveRepair,
 } from '../repair.js';
-import { Unit, HexSegment, HP_PER_POINT } from '../units.js';
+import { Unit, HexSegment } from '../units.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -25,15 +26,29 @@ function makeUnit(overrides: Partial<Unit> & { id: string }): Unit {
   };
 }
 
+function clampValue(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+// fast-check generators constrained to the documented input space (COMBAT_RULES §18).
+const arbRp = fc.integer({ min: 1, max: 5 });
+const arbMaxHealth = fc.integer({ min: 10, max: 50 });
+// Includes out-of-range values to exercise the real clamps.
+const arbRpUnclamped = fc.integer({ min: -3, max: 12 });
+const arbMaxHealthUnclamped = fc.integer({ min: -20, max: 120 });
+const arbCurrentHealth = fc.integer({ min: -20, max: 80 });
+
+// Derived bounds from COMBAT_RULES §18: RepairRate = 2 + (maxHealth-10)/20 ∈ [2, 4]
+// for maxHealth ∈ [10, 50]; RP ∈ [1, 5] ⇒ RepairAmount ∈ [2, 20].
+const REPAIR_AMOUNT_MIN = 2;
+const REPAIR_AMOUNT_MAX = 20;
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe('repair', () => {
-  // =========================================================================
-  // roundHalfUp
-  // =========================================================================
-
+  // roundHalfUp — deterministic rounding utility (not a balance formula)
   describe('roundHalfUp', () => {
     it('rounds 2.5 up to 3', () => {
       expect(roundHalfUp(2.5)).toBe(3);
@@ -56,33 +71,43 @@ describe('repair', () => {
     });
   });
 
-  // =========================================================================
-  // calculateRepairAmount
-  // =========================================================================
-
+  // calculateRepairAmount — property assertions (balance formula)
   describe('calculateRepairAmount', () => {
-    it('RP=1, maxHealth=10 → repair rate = 2, amount = 2', () => {
-      // repairRate = 2 + (10-10)/20 = 2
-      // amount = roundHalfUp(1 * 2) = 2
-      expect(calculateRepairAmount(1, 10)).toBe(2);
+    it('Feature: unit-test-coverage, Property 1: monotonic in repair points', () => {
+      fc.assert(
+        fc.property(arbMaxHealth, arbRp, arbRp, (maxHealth, a, b) => {
+          const lo = Math.min(a, b);
+          const hi = Math.max(a, b);
+          expect(calculateRepairAmount(lo, maxHealth)).toBeLessThanOrEqual(
+            calculateRepairAmount(hi, maxHealth),
+          );
+        }),
+        { numRuns: 200 },
+      );
     });
 
-    it('RP=5, maxHealth=50 → repair rate = 4, amount = 20', () => {
-      // repairRate = 2 + (50-10)/20 = 2 + 2 = 4
-      // amount = roundHalfUp(5 * 4) = 20
-      expect(calculateRepairAmount(5, 50)).toBe(20);
+    it('Feature: unit-test-coverage, Property 2: monotonic in maximum health', () => {
+      fc.assert(
+        fc.property(arbRp, arbMaxHealth, arbMaxHealth, (rp, a, b) => {
+          const lo = Math.min(a, b);
+          const hi = Math.max(a, b);
+          expect(calculateRepairAmount(rp, lo)).toBeLessThanOrEqual(
+            calculateRepairAmount(rp, hi),
+          );
+        }),
+        { numRuns: 200 },
+      );
     });
 
-    it('RP=3, maxHealth=30 → repair rate = 3, amount = 9', () => {
-      // repairRate = 2 + (30-10)/20 = 2 + 1 = 3
-      // amount = roundHalfUp(3 * 3) = 9
-      expect(calculateRepairAmount(3, 30)).toBe(9);
-    });
-
-    it('RP=2, maxHealth=20 → repair rate = 2.5, amount = 5', () => {
-      // repairRate = 2 + (20-10)/20 = 2 + 0.5 = 2.5
-      // amount = roundHalfUp(2 * 2.5) = roundHalfUp(5) = 5
-      expect(calculateRepairAmount(2, 20)).toBe(5);
+    it('Feature: unit-test-coverage, Property 3: amount within [2, 20] incl. clamped inputs', () => {
+      fc.assert(
+        fc.property(arbRpUnclamped, arbMaxHealthUnclamped, (rp, maxHealth) => {
+          const amount = calculateRepairAmount(rp, maxHealth);
+          expect(amount).toBeGreaterThanOrEqual(REPAIR_AMOUNT_MIN);
+          expect(amount).toBeLessThanOrEqual(REPAIR_AMOUNT_MAX);
+        }),
+        { numRuns: 200 },
+      );
     });
 
     it('clamps rp below 1 to 1', () => {
@@ -100,43 +125,40 @@ describe('repair', () => {
     it('clamps maxHealth above 50 to 50', () => {
       expect(calculateRepairAmount(3, 100)).toBe(calculateRepairAmount(3, 50));
     });
+
+    // Exactly one labelled golden smoke test for this balance formula.
+    it('GOLDEN SMOKE: rp=3 maxHealth=30 repairs 9 (breaks on balance change)', () => {
+      // repairRate = 2 + (30-10)/20 = 3; amount = roundHalfUp(3 * 3) = 9
+      expect(calculateRepairAmount(3, 30)).toBe(9);
+    });
   });
 
-  // =========================================================================
-  // applyRepair
-  // =========================================================================
-
+  // applyRepair — property assertions + observable cap behaviour
   describe('applyRepair', () => {
-    it('increases health by repair amount', () => {
-      const result = applyRepair(20, 30, 3);
-      // repairAmount for rp=3, maxHealth=30 → 9
-      expect(result).toBe(29);
+    it('Feature: unit-test-coverage, Property 4: result ≤ maxHealth and ≥ clamp(currentHealth,0,maxHealth)', () => {
+      fc.assert(
+        fc.property(arbCurrentHealth, arbMaxHealth, arbRp, (currentHealth, maxHealth, rp) => {
+          const result = applyRepair(currentHealth, maxHealth, rp);
+          const floor = clampValue(currentHealth, 0, maxHealth);
+          expect(result).toBeLessThanOrEqual(maxHealth);
+          expect(result).toBeGreaterThanOrEqual(floor);
+        }),
+        { numRuns: 200 },
+      );
     });
 
     it('caps health at maxHealth', () => {
-      // Near full health: 28/30, repair would add 9
-      const result = applyRepair(28, 30, 3);
-      expect(result).toBe(30);
+      // Near full health: 28/30, repair would add 9 → capped at 30
+      expect(applyRepair(28, 30, 3)).toBe(30);
     });
 
-    it('works at minimum values (currentHealth=1, maxHealth=10, rp=1)', () => {
-      const result = applyRepair(1, 10, 1);
-      // repairAmount = 2
-      expect(result).toBe(3);
-    });
-
-    it('clamps currentHealth to valid range before applying', () => {
-      // Negative health gets clamped to 0
-      const result = applyRepair(-5, 30, 3);
-      // 0 + 9 = 9
-      expect(result).toBe(9);
+    it('clamps negative current health to 0 before applying', () => {
+      // Negative health clamps to 0, then repair is applied from there.
+      expect(applyRepair(-5, 30, 3)).toBe(applyRepair(0, 30, 3));
     });
   });
 
-  // =========================================================================
-  // validateRepair
-  // =========================================================================
-
+  // validateRepair — observable rejection reasons (retained)
   describe('validateRepair', () => {
     it('passes for valid same-hex same-faction repair', () => {
       const repairer = makeUnit({ id: 'r', attributes: { repair: 3, wheeledMovement: 1 }, currentHealth: 30 });
@@ -207,23 +229,21 @@ describe('repair', () => {
     });
   });
 
-  // =========================================================================
-  // resolveRepair
-  // =========================================================================
-
+  // resolveRepair — mutate / non-mutate / not-found (retained)
   describe('resolveRepair', () => {
-    it('heals target and returns correct result', () => {
+    it('heals target and mutates its health', () => {
       const repairer = makeUnit({ id: 'r', attributes: { repair: 3, size: 3, wheeledMovement: 1 }, currentHealth: 30 });
       const target = makeUnit({ id: 't', attributes: { size: 3, wheeledMovement: 1 }, currentHealth: 15 });
       const allUnits = [repairer, target];
 
       const result = resolveRepair('r', 't', allUnits);
       expect(result.wasValid).toBe(true);
-      expect(result.repairAmount).toBe(9); // rp=3, maxHP=30
       expect(result.targetHealthBefore).toBe(15);
-      expect(result.targetHealthAfter).toBe(24);
-      // Verify mutation
-      expect(target.currentHealth).toBe(24);
+      // Observable invariant: health rose, capped at max, and matches the mutation.
+      expect(result.targetHealthAfter).toBeGreaterThan(result.targetHealthBefore);
+      expect(result.targetHealthAfter).toBeLessThanOrEqual(30);
+      expect(result.repairAmount).toBe(result.targetHealthAfter - result.targetHealthBefore);
+      expect(target.currentHealth).toBe(result.targetHealthAfter);
     });
 
     it('caps healing at max health', () => {
@@ -233,8 +253,8 @@ describe('repair', () => {
 
       const result = resolveRepair('r', 't', allUnits);
       expect(result.wasValid).toBe(true);
-      expect(result.targetHealthAfter).toBe(30); // capped at maxHealth*10
-      expect(result.repairAmount).toBe(2); // only healed 2 to reach cap
+      expect(result.targetHealthAfter).toBe(30); // capped at size * HP_PER_POINT
+      expect(result.repairAmount).toBe(30 - 28); // only healed up to the cap
     });
 
     it('returns invalid result when repairer not found', () => {
@@ -251,9 +271,9 @@ describe('repair', () => {
       expect(result.reasonInvalid).toContain('not found');
     });
 
-    it('returns invalid result when validation fails', () => {
+    it('returns invalid result and does not mutate when validation fails (different tile)', () => {
       const repairer = makeUnit({ id: 'r', tileIndex: 0, attributes: { repair: 3, wheeledMovement: 1 }, currentHealth: 30 });
-      const target = makeUnit({ id: 't', tileIndex: 5, currentHealth: 15 }); // different tile
+      const target = makeUnit({ id: 't', tileIndex: 5, currentHealth: 15 });
       const allUnits = [repairer, target];
 
       const result = resolveRepair('r', 't', allUnits);
@@ -261,9 +281,9 @@ describe('repair', () => {
       expect(target.currentHealth).toBe(15); // not mutated
     });
 
-    it('does not mutate target health on invalid repair', () => {
+    it('does not mutate target health on invalid repair (enemy)', () => {
       const repairer = makeUnit({ id: 'r', ownerId: 'p1', attributes: { repair: 3, wheeledMovement: 1 }, currentHealth: 30 });
-      const target = makeUnit({ id: 't', ownerId: 'p2', currentHealth: 15 }); // enemy
+      const target = makeUnit({ id: 't', ownerId: 'p2', currentHealth: 15 });
       const allUnits = [repairer, target];
 
       resolveRepair('r', 't', allUnits);

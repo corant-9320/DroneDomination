@@ -16,6 +16,7 @@ import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
 import { readableUnitName } from './unitNames.js';
 import { esc, capitalize, toneColor } from './htmlUtils.js';
+import { renderCombatBreakdownTable } from './combatBreakdownView.js';
 import type { ExplainedCombat } from '../shared/combatTypes.js';
 import { getMaxMovement } from '../shared/movementConstants.js';
 import { tileHeight, HEIGHT_LEVELS } from '../shared/movementConstants.js';
@@ -172,7 +173,8 @@ export class DetailPanel {
   ): string {
     const parts: string[] = [];
     if (tile.f) parts.push('Forested');
-    const elev = capitalize(tile.elevType);
+    const h = tile.h ?? 0;
+    const elev = h >= 9 ? 'Mountain' : h >= 6 ? 'Hills' : h >= 3 ? 'Rolling' : '';
     const terrain = capitalize(tile.terrain);
     // River hexes are ocean terrain under the hood — label them as rivers.
     if (tile.bridge) {
@@ -180,7 +182,7 @@ export class DetailPanel {
     } else if (tile.rv !== undefined) {
       parts.push('River');
     } else {
-      parts.push(elev === 'Flat' ? terrain : `${elev} ${terrain}`);
+      parts.push(elev ? `${elev} ${terrain}` : terrain);
     }
     // Discrete terrain height (0–11). Open ocean sits at sea level; rivers
     // descend the valley so they report their own height.
@@ -275,79 +277,8 @@ export class DetailPanel {
   }
 
   private renderCombatPreview(c: ExplainedCombat): void {
-    const b = c.breakdown;
-    if (!b) {
-      // Fallback: no structured breakdown available
-      this.combatBody.innerHTML = '<span class="empty-msg">No preview data</span>';
-      return;
-    }
-
-    const weaponLabel: Record<string, string> = {
-      kinetic: 'Kinetic',
-      splash: 'Splash',
-      antiAir: 'Anti-Air',
-      none: '—',
-    };
-
-    const rangeCol = b.inRange ? '#8f8' : '#f66';
-    const rangeNote = b.inRange
-      ? `✓ In range (${b.distance.toFixed(2)}/${b.attackRange.toFixed(2)})`
-      : `✗ Out of range (${b.distance.toFixed(2)}/${b.attackRange.toFixed(2)})`;
-
-    let html = `<table class="dp-combat-table">`;
-
-    // ── Attack section ───────────────────────────────────────────────────
-    html += `<tr><td colspan="2" class="dp-combat-section">Attack (${weaponLabel[b.weaponMode]})</td></tr>`;
-    html += cpRow('Range',            `<span style="color:${rangeCol};">${rangeNote}</span>`);
-    html += cpRow('Base weapon',      b.baseWeapon);
-    html += cpRow(`${b.chassisLabel} ×`, b.chassisModifier.toFixed(2));
-    html += cpRow('Range efficiency', b.rangeEfficiency.toFixed(2));
-    html += cpRow('Orientation',      `${b.orientationLabel ?? ''} +${b.orientationBonus}`);
-    html += `<tr><td class="dp-combat-total" colspan="2">Attack total&nbsp;&nbsp;<span class="dp-combat-total-val">${b.attackTotal.toFixed(2)}</span></td></tr>`;
-
-    // ── Defence section ──────────────────────────────────────────────────
-    html += `<tr><td colspan="2" class="dp-combat-section">Defence</td></tr>`;
-    html += cpRow('Armour',    b.defArmour);
-    // EW is a radius-based anti-drone screen: only mitigates damage from drone attackers.
-    const ewLabel = b.defEWMultiplier >= 1
-      ? `EW screen (anti-drone)`
-      : `EW ${b.defEWRaw.toFixed(1)} (n/a vs ground)`;
-    html += cpRow(ewLabel, b.defEW.toFixed(2));
-    html += cpRow('Terrain',   b.defTerrain);
-    if (b.droneEvasion > 0) {
-      html += cpRow('Drone target evasion −', b.droneEvasion);
-    }
-    const defRaw = b.defArmour + b.defEW + b.defTerrain;
-    html += `<tr><td class="dp-combat-total" colspan="2">Defence power&nbsp;&nbsp;<span class="dp-combat-total-val">${defRaw.toFixed(2)}</span></td></tr>`;
-
-    // ── Elevation range modifier (only shown when it has an effect) ──────
-    if (b.elevationMultiplier !== 1.0) {
-      const elevPct = Math.round((b.elevationMultiplier - 1) * 100);
-      const sign = elevPct > 0 ? '+' : '';
-      const elevCol = elevPct > 0 ? '#4f8' : '#f88';
-      html += `<tr><td colspan="2" class="dp-combat-section">Elevation (range)</td></tr>`;
-      html += cpRow('⛰ Elevation range', `<span style="color:${elevCol};">${sign}${elevPct}% (×${b.elevationMultiplier.toFixed(2)})</span>`);
-    }
-
-    // ── Summary (Damage + HP Remaining + Target Destroyed) ─────────────
-    const targetUnit = this.world.units.find((u) => u.id === c.targetId);
-    const targetMaxHp = targetUnit ? (targetUnit.attributes.size ?? 1) * 10 : '?';
-    const dmgCol = b.netDamage >= 15 ? '#f66' : b.netDamage >= 5 ? '#fa0' : '#fff';
-    html += `<tr><td colspan="2" class="dp-combat-section dp-combat-summary-header">Summary</td></tr>`;
-    html += `<tr><td colspan="2" class="dp-combat-summary">`;
-    if (b.inRange) {
-      html += `<div class="dp-combat-summary-damage" style="color:${dmgCol};">⚔ ${b.netDamage} damage</div>`;
-      html += `<div class="dp-combat-summary-health">❤ ${c.targetHealthAfter}/${targetMaxHp} HP remaining</div>`;
-    } else {
-      html += `<div class="dp-combat-summary-damage" style="color:#999;">— Out of range</div>`;
-    }
-    if (c.targetDestroyed) {
-      html += `<div class="dp-combat-summary-destroyed">☠ Target destroyed</div>`;
-    }
-    html += `</td></tr>`;
-
-    html += `</table>`;
-    this.combatBody.innerHTML = html;
+    const html = renderCombatBreakdownTable(c, this.world);
+    this.combatBody.innerHTML = html ?? '<span class="empty-msg">No preview data</span>';
   }
 }
 
@@ -357,20 +288,6 @@ export class DetailPanel {
 
 function dpRow(label: string, value: string): string {
   return `<div class="dp-row"><span class="dp-key">${label}</span><span class="dp-val">${value}</span></div>`;
-}
-
-function cpRow(label: string, value: string | number): string {
-  return `<tr><td class="dp-key">${label}</td><td class="dp-val">${value}</td></tr>`;
-}
-
-/** Explanatory note row spanning both columns, shown under a table section. */
-function cpNote(text: string): string {
-  return `<tr><td colspan="2" class="dp-combat-note">${text}</td></tr>`;
-}
-
-/** Monospace worked-calculation row spanning both columns. */
-function cpCalc(text: string): string {
-  return `<tr><td colspan="2" class="dp-combat-calc">${esc(text)}</td></tr>`;
 }
 
 

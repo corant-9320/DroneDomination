@@ -69,6 +69,7 @@ import {
   buildVertexHeight as buildVertexHeightFn,
   elevationWorldHeight,
   avgHexRadius,
+  roadSurfaceLift,
 } from './firstPersonTerrain.js';
 
 /**
@@ -448,7 +449,13 @@ export class FirstPersonView {
     const cen = segmentCentroid(ft, b.segment);
     const [wx, , wz] = this.toWorld(cen.x, cen.y);
     const fallbackTop = elevationWorldHeight(this.world.tiles[b.tileIndex], ELEV_WORLD_SCALE);
-    const { height: groundY } = sampleSurface(ft, cen.x, cen.y, this.toWorld, this.heightOf, fallbackTop);
+    // Clamp to the tile plateau so a building on a shore segment (whose outer
+    // vertices slope down to the waterline) rests on dry ground rather than
+    // sinking. The terrain mesh still slopes; only the building base is lifted.
+    const groundY = Math.max(
+      sampleSurface(ft, cen.x, cen.y, this.toWorld, this.heightOf, fallbackTop).height,
+      fallbackTop,
+    );
     const bodyLift = HEX_WORLD_RADIUS * BUILDING_HEX_FRACTION * 0.5;
     return new THREE.Vector3(wx, groundY + bodyLift, wz);
   }
@@ -466,7 +473,14 @@ export class FirstPersonView {
     const cen = segmentCentroid(ft, unit.segment);
     const [wx, , wz] = this.toWorld(cen.x, cen.y);
     const fallbackTop = elevationWorldHeight(this.world.tiles[unit.tileIndex], ELEV_WORLD_SCALE);
-    const { height: groundY } = sampleSurface(ft, cen.x, cen.y, this.toWorld, this.heightOf, fallbackTop);
+    // Clamp to the tile plateau so a unit on a shore/water-adjacent segment
+    // (whose outer vertices are pinned to the waterline by buildVertexHeight)
+    // doesn't sample a triangle dragged down to the ocean floor — mirrors the
+    // building anti-sink clamp (see DECISIONS.md 2026-07-01 / 2026-07-03).
+    const groundY = Math.max(
+      sampleSurface(ft, cen.x, cen.y, this.toWorld, this.heightOf, fallbackTop).height,
+      fallbackTop,
+    );
     const air = isDrone(unit) ? DRONE_AIR_HEIGHT : 0;
     // Aim at roughly the unit's mid-body so missiles fly between models, not feet.
     const bodyLift = HEX_WORLD_RADIUS * UNIT_HEX_FRACTION * 0.5 + HEX_WORLD_RADIUS * 0.12;
@@ -950,7 +964,22 @@ export class FirstPersonView {
       const cen = segmentCentroid(ft, unit.segment);
       const [wx, , wz] = toWorld(cen.x, cen.y);
       const fallbackTop = elevationWorldHeight(this.world.tiles[unit.tileIndex], ELEV_WORLD_SCALE);
-      const { height: groundY, normal } = sampleSurface(ft, cen.x, cen.y, toWorld, heightOf, fallbackTop);
+      const sampled = sampleSurface(ft, cen.x, cen.y, toWorld, heightOf, fallbackTop);
+      // Clamp to the tile plateau so a unit on a shore/water-adjacent segment
+      // (whose outer vertices are pinned to the waterline by buildVertexHeight)
+      // doesn't sample a triangle dragged down to the ocean floor, which hid
+      // the model below the terrain mesh entirely — mirrors the building
+      // anti-sink clamp (see DECISIONS.md 2026-07-01 / 2026-07-03). When the
+      // clamp kicks in, treat the ground as flat plateau (upright normal)
+      // rather than the (invalid) sampled slope.
+      const clamped = sampled.height < fallbackTop;
+      const groundY = clamped ? fallbackTop : sampled.height;
+      const normal = clamped ? new THREE.Vector3(0, 1, 0) : sampled.normal;
+
+      // City hexes have road/pavement geometry lifted by ROAD_LIFT above the raw
+      // terrain mesh. Raise the unit by the same offset so it stands on the road
+      // surface rather than sinking into it.
+      const cityLift = this.world.tiles[unit.tileIndex].city ? roadSurfaceLift(HEX_WORLD_RADIUS) : 0;
 
       const dir = facingDirection(ft, unit.facing);
       const drone = isDrone(unit);
@@ -961,33 +990,47 @@ export class FirstPersonView {
 
       // Lift the model's base clear of the surface along the surface normal so a
       // tilted unit doesn't sink a corner into the slope. Drones add air hover.
+      // cityLift raises ground units to the road surface on city hexes.
       const air = drone ? DRONE_AIR_HEIGHT : 0;
       model.position.set(
         wx + up.x * groundLift,
-        groundY + up.y * groundLift + air,
+        groundY + up.y * groundLift + air + cityLift,
         wz + up.z * groundLift,
       );
 
       // Faction-colour ring on the ground under every unit so the tiny models
-      // are easy to spot and tell apart by side. Always laid flat at ground
-      // level — for drones this sits on the ground directly beneath the hover.
+      // are easy to spot and tell apart by side. Laid flush with the terrain
+      // surface (conforms to the slope normal) so it isn't cropped by the
+      // hillside — for drones this sits on the ground directly beneath the hover.
+      const ringUp = normal.clone().normalize();
       const factionRingGeo = new THREE.RingGeometry(FACTION_RING_RADIUS * 0.75, FACTION_RING_RADIUS, 32);
       const factionRingMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(fc), transparent: true, opacity: 0.85, side: THREE.DoubleSide });
       const factionRing = new THREE.Mesh(factionRingGeo, factionRingMat);
-      factionRing.rotation.x = -Math.PI / 2;
-      factionRing.position.set(wx, groundY + 0.02, wz);
+      // RingGeometry faces +Z; rotate that onto the surface normal so the ring
+      // lies on the slope instead of a flat horizontal plane.
+      factionRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), ringUp);
+      factionRing.position.set(
+        wx + ringUp.x * 0.02,
+        groundY + ringUp.y * 0.02,
+        wz + ringUp.z * 0.02,
+      );
       group.add(factionRing);
       this.unitGeoms.push(factionRingGeo);
       this.unitMats.push(factionRingMat);
 
       // Subtle highlight ring under the selected unit. Sized off the hex (not
-      // the unit) so the tiny model is still easy to locate.
+      // the unit) so the tiny model is still easy to locate. Conforms to the
+      // slope like the faction ring.
       if (unit.id === selectedUnitId) {
         const ringGeo = new THREE.RingGeometry(SELECT_RING_RADIUS * 0.8, SELECT_RING_RADIUS, 32);
         const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
         const ring = new THREE.Mesh(ringGeo, ringMat);
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.set(wx, groundY + 0.03, wz);
+        ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), ringUp);
+        ring.position.set(
+          wx + ringUp.x * 0.03,
+          groundY + ringUp.y * 0.03,
+          wz + ringUp.z * 0.03,
+        );
         group.add(ring);
         this.unitGeoms.push(ringGeo);
         this.unitMats.push(ringMat);
@@ -998,6 +1041,32 @@ export class FirstPersonView {
         const mesh = obj as THREE.Mesh;
         if (mesh.geometry) this.unitGeoms.push(mesh.geometry);
       });
+
+      // Floating unit number label — matches the format used in 2D (#N suffix).
+      const idSuffix = unit.id.replace(/^unit_/, '');
+      const labelText = `#${idSuffix}`;
+      const cvs = document.createElement('canvas');
+      cvs.width = 128; cvs.height = 64;
+      const ctx2d = cvs.getContext('2d')!;
+      ctx2d.clearRect(0, 0, 128, 64);
+      ctx2d.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx2d.beginPath();
+      ctx2d.roundRect(4, 4, 120, 56, 8);
+      ctx2d.fill();
+      ctx2d.fillStyle = '#dddddd';
+      ctx2d.font = 'bold 36px monospace';
+      ctx2d.textAlign = 'center';
+      ctx2d.textBaseline = 'middle';
+      ctx2d.fillText(labelText, 64, 32);
+      const labelTex = new THREE.CanvasTexture(cvs);
+      const labelMat = new THREE.SpriteMaterial({ map: labelTex, depthTest: false, transparent: true });
+      const sprite = new THREE.Sprite(labelMat);
+      const labelScale = HEX_WORLD_RADIUS * 0.35 * 0.25;
+      const labelY = groundY + groundLift + (drone ? DRONE_AIR_HEIGHT : 0) + labelScale * 0.9;
+      sprite.scale.set(labelScale, labelScale * 0.5, 1);
+      sprite.position.set(wx, labelY, wz);
+      group.add(sprite);
+      this.unitMats.push(labelMat);
     }
   }
 
@@ -1052,7 +1121,13 @@ export class FirstPersonView {
       const cen = segmentCentroid(ft, b.segment);
       const [wx, , wz] = toWorld(cen.x, cen.y);
       const fallbackTop = elevationWorldHeight(this.world.tiles[b.tileIndex], ELEV_WORLD_SCALE);
-      const { height: groundY } = sampleSurface(ft, cen.x, cen.y, toWorld, heightOf, fallbackTop);
+      // Clamp to the tile plateau so a building on a shore segment (whose outer
+      // vertices slope down to the waterline) rests on dry ground instead of
+      // sinking. Terrain still slopes; only the building base is lifted.
+      const groundY = Math.max(
+        sampleSurface(ft, cen.x, cen.y, toWorld, heightOf, fallbackTop).height,
+        fallbackTop,
+      );
 
       const dir = facingDirection(ft, b.segment);
       orientToSurface(model, new THREE.Vector3(0, 1, 0), dir);
@@ -1080,6 +1155,34 @@ export class FirstPersonView {
         if (Array.isArray(mat)) this.buildingMats.push(...mat);
         else if (mat) this.buildingMats.push(mat as THREE.Material);
       });
+
+      // Floating building number label — same id-suffix format as units (#N).
+      if (!ghost) {
+        const bIdSuffix = b.id.replace(/^building_/, '');
+        const labelText = `#${bIdSuffix}`;
+        const cvs = document.createElement('canvas');
+        cvs.width = 128; cvs.height = 64;
+        const ctx2d = cvs.getContext('2d')!;
+        ctx2d.clearRect(0, 0, 128, 64);
+        ctx2d.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx2d.beginPath();
+        ctx2d.roundRect(4, 4, 120, 56, 8);
+        ctx2d.fill();
+        ctx2d.fillStyle = '#ffff44';
+        ctx2d.font = 'bold 36px monospace';
+        ctx2d.textAlign = 'center';
+        ctx2d.textBaseline = 'middle';
+        ctx2d.fillText(labelText, 64, 32);
+        const labelTex = new THREE.CanvasTexture(cvs);
+        const labelMat = new THREE.SpriteMaterial({ map: labelTex, depthTest: false, transparent: true });
+        const sprite = new THREE.Sprite(labelMat);
+        const labelScale = HEX_WORLD_RADIUS * 0.55 * 0.25;
+        sprite.scale.set(labelScale, labelScale * 0.5, 1);
+        sprite.position.set(wx, groundY + groundLift + labelScale * 0.85, wz);
+        group.add(sprite);
+        this.buildingGeoms.push(); // no geometry to track for the sprite
+        this.buildingMats.push(labelMat); // labelTex is owned by labelMat and released with it
+      }
     };
 
     for (const b of this.world.buildings) place(b, false);
@@ -1258,6 +1361,66 @@ export class FirstPersonView {
     if (unit) {
       this.selectUnit(unit.id);
     } else {
+      // [BLDG-DBG] If a building occupies the clicked segment, log its placement data.
+      const bldg = this.world.buildings.find(
+        (b) => b.tileIndex === pick.tileIndex && b.segment === pick.segment,
+      );
+      if (bldg) {
+        const bIdx = this.world.buildings.indexOf(bldg);
+        const ft = this.tileById.get(bldg.tileIndex);
+        const dbgTile = this.world.tiles[bldg.tileIndex];
+        const fallbackTopDbg = elevationWorldHeight(dbgTile, ELEV_WORLD_SCALE);
+        if (ft) {
+          const cen = segmentCentroid(ft, bldg.segment);
+          const { height: groundY } = sampleSurface(ft, cen.x, cen.y, this.toWorld, this.heightOf, fallbackTopDbg);
+          const sampleHitFallback = Math.abs(groundY - fallbackTopDbg) < 1e-4;
+          console.log(
+            `[BLDG-POS] #${bIdx} id=${bldg.id} tile=${bldg.tileIndex} seg=${bldg.segment}` +
+            ` h=${dbgTile?.h ?? 0}` +
+            ` ss[seg]=${dbgTile?.ss?.[bldg.segment]?.toFixed(3) ?? 'n/a'}` +
+            ` fallbackTop=${fallbackTopDbg.toFixed(3)}` +
+            ` groundY=${groundY.toFixed(3)}` +
+            ` sampleHitFallback=${sampleHitFallback}`,
+          );
+          // Dump heights of every polygon vertex so we can see which one is dragging groundY down.
+          const n = ft.poly.length;
+          for (let i = 0; i < n; i++) {
+            const vp = ft.poly[i];
+            const vh = this.heightOf(ft.tileIndex, vp);
+            const vTile = this.world.tiles.find(t => t.idx === ft.tileIndex);
+            console.log(
+              `[BLDG-VERT] tile=${ft.tileIndex} vert=${i}` +
+              ` pos=(${vp.x.toFixed(3)},${vp.y.toFixed(3)})` +
+              ` height=${vh.toFixed(3)}` +
+              ` inSeg=${i === bldg.segment || i === (bldg.segment + 1) % n ? 'YES' : 'no'}`,
+            );
+          }
+          // Also log the segment's three triangle vertices (centre + two edge verts).
+          const va = ft.poly[bldg.segment % n];
+          const vb = ft.poly[(bldg.segment + 1) % n];
+          const hCen = this.heightOf(ft.tileIndex, { x: ft.cx, y: ft.cy });
+          const hA   = this.heightOf(ft.tileIndex, va);
+          const hB   = this.heightOf(ft.tileIndex, vb);
+          console.log(
+            `[BLDG-TRI] seg=${bldg.segment}` +
+            ` centre=(${ft.cx.toFixed(3)},${ft.cy.toFixed(3)}) h=${hCen.toFixed(3)}` +
+            ` vA=(${va.x.toFixed(3)},${va.y.toFixed(3)}) h=${hA.toFixed(3)}` +
+            ` vB=(${vb.x.toFixed(3)},${vb.y.toFixed(3)}) h=${hB.toFixed(3)}`,
+          );
+          for (let ni = 0; ni < (dbgTile.n?.length ?? 0); ni++) {
+            const nIdx = dbgTile.n[ni];
+            const nTile = this.world.tiles[nIdx];
+            if (nTile) {
+              console.log(
+                `[BLDG-NBR] neighbour[${ni}]=${nIdx}` +
+                ` terrain=${nTile.terrain}` +
+                ` h=${nTile.h ?? 0}` +
+                ` elevH=${elevationWorldHeight(nTile, ELEV_WORLD_SCALE).toFixed(3)}`,
+              );
+            }
+          }
+        }
+      }
       this.selectedUnitId = null;
       this.rangeResult = null;
       this.rebuildUnits();

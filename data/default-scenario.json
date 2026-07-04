@@ -1,67 +1,68 @@
 {
   "format": "compact",
-  "seed": 100414,
+  "seed": 928663,
   "cities": [
     {
       "id": "city_0",
       "label": "C01",
-      "tileIndex": 2123,
+      "tileIndex": 177,
       "neighbourCityIds": [
+        "city_5",
         "city_3",
         "city_8",
-        "city_2",
-        "city_5",
+        "city_7",
+        "city_10",
         "city_11"
       ],
       "ownerId": "city_0",
       "ownedHexes": [
-        2123,
-        2044,
-        2122,
-        2200,
-        2201,
-        2124,
-        2045,
-        2121,
-        2199,
-        2276,
-        2277,
-        2278,
-        2202
+        177,
+        76,
+        176,
+        276,
+        277,
+        178,
+        77,
+        374,
+        375,
+        376,
+        278,
+        179,
+        78,
+        24975
       ],
       "isPlayerHome": true
     },
     {
       "id": "city_1",
       "label": "C02",
-      "tileIndex": 9955,
+      "tileIndex": 33934,
       "neighbourCityIds": [
         "city_6",
-        "city_4",
+        "city_3",
         "city_9",
-        "city_7",
         "city_8",
         "city_11"
       ],
       "ownerId": "city_1",
       "ownedHexes": [
-        9955
+        33934
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_2",
       "label": "C03",
-      "tileIndex": 45133,
+      "tileIndex": 45205,
       "neighbourCityIds": [
-        "city_0",
-        "city_5",
         "city_7",
-        "city_10"
+        "city_10",
+        "city_5",
+        "city_4"
       ],
       "ownerId": "city_2",
       "ownedHexes": [
-        45133
+        45205
       ],
       "isPlayerHome": false
     },
@@ -71,6 +72,7 @@
       "tileIndex": 29502,
       "neighbourCityIds": [
         "city_0",
+        "city_1",
         "city_8",
         "city_6",
         "city_11",
@@ -85,42 +87,41 @@
     {
       "id": "city_4",
       "label": "C05",
-      "tileIndex": 38949,
+      "tileIndex": 39686,
       "neighbourCityIds": [
-        "city_1",
-        "city_9",
         "city_7",
-        "city_5",
-        "city_10",
-        "city_11"
+        "city_9",
+        "city_2",
+        "city_10"
       ],
       "ownerId": "city_4",
       "ownedHexes": [
-        38949
+        39686
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_5",
       "label": "C06",
-      "tileIndex": 69560,
+      "tileIndex": 48199,
       "neighbourCityIds": [
+        "city_0",
         "city_2",
-        "city_4",
         "city_10",
+        "city_8",
         "city_7",
-        "city_0"
+        "city_11"
       ],
       "ownerId": "city_5",
       "ownedHexes": [
-        69560
+        48199
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_6",
       "label": "C07",
-      "tileIndex": 32003,
+      "tileIndex": 31752,
       "neighbourCityIds": [
         "city_1",
         "city_3",
@@ -130,121 +131,117 @@
       ],
       "ownerId": "city_6",
       "ownedHexes": [
-        32003,
-        31920,
-        32002,
-        32084,
-        32085,
-        32004,
-        31921,
+        31752,
+        31666,
+        31751,
         31836,
-        31919,
         31837,
-        32001,
-        32083,
-        32164,
-        32165,
-        32166,
-        32086,
-        32005,
-        31922,
-        31838
+        31753,
+        31667,
+        31665,
+        31750,
+        31835,
+        31919,
+        31920,
+        31921,
+        31838,
+        31754
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_7",
       "label": "C08",
-      "tileIndex": 40764,
+      "tileIndex": 40955,
       "neighbourCityIds": [
         "city_2",
         "city_4",
         "city_5",
         "city_10",
         "city_9",
-        "city_1"
+        "city_0"
       ],
       "ownerId": "city_7",
       "ownedHexes": [
-        40764
+        40955
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_8",
       "label": "C09",
-      "tileIndex": 25630,
+      "tileIndex": 72235,
       "neighbourCityIds": [
         "city_0",
         "city_3",
+        "city_5",
         "city_6",
         "city_11",
-        "city_9",
-        "city_1",
-        "city_10"
+        "city_10",
+        "city_1"
       ],
       "ownerId": "city_8",
       "ownedHexes": [
-        25630
+        72235
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_9",
       "label": "C10",
-      "tileIndex": 57134,
+      "tileIndex": 56546,
       "neighbourCityIds": [
         "city_1",
         "city_4",
         "city_6",
         "city_7",
-        "city_8",
         "city_11",
-        "city_10",
-        "city_3"
+        "city_3",
+        "city_10"
       ],
       "ownerId": "city_9",
       "ownedHexes": [
-        57134
+        56546
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_10",
       "label": "C11",
-      "tileIndex": 65941,
+      "tileIndex": 67033,
       "neighbourCityIds": [
         "city_2",
         "city_5",
         "city_7",
+        "city_8",
         "city_9",
+        "city_0",
         "city_4",
-        "city_11",
-        "city_8"
+        "city_11"
       ],
       "ownerId": "city_10",
       "ownedHexes": [
-        65941
+        67033
       ],
       "isPlayerHome": false
     },
     {
       "id": "city_11",
       "label": "C12",
-      "tileIndex": 78574,
+      "tileIndex": 77348,
       "neighbourCityIds": [
         "city_3",
         "city_6",
         "city_8",
         "city_9",
         "city_10",
-        "city_0",
         "city_1",
-        "city_4"
+        "city_5",
+        "city_0"
       ],
       "ownerId": "city_11",
       "ownedHexes": [
-        78574
+        77348
       ],
       "isPlayerHome": false
     }
@@ -254,7 +251,7 @@
       "id": "unit_0",
       "label": "Distance Raider Runner Tank (Mov 4, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 2123,
+      "tileIndex": 177,
       "segment": 4,
       "facing": 0,
       "attributes": {
@@ -273,8 +270,8 @@
       "id": "unit_1",
       "label": "Distance Harasser Plodder Spider (Mov 2, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 2044,
-      "segment": 3,
+      "tileIndex": 76,
+      "segment": 0,
       "facing": 0,
       "attributes": {
         "limbMovement": 2,
@@ -292,8 +289,8 @@
       "id": "unit_2",
       "label": "Distance Raider Loitering Spider (Mov 1, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 2122,
-      "segment": 3,
+      "tileIndex": 176,
+      "segment": 0,
       "facing": 0,
       "attributes": {
         "limbMovement": 1,
@@ -311,7 +308,7 @@
       "id": "unit_3",
       "label": "Distance Harasser Runner Spider (Mov 4, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 2200,
+      "tileIndex": 276,
       "segment": 0,
       "facing": 1,
       "attributes": {
@@ -330,8 +327,8 @@
       "id": "unit_4",
       "label": "Distance Breaker Plodder Spider (Mov 2, Kin 4, Rng 5, Spl 2, AA 3, Arm 4, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 2201,
-      "segment": 1,
+      "tileIndex": 277,
+      "segment": 4,
       "facing": 2,
       "attributes": {
         "limbMovement": 2,
@@ -349,8 +346,8 @@
       "id": "unit_5",
       "label": "Distance Striker Plodder Spider (Mov 2, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 2124,
-      "segment": 1,
+      "tileIndex": 178,
+      "segment": 4,
       "facing": 3,
       "attributes": {
         "limbMovement": 2,
@@ -368,8 +365,8 @@
       "id": "unit_6",
       "label": "Distance Raider Runner Tank (Mov 4, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 2120,
-      "segment": 0,
+      "tileIndex": 176,
+      "segment": 1,
       "facing": 4,
       "attributes": {
         "wheeledMovement": 4,
@@ -387,8 +384,8 @@
       "id": "unit_7",
       "label": "Distance Breaker Runner Tank (Mov 4, Kin 4, Rng 5, Spl 2, AA 3, Arm 4, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 2120,
-      "segment": 1,
+      "tileIndex": 176,
+      "segment": 2,
       "facing": 4,
       "attributes": {
         "wheeledMovement": 4,
@@ -406,8 +403,8 @@
       "id": "unit_8",
       "label": "Distance Middleweight Walker Tank (Mov 3, Kin 1, Rng 5, Spl 4, AA 3, Arm 4, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 2120,
-      "segment": 2,
+      "tileIndex": 176,
+      "segment": 3,
       "facing": 4,
       "attributes": {
         "wheeledMovement": 3,
@@ -425,8 +422,8 @@
       "id": "unit_9",
       "label": "Distance Raider Runner Tank (Mov 4, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 2120,
-      "segment": 3,
+      "tileIndex": 176,
+      "segment": 5,
       "facing": 4,
       "attributes": {
         "wheeledMovement": 4,
@@ -444,9 +441,9 @@
       "id": "unit_10",
       "label": "Distance Raider Plodder Tank (Mov 2, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 2120,
-      "segment": 4,
-      "facing": 4,
+      "tileIndex": 177,
+      "segment": 5,
+      "facing": 0,
       "attributes": {
         "wheeledMovement": 2,
         "size": 2,
@@ -463,9 +460,9 @@
       "id": "unit_11",
       "label": "Distance Striker Loitering Tank (Mov 1, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 2120,
-      "segment": 5,
-      "facing": 4,
+      "tileIndex": 76,
+      "segment": 1,
+      "facing": 3,
       "attributes": {
         "wheeledMovement": 1,
         "size": 3,
@@ -482,9 +479,9 @@
       "id": "unit_12",
       "label": "Breaker Disruptor Plodder Spider (Mov 2, Kin 4, Rng 3, Spl 4, AA 4, Arm 2, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 3548,
+      "tileIndex": 471,
       "segment": 0,
-      "facing": 0,
+      "facing": 5,
       "attributes": {
         "limbMovement": 2,
         "size": 4,
@@ -501,9 +498,9 @@
       "id": "unit_13",
       "label": "Distance Striker Runner Spider (Mov 4, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 3548,
+      "tileIndex": 471,
       "segment": 1,
-      "facing": 0,
+      "facing": 5,
       "attributes": {
         "limbMovement": 4,
         "size": 3,
@@ -520,9 +517,9 @@
       "id": "unit_14",
       "label": "Distance Striker Loitering Spider (Mov 1, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 3548,
+      "tileIndex": 471,
       "segment": 2,
-      "facing": 0,
+      "facing": 5,
       "attributes": {
         "limbMovement": 1,
         "size": 3,
@@ -539,9 +536,9 @@
       "id": "unit_15",
       "label": "Distance Harasser Plodder Spider (Mov 2, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 3548,
+      "tileIndex": 471,
       "segment": 3,
-      "facing": 0,
+      "facing": 5,
       "attributes": {
         "limbMovement": 2,
         "size": 1,
@@ -558,9 +555,9 @@
       "id": "unit_16",
       "label": "Distance Raider Plodder Spider (Mov 2, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 3548,
+      "tileIndex": 471,
       "segment": 4,
-      "facing": 0,
+      "facing": 5,
       "attributes": {
         "limbMovement": 2,
         "size": 2,
@@ -577,9 +574,9 @@
       "id": "unit_17",
       "label": "Distance Harasser Loitering Spider (Mov 1, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 3548,
+      "tileIndex": 471,
       "segment": 5,
-      "facing": 0,
+      "facing": 5,
       "attributes": {
         "limbMovement": 1,
         "size": 1,
@@ -596,7 +593,7 @@
       "id": "unit_18",
       "label": "Distance Harasser Plodder Spider (Mov 2, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 3601,
+      "tileIndex": 472,
       "segment": 0,
       "facing": 0,
       "attributes": {
@@ -615,9 +612,9 @@
       "id": "unit_19",
       "label": "Harasser Listener Walker Drone (Mov 3, Kin 1, Rng 0, Spl 1, AA 1, Arm 0, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 2198,
-      "segment": 0,
-      "facing": 4,
+      "tileIndex": 472,
+      "segment": 1,
+      "facing": 0,
       "attributes": {
         "flightMovement": 3,
         "size": 1,
@@ -632,9 +629,9 @@
       "id": "unit_20",
       "label": "Breaker Disruptor Runner Drone (Mov 4, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 2198,
-      "segment": 1,
-      "facing": 4,
+      "tileIndex": 472,
+      "segment": 2,
+      "facing": 0,
       "attributes": {
         "flightMovement": 4,
         "size": 4,
@@ -649,9 +646,9 @@
       "id": "unit_21",
       "label": "Raider Scrambler Loitering Drone (Mov 1, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 2198,
-      "segment": 2,
-      "facing": 4,
+      "tileIndex": 472,
+      "segment": 3,
+      "facing": 0,
       "attributes": {
         "flightMovement": 1,
         "size": 2,
@@ -666,9 +663,9 @@
       "id": "unit_22",
       "label": "Striker Jammer Plodder Drone (Mov 2, Kin 3, Rng 0, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 2198,
-      "segment": 3,
-      "facing": 4,
+      "tileIndex": 472,
+      "segment": 4,
+      "facing": 0,
       "attributes": {
         "flightMovement": 2,
         "size": 3,
@@ -683,9 +680,9 @@
       "id": "unit_23",
       "label": "Raider Scrambler Loitering Drone (Mov 1, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 2198,
-      "segment": 4,
-      "facing": 4,
+      "tileIndex": 472,
+      "segment": 5,
+      "facing": 0,
       "attributes": {
         "flightMovement": 1,
         "size": 2,
@@ -700,9 +697,9 @@
       "id": "unit_24",
       "label": "Breaker Disruptor Walker Drone (Mov 3, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 2198,
-      "segment": 5,
-      "facing": 4,
+      "tileIndex": 377,
+      "segment": 0,
+      "facing": 0,
       "attributes": {
         "flightMovement": 3,
         "size": 4,
@@ -717,9 +714,9 @@
       "id": "unit_25",
       "label": "Raider Scrambler Walker Drone (Mov 3, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_3",
-      "tileIndex": 2275,
-      "segment": 0,
-      "facing": 4,
+      "tileIndex": 377,
+      "segment": 1,
+      "facing": 0,
       "attributes": {
         "flightMovement": 3,
         "size": 2,
@@ -734,7 +731,7 @@
       "id": "unit_26",
       "label": "Breaker Middleweight Loitering Tank (Mov 1, Kin 4, Rng 3, Spl 4, AA 4, Arm 4, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 32003,
+      "tileIndex": 31752,
       "segment": 4,
       "facing": 0,
       "attributes": {
@@ -753,8 +750,8 @@
       "id": "unit_27",
       "label": "Raider Scrambler Runner Drone (Mov 4, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 31920,
-      "segment": 4,
+      "tileIndex": 31666,
+      "segment": 0,
       "facing": 0,
       "attributes": {
         "flightMovement": 4,
@@ -770,7 +767,7 @@
       "id": "unit_28",
       "label": "Distance Harasser Runner Tank (Mov 4, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 32002,
+      "tileIndex": 31751,
       "segment": 3,
       "facing": 0,
       "attributes": {
@@ -789,7 +786,7 @@
       "id": "unit_29",
       "label": "Harasser Listener Runner Drone (Mov 4, Kin 1, Rng 0, Spl 1, AA 1, Arm 0, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 32084,
+      "tileIndex": 31836,
       "segment": 0,
       "facing": 1,
       "attributes": {
@@ -806,7 +803,7 @@
       "id": "unit_30",
       "label": "Breaker Disruptor Plodder Drone (Mov 2, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 32085,
+      "tileIndex": 31837,
       "segment": 1,
       "facing": 2,
       "attributes": {
@@ -823,8 +820,8 @@
       "id": "unit_31",
       "label": "Breaker Middleweight Runner Spider (Mov 4, Kin 4, Rng 4, Spl 2, AA 1, Arm 4, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 32004,
-      "segment": 4,
+      "tileIndex": 31753,
+      "segment": 0,
       "facing": 3,
       "attributes": {
         "limbMovement": 4,
@@ -842,7 +839,7 @@
       "id": "unit_32",
       "label": "Distance Breaker Plodder Tank (Mov 2, Kin 4, Rng 5, Spl 4, AA 3, Arm 4, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 31751,
+      "tileIndex": 31664,
       "segment": 0,
       "facing": 3,
       "attributes": {
@@ -861,7 +858,7 @@
       "id": "unit_33",
       "label": "Distance Raider Walker Tank (Mov 3, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 31751,
+      "tileIndex": 31664,
       "segment": 1,
       "facing": 3,
       "attributes": {
@@ -880,7 +877,7 @@
       "id": "unit_34",
       "label": "Distance Raider Plodder Tank (Mov 2, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 31751,
+      "tileIndex": 31664,
       "segment": 2,
       "facing": 3,
       "attributes": {
@@ -899,7 +896,7 @@
       "id": "unit_35",
       "label": "Distance Raider Plodder Tank (Mov 2, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 31751,
+      "tileIndex": 31664,
       "segment": 3,
       "facing": 3,
       "attributes": {
@@ -918,7 +915,7 @@
       "id": "unit_36",
       "label": "Distance Raider Runner Tank (Mov 4, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 31751,
+      "tileIndex": 31664,
       "segment": 4,
       "facing": 3,
       "attributes": {
@@ -937,7 +934,7 @@
       "id": "unit_37",
       "label": "Breaker Middleweight Runner Tank (Mov 4, Kin 4, Rng 1, Spl 2, AA 4, Arm 4, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 31751,
+      "tileIndex": 31664,
       "segment": 5,
       "facing": 3,
       "attributes": {
@@ -956,7 +953,7 @@
       "id": "unit_38",
       "label": "Distance Striker Plodder Spider (Mov 2, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 32158,
+      "tileIndex": 32900,
       "segment": 0,
       "facing": 3,
       "attributes": {
@@ -975,7 +972,7 @@
       "id": "unit_39",
       "label": "Distance Harasser Loitering Spider (Mov 1, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 32158,
+      "tileIndex": 32900,
       "segment": 1,
       "facing": 3,
       "attributes": {
@@ -994,7 +991,7 @@
       "id": "unit_40",
       "label": "Distance Raider Plodder Spider (Mov 2, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 32158,
+      "tileIndex": 32900,
       "segment": 2,
       "facing": 3,
       "attributes": {
@@ -1013,7 +1010,7 @@
       "id": "unit_41",
       "label": "Distance Harasser Walker Spider (Mov 3, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 32158,
+      "tileIndex": 32900,
       "segment": 3,
       "facing": 3,
       "attributes": {
@@ -1032,7 +1029,7 @@
       "id": "unit_42",
       "label": "Breaker Middleweight Plodder Spider (Mov 2, Kin 4, Rng 3, Spl 4, AA 2, Arm 4, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 32158,
+      "tileIndex": 32900,
       "segment": 4,
       "facing": 3,
       "attributes": {
@@ -1051,7 +1048,7 @@
       "id": "unit_43",
       "label": "Distance Striker Loitering Spider (Mov 1, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 32158,
+      "tileIndex": 32900,
       "segment": 5,
       "facing": 3,
       "attributes": {
@@ -1070,9 +1067,9 @@
       "id": "unit_44",
       "label": "Distance Striker Loitering Spider (Mov 1, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 32238,
+      "tileIndex": 33174,
       "segment": 0,
-      "facing": 3,
+      "facing": 4,
       "attributes": {
         "limbMovement": 1,
         "size": 3,
@@ -1089,9 +1086,9 @@
       "id": "unit_45",
       "label": "Harasser Listener Runner Drone (Mov 4, Kin 1, Rng 0, Spl 1, AA 1, Arm 0, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 31835,
+      "tileIndex": 31749,
       "segment": 0,
-      "facing": 3,
+      "facing": 4,
       "attributes": {
         "flightMovement": 4,
         "size": 1,
@@ -1106,9 +1103,9 @@
       "id": "unit_46",
       "label": "Breaker Disruptor Loitering Drone (Mov 1, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 31835,
+      "tileIndex": 31749,
       "segment": 1,
-      "facing": 3,
+      "facing": 4,
       "attributes": {
         "flightMovement": 1,
         "size": 4,
@@ -1123,9 +1120,9 @@
       "id": "unit_47",
       "label": "Breaker Disruptor Plodder Drone (Mov 2, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 31835,
+      "tileIndex": 31749,
       "segment": 2,
-      "facing": 3,
+      "facing": 4,
       "attributes": {
         "flightMovement": 2,
         "size": 4,
@@ -1140,9 +1137,9 @@
       "id": "unit_48",
       "label": "Striker Jammer Walker Drone (Mov 3, Kin 3, Rng 0, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 31835,
+      "tileIndex": 31749,
       "segment": 3,
-      "facing": 3,
+      "facing": 4,
       "attributes": {
         "flightMovement": 3,
         "size": 3,
@@ -1157,9 +1154,9 @@
       "id": "unit_49",
       "label": "Breaker Disruptor Walker Drone (Mov 3, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 31835,
+      "tileIndex": 31749,
       "segment": 4,
-      "facing": 3,
+      "facing": 4,
       "attributes": {
         "flightMovement": 3,
         "size": 4,
@@ -1174,9 +1171,9 @@
       "id": "unit_50",
       "label": "Harasser Listener Walker Drone (Mov 3, Kin 1, Rng 0, Spl 1, AA 1, Arm 0, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 31835,
+      "tileIndex": 31749,
       "segment": 5,
-      "facing": 3,
+      "facing": 4,
       "attributes": {
         "flightMovement": 3,
         "size": 1,
@@ -1191,9 +1188,9 @@
       "id": "unit_51",
       "label": "Striker Jammer Runner Drone (Mov 4, Kin 3, Rng 0, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 31752,
+      "tileIndex": 31834,
       "segment": 0,
-      "facing": 2,
+      "facing": 4,
       "attributes": {
         "flightMovement": 4,
         "size": 3,
@@ -1208,7 +1205,7 @@
       "id": "unit_52",
       "label": "Distance Harasser Runner Tank (Mov 4, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 9000,
+      "tileIndex": 10201,
       "segment": 0,
       "facing": 0,
       "attributes": {
@@ -1227,7 +1224,7 @@
       "id": "unit_53",
       "label": "Breaker Disruptor Loitering Tank (Mov 1, Kin 4, Rng 4, Spl 3, AA 4, Arm 3, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 9000,
+      "tileIndex": 10201,
       "segment": 1,
       "facing": 0,
       "attributes": {
@@ -1246,7 +1243,7 @@
       "id": "unit_54",
       "label": "Distance Breaker Walker Tank (Mov 3, Kin 4, Rng 5, Spl 4, AA 2, Arm 4, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 9000,
+      "tileIndex": 10201,
       "segment": 2,
       "facing": 0,
       "attributes": {
@@ -1265,7 +1262,7 @@
       "id": "unit_55",
       "label": "Distance Middleweight Loitering Tank (Mov 1, Kin 1, Rng 5, Spl 4, AA 4, Arm 4, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 9000,
+      "tileIndex": 10201,
       "segment": 3,
       "facing": 0,
       "attributes": {
@@ -1284,7 +1281,7 @@
       "id": "unit_56",
       "label": "Distance Raider Plodder Tank (Mov 2, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 9000,
+      "tileIndex": 10201,
       "segment": 4,
       "facing": 0,
       "attributes": {
@@ -1303,7 +1300,7 @@
       "id": "unit_57",
       "label": "Breaker Middleweight Plodder Tank (Mov 2, Kin 4, Rng 1, Spl 4, AA 4, Arm 4, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 9000,
+      "tileIndex": 10201,
       "segment": 5,
       "facing": 0,
       "attributes": {
@@ -1322,9 +1319,9 @@
       "id": "unit_58",
       "label": "Distance Striker Loitering Spider (Mov 1, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 9273,
+      "tileIndex": 2070,
       "segment": 0,
-      "facing": 2,
+      "facing": 0,
       "attributes": {
         "limbMovement": 1,
         "size": 3,
@@ -1341,9 +1338,9 @@
       "id": "unit_59",
       "label": "Distance Raider Runner Spider (Mov 4, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 9273,
+      "tileIndex": 2070,
       "segment": 1,
-      "facing": 2,
+      "facing": 0,
       "attributes": {
         "limbMovement": 4,
         "size": 2,
@@ -1360,9 +1357,9 @@
       "id": "unit_60",
       "label": "Breaker Disruptor Walker Spider (Mov 3, Kin 4, Rng 2, Spl 4, AA 4, Arm 2, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 9273,
+      "tileIndex": 2070,
       "segment": 2,
-      "facing": 2,
+      "facing": 0,
       "attributes": {
         "limbMovement": 3,
         "size": 4,
@@ -1379,9 +1376,9 @@
       "id": "unit_61",
       "label": "Distance Striker Walker Spider (Mov 3, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 9273,
+      "tileIndex": 2070,
       "segment": 3,
-      "facing": 2,
+      "facing": 0,
       "attributes": {
         "limbMovement": 3,
         "size": 3,
@@ -1398,9 +1395,9 @@
       "id": "unit_62",
       "label": "Breaker Middleweight Walker Spider (Mov 3, Kin 4, Rng 2, Spl 4, AA 4, Arm 4, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 9273,
+      "tileIndex": 2070,
       "segment": 4,
-      "facing": 2,
+      "facing": 0,
       "attributes": {
         "limbMovement": 3,
         "size": 4,
@@ -1417,9 +1414,9 @@
       "id": "unit_63",
       "label": "Distance Raider Loitering Spider (Mov 1, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 9273,
+      "tileIndex": 2070,
       "segment": 5,
-      "facing": 2,
+      "facing": 0,
       "attributes": {
         "limbMovement": 1,
         "size": 2,
@@ -1436,9 +1433,9 @@
       "id": "unit_64",
       "label": "Distance Harasser Loitering Spider (Mov 1, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 9272,
+      "tileIndex": 1992,
       "segment": 0,
-      "facing": 2,
+      "facing": 0,
       "attributes": {
         "limbMovement": 1,
         "size": 1,
@@ -1455,7 +1452,7 @@
       "id": "unit_65",
       "label": "Breaker Disruptor Loitering Drone (Mov 1, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 8951,
+      "tileIndex": 0,
       "segment": 0,
       "facing": 0,
       "attributes": {
@@ -1472,7 +1469,7 @@
       "id": "unit_66",
       "label": "Raider Scrambler Walker Drone (Mov 3, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 8951,
+      "tileIndex": 0,
       "segment": 1,
       "facing": 0,
       "attributes": {
@@ -1489,7 +1486,7 @@
       "id": "unit_67",
       "label": "Breaker Disruptor Walker Drone (Mov 3, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 8951,
+      "tileIndex": 0,
       "segment": 2,
       "facing": 0,
       "attributes": {
@@ -1506,7 +1503,7 @@
       "id": "unit_68",
       "label": "Raider Scrambler Walker Drone (Mov 3, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 8951,
+      "tileIndex": 0,
       "segment": 3,
       "facing": 0,
       "attributes": {
@@ -1523,7 +1520,7 @@
       "id": "unit_69",
       "label": "Raider Scrambler Walker Drone (Mov 3, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 8951,
+      "tileIndex": 0,
       "segment": 4,
       "facing": 0,
       "attributes": {
@@ -1540,8 +1537,8 @@
       "id": "unit_70",
       "label": "Raider Scrambler Loitering Drone (Mov 1, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 8951,
-      "segment": 5,
+      "tileIndex": 15251,
+      "segment": 0,
       "facing": 0,
       "attributes": {
         "flightMovement": 1,
@@ -1557,8 +1554,8 @@
       "id": "unit_71",
       "label": "Harasser Listener Runner Drone (Mov 4, Kin 1, Rng 0, Spl 1, AA 1, Arm 0, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 8950,
-      "segment": 0,
+      "tileIndex": 15251,
+      "segment": 1,
       "facing": 0,
       "attributes": {
         "flightMovement": 4,
@@ -1574,7 +1571,7 @@
       "id": "unit_72",
       "label": "Distance Raider Runner Tank (Mov 4, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 8745,
+      "tileIndex": 398,
       "segment": 0,
       "facing": 3,
       "attributes": {
@@ -1593,7 +1590,7 @@
       "id": "unit_73",
       "label": "Distance Harasser Runner Tank (Mov 4, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 8745,
+      "tileIndex": 398,
       "segment": 1,
       "facing": 3,
       "attributes": {
@@ -1612,7 +1609,7 @@
       "id": "unit_74",
       "label": "Distance Raider Plodder Tank (Mov 2, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 8745,
+      "tileIndex": 398,
       "segment": 2,
       "facing": 3,
       "attributes": {
@@ -1631,7 +1628,7 @@
       "id": "unit_75",
       "label": "Distance Raider Walker Tank (Mov 3, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 8745,
+      "tileIndex": 398,
       "segment": 3,
       "facing": 3,
       "attributes": {
@@ -1650,7 +1647,7 @@
       "id": "unit_76",
       "label": "Distance Raider Walker Tank (Mov 3, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 8745,
+      "tileIndex": 398,
       "segment": 4,
       "facing": 3,
       "attributes": {
@@ -1669,7 +1666,7 @@
       "id": "unit_77",
       "label": "Distance Harasser Walker Tank (Mov 3, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 8745,
+      "tileIndex": 398,
       "segment": 5,
       "facing": 3,
       "attributes": {
@@ -1688,9 +1685,9 @@
       "id": "unit_78",
       "label": "Distance Raider Plodder Spider (Mov 2, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 9272,
+      "tileIndex": 1992,
       "segment": 1,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "limbMovement": 2,
         "size": 2,
@@ -1707,9 +1704,9 @@
       "id": "unit_79",
       "label": "Distance Raider Walker Spider (Mov 3, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 9272,
+      "tileIndex": 1992,
       "segment": 2,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "limbMovement": 3,
         "size": 2,
@@ -1726,9 +1723,9 @@
       "id": "unit_80",
       "label": "Distance Harasser Plodder Spider (Mov 2, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 9272,
+      "tileIndex": 1992,
       "segment": 3,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "limbMovement": 2,
         "size": 1,
@@ -1745,9 +1742,9 @@
       "id": "unit_81",
       "label": "Distance Harasser Walker Spider (Mov 3, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 9272,
+      "tileIndex": 1992,
       "segment": 4,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "limbMovement": 3,
         "size": 1,
@@ -1764,9 +1761,9 @@
       "id": "unit_82",
       "label": "Distance Raider Plodder Spider (Mov 2, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 9272,
+      "tileIndex": 1992,
       "segment": 5,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "limbMovement": 2,
         "size": 2,
@@ -1783,9 +1780,9 @@
       "id": "unit_83",
       "label": "Distance Harasser Loitering Spider (Mov 1, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 9315,
+      "tileIndex": 2148,
       "segment": 0,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "limbMovement": 1,
         "size": 1,
@@ -1802,9 +1799,9 @@
       "id": "unit_84",
       "label": "Breaker Middleweight Walker Spider (Mov 3, Kin 4, Rng 0, Spl 4, AA 4, Arm 4, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 9315,
+      "tileIndex": 2148,
       "segment": 1,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "limbMovement": 3,
         "size": 4,
@@ -1820,7 +1817,7 @@
       "id": "unit_85",
       "label": "Breaker Disruptor Plodder Drone (Mov 2, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 8744,
+      "tileIndex": 301,
       "segment": 0,
       "facing": 3,
       "attributes": {
@@ -1837,7 +1834,7 @@
       "id": "unit_86",
       "label": "Striker Jammer Plodder Drone (Mov 2, Kin 3, Rng 0, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 8744,
+      "tileIndex": 301,
       "segment": 1,
       "facing": 3,
       "attributes": {
@@ -1854,7 +1851,7 @@
       "id": "unit_87",
       "label": "Striker Jammer Plodder Drone (Mov 2, Kin 3, Rng 0, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 8744,
+      "tileIndex": 301,
       "segment": 2,
       "facing": 3,
       "attributes": {
@@ -1871,7 +1868,7 @@
       "id": "unit_88",
       "label": "Breaker Disruptor Loitering Drone (Mov 1, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 8744,
+      "tileIndex": 301,
       "segment": 3,
       "facing": 3,
       "attributes": {
@@ -1888,7 +1885,7 @@
       "id": "unit_89",
       "label": "Raider Scrambler Loitering Drone (Mov 1, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 8744,
+      "tileIndex": 301,
       "segment": 4,
       "facing": 3,
       "attributes": {
@@ -1905,7 +1902,7 @@
       "id": "unit_90",
       "label": "Breaker Disruptor Walker Drone (Mov 3, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 8744,
+      "tileIndex": 301,
       "segment": 5,
       "facing": 3,
       "attributes": {
@@ -1922,9 +1919,9 @@
       "id": "unit_91",
       "label": "Breaker Disruptor Loitering Drone (Mov 1, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_1",
-      "tileIndex": 8799,
+      "tileIndex": 203,
       "segment": 0,
-      "facing": 2,
+      "facing": 3,
       "attributes": {
         "flightMovement": 1,
         "size": 4,
@@ -1939,9 +1936,9 @@
       "id": "unit_92",
       "label": "Distance Harasser Runner Tank (Mov 4, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 37999,
+      "tileIndex": 62201,
       "segment": 0,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "wheeledMovement": 4,
         "size": 1,
@@ -1958,9 +1955,9 @@
       "id": "unit_93",
       "label": "Distance Middleweight Loitering Tank (Mov 1, Kin 3, Rng 5, Spl 4, AA 2, Arm 4, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 37999,
+      "tileIndex": 62201,
       "segment": 1,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "wheeledMovement": 1,
         "size": 4,
@@ -1977,9 +1974,9 @@
       "id": "unit_94",
       "label": "Distance Raider Plodder Tank (Mov 2, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 37999,
+      "tileIndex": 62201,
       "segment": 2,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "wheeledMovement": 2,
         "size": 2,
@@ -1996,9 +1993,9 @@
       "id": "unit_95",
       "label": "Distance Harasser Runner Tank (Mov 4, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 37999,
+      "tileIndex": 62201,
       "segment": 3,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "wheeledMovement": 4,
         "size": 1,
@@ -2015,9 +2012,9 @@
       "id": "unit_96",
       "label": "Distance Harasser Plodder Tank (Mov 2, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 37999,
+      "tileIndex": 62201,
       "segment": 4,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "wheeledMovement": 2,
         "size": 1,
@@ -2034,9 +2031,9 @@
       "id": "unit_97",
       "label": "Distance Striker Loitering Tank (Mov 1, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 37999,
+      "tileIndex": 62201,
       "segment": 5,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "wheeledMovement": 1,
         "size": 3,
@@ -2053,9 +2050,9 @@
       "id": "unit_98",
       "label": "Distance Middleweight Runner Spider (Mov 4, Kin 0, Rng 5, Spl 4, AA 2, Arm 4, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 38000,
+      "tileIndex": 63206,
       "segment": 0,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "limbMovement": 4,
         "size": 4,
@@ -2071,9 +2068,9 @@
       "id": "unit_99",
       "label": "Distance Middleweight Runner Spider (Mov 4, Kin 2, Rng 5, Spl 3, AA 4, Arm 4, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 38000,
+      "tileIndex": 63206,
       "segment": 1,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "limbMovement": 4,
         "size": 4,
@@ -2090,9 +2087,9 @@
       "id": "unit_100",
       "label": "Distance Raider Walker Spider (Mov 3, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 38000,
+      "tileIndex": 63206,
       "segment": 2,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "limbMovement": 3,
         "size": 2,
@@ -2109,9 +2106,9 @@
       "id": "unit_101",
       "label": "Distance Harasser Runner Spider (Mov 4, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 38000,
+      "tileIndex": 63206,
       "segment": 3,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "limbMovement": 4,
         "size": 1,
@@ -2128,9 +2125,9 @@
       "id": "unit_102",
       "label": "Distance Raider Loitering Spider (Mov 1, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 38000,
+      "tileIndex": 63206,
       "segment": 4,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "limbMovement": 1,
         "size": 2,
@@ -2147,9 +2144,9 @@
       "id": "unit_103",
       "label": "Breaker Disruptor Runner Spider (Mov 4, Kin 4, Rng 3, Spl 4, AA 1, Arm 3, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 38000,
+      "tileIndex": 63206,
       "segment": 5,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "limbMovement": 4,
         "size": 4,
@@ -2166,9 +2163,9 @@
       "id": "unit_104",
       "label": "Distance Breaker Loitering Spider (Mov 1, Kin 4, Rng 5, Spl 4, AA 4, Arm 4, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 38068,
+      "tileIndex": 63207,
       "segment": 0,
-      "facing": 0,
+      "facing": 3,
       "attributes": {
         "limbMovement": 1,
         "size": 4,
@@ -2185,8 +2182,8 @@
       "id": "unit_105",
       "label": "Striker Jammer Runner Drone (Mov 4, Kin 3, Rng 0, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 38068,
-      "segment": 1,
+      "tileIndex": 38049,
+      "segment": 0,
       "facing": 0,
       "attributes": {
         "flightMovement": 4,
@@ -2202,8 +2199,8 @@
       "id": "unit_106",
       "label": "Striker Jammer Walker Drone (Mov 3, Kin 3, Rng 0, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 38068,
-      "segment": 2,
+      "tileIndex": 38049,
+      "segment": 1,
       "facing": 0,
       "attributes": {
         "flightMovement": 3,
@@ -2219,8 +2216,8 @@
       "id": "unit_107",
       "label": "Harasser Listener Loitering Drone (Mov 1, Kin 1, Rng 0, Spl 1, AA 1, Arm 0, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 38068,
-      "segment": 3,
+      "tileIndex": 38049,
+      "segment": 2,
       "facing": 0,
       "attributes": {
         "flightMovement": 1,
@@ -2236,8 +2233,8 @@
       "id": "unit_108",
       "label": "Breaker Disruptor Runner Drone (Mov 4, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 38068,
-      "segment": 4,
+      "tileIndex": 38049,
+      "segment": 3,
       "facing": 0,
       "attributes": {
         "flightMovement": 4,
@@ -2253,8 +2250,8 @@
       "id": "unit_109",
       "label": "Breaker Disruptor Loitering Drone (Mov 1, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 38068,
-      "segment": 5,
+      "tileIndex": 38049,
+      "segment": 4,
       "facing": 0,
       "attributes": {
         "flightMovement": 1,
@@ -2270,9 +2267,9 @@
       "id": "unit_110",
       "label": "Harasser Listener Walker Drone (Mov 3, Kin 1, Rng 0, Spl 1, AA 1, Arm 0, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 38069,
-      "segment": 0,
-      "facing": 1,
+      "tileIndex": 38049,
+      "segment": 5,
+      "facing": 0,
       "attributes": {
         "flightMovement": 3,
         "size": 1,
@@ -2287,9 +2284,9 @@
       "id": "unit_111",
       "label": "Raider Scrambler Runner Drone (Mov 4, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 38069,
-      "segment": 1,
-      "facing": 1,
+      "tileIndex": 38117,
+      "segment": 0,
+      "facing": 0,
       "attributes": {
         "flightMovement": 4,
         "size": 2,
@@ -2304,9 +2301,9 @@
       "id": "unit_112",
       "label": "Breaker Middleweight Runner Tank (Mov 4, Kin 4, Rng 1, Spl 4, AA 3, Arm 4, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 37995,
+      "tileIndex": 62202,
       "segment": 0,
-      "facing": 3,
+      "facing": 0,
       "attributes": {
         "wheeledMovement": 4,
         "size": 4,
@@ -2323,9 +2320,9 @@
       "id": "unit_113",
       "label": "Distance Harasser Runner Tank (Mov 4, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 37995,
+      "tileIndex": 62202,
       "segment": 1,
-      "facing": 3,
+      "facing": 0,
       "attributes": {
         "wheeledMovement": 4,
         "size": 1,
@@ -2342,9 +2339,9 @@
       "id": "unit_114",
       "label": "Distance Harasser Plodder Tank (Mov 2, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 37995,
+      "tileIndex": 62202,
       "segment": 2,
-      "facing": 3,
+      "facing": 0,
       "attributes": {
         "wheeledMovement": 2,
         "size": 1,
@@ -2361,9 +2358,9 @@
       "id": "unit_115",
       "label": "Distance Harasser Plodder Tank (Mov 2, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 37995,
+      "tileIndex": 62202,
       "segment": 3,
-      "facing": 3,
+      "facing": 0,
       "attributes": {
         "wheeledMovement": 2,
         "size": 1,
@@ -2380,9 +2377,9 @@
       "id": "unit_116",
       "label": "Distance Middleweight Walker Tank (Mov 3, Kin 2, Rng 5, Spl 4, AA 3, Arm 4, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 37995,
+      "tileIndex": 62202,
       "segment": 4,
-      "facing": 3,
+      "facing": 0,
       "attributes": {
         "wheeledMovement": 3,
         "size": 4,
@@ -2399,9 +2396,9 @@
       "id": "unit_117",
       "label": "Breaker Disruptor Runner Tank (Mov 4, Kin 4, Rng 4, Spl 4, AA 0, Arm 3, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 37995,
+      "tileIndex": 62202,
       "segment": 5,
-      "facing": 3,
+      "facing": 0,
       "attributes": {
         "wheeledMovement": 4,
         "size": 4,
@@ -2417,9 +2414,9 @@
       "id": "unit_118",
       "label": "Distance Striker Walker Spider (Mov 3, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 37930,
-      "segment": 0,
-      "facing": 2,
+      "tileIndex": 63207,
+      "segment": 1,
+      "facing": 0,
       "attributes": {
         "limbMovement": 3,
         "size": 3,
@@ -2436,9 +2433,9 @@
       "id": "unit_119",
       "label": "Distance Striker Runner Spider (Mov 4, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 37930,
-      "segment": 1,
-      "facing": 2,
+      "tileIndex": 63207,
+      "segment": 2,
+      "facing": 0,
       "attributes": {
         "limbMovement": 4,
         "size": 3,
@@ -2455,9 +2452,9 @@
       "id": "unit_120",
       "label": "Breaker Middleweight Plodder Spider (Mov 2, Kin 4, Rng 4, Spl 1, AA 4, Arm 4, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 37930,
-      "segment": 2,
-      "facing": 2,
+      "tileIndex": 63207,
+      "segment": 3,
+      "facing": 0,
       "attributes": {
         "limbMovement": 2,
         "size": 4,
@@ -2474,9 +2471,9 @@
       "id": "unit_121",
       "label": "Distance Raider Plodder Spider (Mov 2, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 37930,
-      "segment": 3,
-      "facing": 2,
+      "tileIndex": 63207,
+      "segment": 4,
+      "facing": 0,
       "attributes": {
         "limbMovement": 2,
         "size": 2,
@@ -2493,9 +2490,9 @@
       "id": "unit_122",
       "label": "Distance Striker Loitering Spider (Mov 1, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 37930,
-      "segment": 4,
-      "facing": 2,
+      "tileIndex": 63207,
+      "segment": 5,
+      "facing": 0,
       "attributes": {
         "limbMovement": 1,
         "size": 3,
@@ -2512,9 +2509,9 @@
       "id": "unit_123",
       "label": "Distance Raider Walker Spider (Mov 3, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 37930,
-      "segment": 5,
-      "facing": 2,
+      "tileIndex": 63142,
+      "segment": 0,
+      "facing": 0,
       "attributes": {
         "limbMovement": 3,
         "size": 2,
@@ -2531,9 +2528,9 @@
       "id": "unit_124",
       "label": "Distance Middleweight Loitering Spider (Mov 1, Kin 2, Rng 5, Spl 4, AA 3, Arm 4, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 38394,
-      "segment": 0,
-      "facing": 4,
+      "tileIndex": 63142,
+      "segment": 1,
+      "facing": 0,
       "attributes": {
         "limbMovement": 1,
         "size": 4,
@@ -2550,9 +2547,9 @@
       "id": "unit_125",
       "label": "Breaker Disruptor Loitering Drone (Mov 1, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 38064,
+      "tileIndex": 38384,
       "segment": 0,
-      "facing": 3,
+      "facing": 5,
       "attributes": {
         "flightMovement": 1,
         "size": 4,
@@ -2567,9 +2564,9 @@
       "id": "unit_126",
       "label": "Striker Jammer Runner Drone (Mov 4, Kin 3, Rng 0, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 38064,
+      "tileIndex": 38384,
       "segment": 1,
-      "facing": 3,
+      "facing": 5,
       "attributes": {
         "flightMovement": 4,
         "size": 3,
@@ -2584,9 +2581,9 @@
       "id": "unit_127",
       "label": "Harasser Listener Loitering Drone (Mov 1, Kin 1, Rng 0, Spl 1, AA 1, Arm 0, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 38064,
+      "tileIndex": 38384,
       "segment": 2,
-      "facing": 3,
+      "facing": 5,
       "attributes": {
         "flightMovement": 1,
         "size": 1,
@@ -2601,9 +2598,9 @@
       "id": "unit_128",
       "label": "Raider Scrambler Walker Drone (Mov 3, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 38064,
+      "tileIndex": 38384,
       "segment": 3,
-      "facing": 3,
+      "facing": 5,
       "attributes": {
         "flightMovement": 3,
         "size": 2,
@@ -2618,9 +2615,9 @@
       "id": "unit_129",
       "label": "Striker Jammer Plodder Drone (Mov 2, Kin 3, Rng 0, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 38064,
+      "tileIndex": 38384,
       "segment": 4,
-      "facing": 3,
+      "facing": 5,
       "attributes": {
         "flightMovement": 2,
         "size": 3,
@@ -2635,9 +2632,9 @@
       "id": "unit_130",
       "label": "Striker Jammer Loitering Drone (Mov 1, Kin 3, Rng 0, Spl 3, AA 3, Arm 0, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 38064,
+      "tileIndex": 38384,
       "segment": 5,
-      "facing": 3,
+      "facing": 5,
       "attributes": {
         "flightMovement": 1,
         "size": 3,
@@ -2652,9 +2649,9 @@
       "id": "unit_131",
       "label": "Breaker Disruptor Plodder Drone (Mov 2, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_2",
-      "tileIndex": 37926,
+      "tileIndex": 38320,
       "segment": 0,
-      "facing": 2,
+      "facing": 0,
       "attributes": {
         "flightMovement": 2,
         "size": 4,
@@ -2670,7 +2667,7 @@
     {
       "id": "building_0",
       "ownerId": "city_0",
-      "tileIndex": 2123,
+      "tileIndex": 177,
       "segment": 0,
       "attributes": {
         "kinetic": 3,
@@ -2680,7 +2677,7 @@
     {
       "id": "building_1",
       "ownerId": "city_0",
-      "tileIndex": 2123,
+      "tileIndex": 177,
       "segment": 1,
       "attributes": {
         "defence": 4
@@ -2689,7 +2686,7 @@
     {
       "id": "building_2",
       "ownerId": "city_0",
-      "tileIndex": 2123,
+      "tileIndex": 177,
       "segment": 2,
       "attributes": {
         "repair": 3
@@ -2698,7 +2695,7 @@
     {
       "id": "building_3",
       "ownerId": "city_0",
-      "tileIndex": 2123,
+      "tileIndex": 177,
       "segment": 3,
       "attributes": {
         "antiAir": 4
@@ -2707,8 +2704,8 @@
     {
       "id": "building_4",
       "ownerId": "city_0",
-      "tileIndex": 2044,
-      "segment": 0,
+      "tileIndex": 76,
+      "segment": 3,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -2717,8 +2714,8 @@
     {
       "id": "building_5",
       "ownerId": "city_0",
-      "tileIndex": 2044,
-      "segment": 1,
+      "tileIndex": 176,
+      "segment": 4,
       "attributes": {
         "splashAttack": 3,
         "kinetic": 1
@@ -2727,8 +2724,8 @@
     {
       "id": "building_6",
       "ownerId": "city_0",
-      "tileIndex": 2044,
-      "segment": 2,
+      "tileIndex": 276,
+      "segment": 3,
       "attributes": {
         "rangeAttack": 4,
         "kinetic": 1
@@ -2737,8 +2734,8 @@
     {
       "id": "building_7",
       "ownerId": "city_0",
-      "tileIndex": 2044,
-      "segment": 5,
+      "tileIndex": 276,
+      "segment": 4,
       "attributes": {
         "defence": 2,
         "repair": 2
@@ -2747,8 +2744,8 @@
     {
       "id": "building_8",
       "ownerId": "city_0",
-      "tileIndex": 2122,
-      "segment": 0,
+      "tileIndex": 276,
+      "segment": 5,
       "attributes": {
         "kinetic": 3,
         "rangeAttack": 2
@@ -2757,8 +2754,8 @@
     {
       "id": "building_9",
       "ownerId": "city_0",
-      "tileIndex": 2122,
-      "segment": 1,
+      "tileIndex": 277,
+      "segment": 0,
       "attributes": {
         "defence": 4
       }
@@ -2766,8 +2763,8 @@
     {
       "id": "building_10",
       "ownerId": "city_0",
-      "tileIndex": 2122,
-      "segment": 2,
+      "tileIndex": 277,
+      "segment": 1,
       "attributes": {
         "repair": 3
       }
@@ -2775,8 +2772,8 @@
     {
       "id": "building_11",
       "ownerId": "city_0",
-      "tileIndex": 2122,
-      "segment": 5,
+      "tileIndex": 277,
+      "segment": 2,
       "attributes": {
         "antiAir": 4
       }
@@ -2784,8 +2781,8 @@
     {
       "id": "building_12",
       "ownerId": "city_0",
-      "tileIndex": 2200,
-      "segment": 1,
+      "tileIndex": 277,
+      "segment": 3,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -2794,8 +2791,8 @@
     {
       "id": "building_13",
       "ownerId": "city_0",
-      "tileIndex": 2200,
-      "segment": 2,
+      "tileIndex": 178,
+      "segment": 0,
       "attributes": {
         "splashAttack": 3,
         "kinetic": 1
@@ -2804,8 +2801,8 @@
     {
       "id": "building_14",
       "ownerId": "city_0",
-      "tileIndex": 2200,
-      "segment": 3,
+      "tileIndex": 178,
+      "segment": 1,
       "attributes": {
         "rangeAttack": 4,
         "kinetic": 1
@@ -2814,8 +2811,8 @@
     {
       "id": "building_15",
       "ownerId": "city_0",
-      "tileIndex": 2201,
-      "segment": 0,
+      "tileIndex": 178,
+      "segment": 2,
       "attributes": {
         "defence": 2,
         "repair": 2
@@ -2824,7 +2821,7 @@
     {
       "id": "building_16",
       "ownerId": "city_0",
-      "tileIndex": 2201,
+      "tileIndex": 178,
       "segment": 3,
       "attributes": {
         "kinetic": 3,
@@ -2834,8 +2831,8 @@
     {
       "id": "building_17",
       "ownerId": "city_0",
-      "tileIndex": 2201,
-      "segment": 4,
+      "tileIndex": 77,
+      "segment": 3,
       "attributes": {
         "defence": 4
       }
@@ -2843,8 +2840,8 @@
     {
       "id": "building_18",
       "ownerId": "city_0",
-      "tileIndex": 2201,
-      "segment": 5,
+      "tileIndex": 77,
+      "segment": 4,
       "attributes": {
         "repair": 3
       }
@@ -2852,8 +2849,8 @@
     {
       "id": "building_19",
       "ownerId": "city_0",
-      "tileIndex": 2124,
-      "segment": 0,
+      "tileIndex": 374,
+      "segment": 3,
       "attributes": {
         "antiAir": 4
       }
@@ -2861,8 +2858,8 @@
     {
       "id": "building_20",
       "ownerId": "city_0",
-      "tileIndex": 2124,
-      "segment": 5,
+      "tileIndex": 374,
+      "segment": 4,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -2871,7 +2868,7 @@
     {
       "id": "building_21",
       "ownerId": "city_0",
-      "tileIndex": 2045,
+      "tileIndex": 375,
       "segment": 0,
       "attributes": {
         "splashAttack": 3,
@@ -2881,8 +2878,8 @@
     {
       "id": "building_22",
       "ownerId": "city_0",
-      "tileIndex": 2045,
-      "segment": 5,
+      "tileIndex": 375,
+      "segment": 1,
       "attributes": {
         "rangeAttack": 4,
         "kinetic": 1
@@ -2891,8 +2888,8 @@
     {
       "id": "building_23",
       "ownerId": "city_0",
-      "tileIndex": 2121,
-      "segment": 0,
+      "tileIndex": 375,
+      "segment": 5,
       "attributes": {
         "defence": 2,
         "repair": 2
@@ -2901,8 +2898,8 @@
     {
       "id": "building_24",
       "ownerId": "city_0",
-      "tileIndex": 2121,
-      "segment": 1,
+      "tileIndex": 376,
+      "segment": 0,
       "attributes": {
         "kinetic": 3,
         "rangeAttack": 2
@@ -2911,8 +2908,8 @@
     {
       "id": "building_25",
       "ownerId": "city_0",
-      "tileIndex": 2121,
-      "segment": 2,
+      "tileIndex": 376,
+      "segment": 5,
       "attributes": {
         "defence": 4
       }
@@ -2920,8 +2917,8 @@
     {
       "id": "building_26",
       "ownerId": "city_0",
-      "tileIndex": 2121,
-      "segment": 5,
+      "tileIndex": 278,
+      "segment": 0,
       "attributes": {
         "repair": 3
       }
@@ -2929,8 +2926,8 @@
     {
       "id": "building_27",
       "ownerId": "city_0",
-      "tileIndex": 2199,
-      "segment": 1,
+      "tileIndex": 278,
+      "segment": 4,
       "attributes": {
         "antiAir": 4
       }
@@ -2938,8 +2935,8 @@
     {
       "id": "building_28",
       "ownerId": "city_0",
-      "tileIndex": 2199,
-      "segment": 2,
+      "tileIndex": 278,
+      "segment": 5,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -2948,8 +2945,8 @@
     {
       "id": "building_29",
       "ownerId": "city_0",
-      "tileIndex": 2276,
-      "segment": 1,
+      "tileIndex": 179,
+      "segment": 0,
       "attributes": {
         "splashAttack": 3,
         "kinetic": 1
@@ -2958,8 +2955,8 @@
     {
       "id": "building_30",
       "ownerId": "city_0",
-      "tileIndex": 2276,
-      "segment": 2,
+      "tileIndex": 179,
+      "segment": 1,
       "attributes": {
         "rangeAttack": 4,
         "kinetic": 1
@@ -2968,8 +2965,8 @@
     {
       "id": "building_31",
       "ownerId": "city_0",
-      "tileIndex": 2276,
-      "segment": 3,
+      "tileIndex": 179,
+      "segment": 2,
       "attributes": {
         "defence": 2,
         "repair": 2
@@ -2978,8 +2975,8 @@
     {
       "id": "building_32",
       "ownerId": "city_0",
-      "tileIndex": 2277,
-      "segment": 0,
+      "tileIndex": 179,
+      "segment": 3,
       "attributes": {
         "kinetic": 3,
         "rangeAttack": 2
@@ -2988,8 +2985,8 @@
     {
       "id": "building_33",
       "ownerId": "city_0",
-      "tileIndex": 2277,
-      "segment": 3,
+      "tileIndex": 78,
+      "segment": 0,
       "attributes": {
         "defence": 4
       }
@@ -2997,8 +2994,8 @@
     {
       "id": "building_34",
       "ownerId": "city_0",
-      "tileIndex": 2278,
-      "segment": 0,
+      "tileIndex": 78,
+      "segment": 1,
       "attributes": {
         "repair": 3
       }
@@ -3006,8 +3003,8 @@
     {
       "id": "building_35",
       "ownerId": "city_0",
-      "tileIndex": 2278,
-      "segment": 3,
+      "tileIndex": 78,
+      "segment": 5,
       "attributes": {
         "antiAir": 4
       }
@@ -3015,8 +3012,8 @@
     {
       "id": "building_36",
       "ownerId": "city_0",
-      "tileIndex": 2278,
-      "segment": 4,
+      "tileIndex": 24975,
+      "segment": 3,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -3025,8 +3022,8 @@
     {
       "id": "building_37",
       "ownerId": "city_0",
-      "tileIndex": 2278,
-      "segment": 5,
+      "tileIndex": 24975,
+      "segment": 4,
       "attributes": {
         "splashAttack": 3,
         "kinetic": 1
@@ -3035,8 +3032,8 @@
     {
       "id": "building_38",
       "ownerId": "city_0",
-      "tileIndex": 2202,
-      "segment": 1,
+      "tileIndex": 24975,
+      "segment": 5,
       "attributes": {
         "rangeAttack": 4,
         "kinetic": 1
@@ -3044,572 +3041,418 @@
     },
     {
       "id": "building_39",
-      "ownerId": "city_0",
-      "tileIndex": 2202,
-      "segment": 2,
-      "attributes": {
-        "defence": 2,
-        "repair": 2
-      }
-    },
-    {
-      "id": "building_40",
-      "ownerId": "city_0",
-      "tileIndex": 2124,
-      "segment": 4,
+      "ownerId": "city_6",
+      "tileIndex": 31752,
+      "segment": 0,
       "attributes": {
         "kinetic": 3,
         "rangeAttack": 2
       }
     },
     {
-      "id": "building_41",
-      "ownerId": "city_0",
-      "tileIndex": 2045,
-      "segment": 4,
+      "id": "building_40",
+      "ownerId": "city_6",
+      "tileIndex": 31752,
+      "segment": 1,
       "attributes": {
         "defence": 4
       }
     },
     {
-      "id": "building_42",
-      "ownerId": "city_0",
-      "tileIndex": 2045,
-      "segment": 3,
+      "id": "building_41",
+      "ownerId": "city_6",
+      "tileIndex": 31752,
+      "segment": 2,
       "attributes": {
         "repair": 3
+      }
+    },
+    {
+      "id": "building_42",
+      "ownerId": "city_6",
+      "tileIndex": 31752,
+      "segment": 3,
+      "attributes": {
+        "antiAir": 4
       }
     },
     {
       "id": "building_43",
       "ownerId": "city_6",
-      "tileIndex": 32003,
-      "segment": 0,
+      "tileIndex": 31666,
+      "segment": 2,
       "attributes": {
-        "kinetic": 3,
-        "rangeAttack": 2
+        "armour": 3,
+        "kinetic": 1
       }
     },
     {
       "id": "building_44",
       "ownerId": "city_6",
-      "tileIndex": 32003,
-      "segment": 1,
+      "tileIndex": 31666,
+      "segment": 3,
       "attributes": {
-        "defence": 4
+        "splashAttack": 3,
+        "kinetic": 1
       }
     },
     {
       "id": "building_45",
       "ownerId": "city_6",
-      "tileIndex": 32003,
-      "segment": 2,
+      "tileIndex": 31751,
+      "segment": 0,
       "attributes": {
-        "repair": 3
+        "rangeAttack": 4,
+        "kinetic": 1
       }
     },
     {
       "id": "building_46",
       "ownerId": "city_6",
-      "tileIndex": 32003,
-      "segment": 3,
+      "tileIndex": 31751,
+      "segment": 1,
       "attributes": {
-        "antiAir": 4
+        "defence": 2,
+        "repair": 2
       }
     },
     {
       "id": "building_47",
       "ownerId": "city_6",
-      "tileIndex": 31920,
-      "segment": 0,
+      "tileIndex": 31751,
+      "segment": 2,
       "attributes": {
-        "armour": 3,
-        "kinetic": 1
+        "kinetic": 3,
+        "rangeAttack": 2
       }
     },
     {
       "id": "building_48",
       "ownerId": "city_6",
-      "tileIndex": 31920,
-      "segment": 1,
+      "tileIndex": 31751,
+      "segment": 5,
       "attributes": {
-        "splashAttack": 3,
-        "kinetic": 1
+        "defence": 4
       }
     },
     {
       "id": "building_49",
       "ownerId": "city_6",
-      "tileIndex": 31920,
-      "segment": 2,
+      "tileIndex": 31836,
+      "segment": 1,
       "attributes": {
-        "rangeAttack": 4,
-        "kinetic": 1
+        "repair": 3
       }
     },
     {
       "id": "building_50",
       "ownerId": "city_6",
-      "tileIndex": 31920,
-      "segment": 3,
+      "tileIndex": 31836,
+      "segment": 2,
       "attributes": {
-        "defence": 2,
-        "repair": 2
+        "antiAir": 4
       }
     },
     {
       "id": "building_51",
       "ownerId": "city_6",
-      "tileIndex": 32002,
-      "segment": 0,
+      "tileIndex": 31836,
+      "segment": 3,
       "attributes": {
-        "kinetic": 3,
-        "rangeAttack": 2
+        "armour": 3,
+        "kinetic": 1
       }
     },
     {
       "id": "building_52",
       "ownerId": "city_6",
-      "tileIndex": 32002,
-      "segment": 1,
+      "tileIndex": 31837,
+      "segment": 0,
       "attributes": {
-        "defence": 4
+        "splashAttack": 3,
+        "kinetic": 1
       }
     },
     {
       "id": "building_53",
       "ownerId": "city_6",
-      "tileIndex": 32002,
-      "segment": 2,
+      "tileIndex": 31837,
+      "segment": 3,
       "attributes": {
-        "repair": 3
+        "rangeAttack": 4,
+        "kinetic": 1
       }
     },
     {
       "id": "building_54",
       "ownerId": "city_6",
-      "tileIndex": 32002,
-      "segment": 5,
+      "tileIndex": 31837,
+      "segment": 4,
       "attributes": {
-        "antiAir": 4
+        "defence": 2,
+        "repair": 2
       }
     },
     {
       "id": "building_55",
       "ownerId": "city_6",
-      "tileIndex": 32084,
-      "segment": 1,
+      "tileIndex": 31837,
+      "segment": 5,
       "attributes": {
-        "armour": 3,
-        "kinetic": 1
+        "kinetic": 3,
+        "rangeAttack": 2
       }
     },
     {
       "id": "building_56",
       "ownerId": "city_6",
-      "tileIndex": 32084,
-      "segment": 2,
+      "tileIndex": 31753,
+      "segment": 1,
       "attributes": {
-        "splashAttack": 3,
-        "kinetic": 1
+        "defence": 4
       }
     },
     {
       "id": "building_57",
       "ownerId": "city_6",
-      "tileIndex": 32084,
-      "segment": 3,
+      "tileIndex": 31753,
+      "segment": 2,
       "attributes": {
-        "rangeAttack": 4,
-        "kinetic": 1
+        "repair": 3
       }
     },
     {
       "id": "building_58",
       "ownerId": "city_6",
-      "tileIndex": 32085,
-      "segment": 0,
+      "tileIndex": 31753,
+      "segment": 3,
       "attributes": {
-        "defence": 2,
-        "repair": 2
+        "antiAir": 4
       }
     },
     {
       "id": "building_59",
       "ownerId": "city_6",
-      "tileIndex": 32085,
-      "segment": 3,
+      "tileIndex": 31665,
+      "segment": 2,
       "attributes": {
-        "kinetic": 3,
-        "rangeAttack": 2
+        "armour": 3,
+        "kinetic": 1
       }
     },
     {
       "id": "building_60",
       "ownerId": "city_6",
-      "tileIndex": 32085,
-      "segment": 4,
+      "tileIndex": 31665,
+      "segment": 3,
       "attributes": {
-        "defence": 4
+        "splashAttack": 3,
+        "kinetic": 1
       }
     },
     {
       "id": "building_61",
       "ownerId": "city_6",
-      "tileIndex": 32085,
-      "segment": 5,
+      "tileIndex": 31750,
+      "segment": 0,
       "attributes": {
-        "repair": 3
+        "rangeAttack": 4,
+        "kinetic": 1
       }
     },
     {
       "id": "building_62",
       "ownerId": "city_6",
-      "tileIndex": 32004,
-      "segment": 0,
+      "tileIndex": 31750,
+      "segment": 1,
       "attributes": {
-        "antiAir": 4
+        "defence": 2,
+        "repair": 2
       }
     },
     {
       "id": "building_63",
       "ownerId": "city_6",
-      "tileIndex": 32004,
-      "segment": 1,
+      "tileIndex": 31750,
+      "segment": 2,
       "attributes": {
-        "armour": 3,
-        "kinetic": 1
+        "kinetic": 3,
+        "rangeAttack": 2
       }
     },
     {
       "id": "building_64",
       "ownerId": "city_6",
-      "tileIndex": 32004,
-      "segment": 2,
+      "tileIndex": 31750,
+      "segment": 5,
       "attributes": {
-        "splashAttack": 3,
-        "kinetic": 1
+        "defence": 4
       }
     },
     {
       "id": "building_65",
       "ownerId": "city_6",
-      "tileIndex": 32004,
-      "segment": 3,
+      "tileIndex": 31835,
+      "segment": 1,
       "attributes": {
-        "rangeAttack": 4,
-        "kinetic": 1
+        "repair": 3
       }
     },
     {
       "id": "building_66",
       "ownerId": "city_6",
-      "tileIndex": 31921,
-      "segment": 0,
+      "tileIndex": 31835,
+      "segment": 2,
       "attributes": {
-        "defence": 2,
-        "repair": 2
+        "antiAir": 4
       }
     },
     {
       "id": "building_67",
       "ownerId": "city_6",
-      "tileIndex": 31921,
+      "tileIndex": 31919,
       "segment": 1,
       "attributes": {
-        "kinetic": 3,
-        "rangeAttack": 2
+        "armour": 3,
+        "kinetic": 1
       }
     },
     {
       "id": "building_68",
       "ownerId": "city_6",
-      "tileIndex": 31921,
-      "segment": 5,
+      "tileIndex": 31919,
+      "segment": 2,
       "attributes": {
-        "defence": 4
+        "splashAttack": 3,
+        "kinetic": 1
       }
     },
     {
       "id": "building_69",
       "ownerId": "city_6",
-      "tileIndex": 31836,
-      "segment": 0,
+      "tileIndex": 31919,
+      "segment": 3,
       "attributes": {
-        "repair": 3
+        "rangeAttack": 4,
+        "kinetic": 1
       }
     },
     {
       "id": "building_70",
       "ownerId": "city_6",
-      "tileIndex": 31836,
-      "segment": 1,
+      "tileIndex": 31920,
+      "segment": 0,
       "attributes": {
-        "antiAir": 4
+        "defence": 2,
+        "repair": 2
       }
     },
     {
       "id": "building_71",
       "ownerId": "city_6",
-      "tileIndex": 31836,
-      "segment": 2,
+      "tileIndex": 31920,
+      "segment": 3,
       "attributes": {
-        "armour": 3,
-        "kinetic": 1
+        "kinetic": 3,
+        "rangeAttack": 2
       }
     },
     {
       "id": "building_72",
       "ownerId": "city_6",
-      "tileIndex": 31836,
-      "segment": 3,
+      "tileIndex": 31921,
+      "segment": 0,
       "attributes": {
-        "splashAttack": 3,
-        "kinetic": 1
+        "defence": 4
       }
     },
     {
       "id": "building_73",
       "ownerId": "city_6",
-      "tileIndex": 31919,
-      "segment": 0,
+      "tileIndex": 31921,
+      "segment": 3,
       "attributes": {
-        "rangeAttack": 4,
-        "kinetic": 1
+        "repair": 3
       }
     },
     {
       "id": "building_74",
       "ownerId": "city_6",
-      "tileIndex": 31919,
-      "segment": 1,
+      "tileIndex": 31921,
+      "segment": 4,
       "attributes": {
-        "defence": 2,
-        "repair": 2
+        "antiAir": 4
       }
     },
     {
       "id": "building_75",
       "ownerId": "city_6",
-      "tileIndex": 31919,
+      "tileIndex": 31921,
       "segment": 5,
       "attributes": {
-        "kinetic": 3,
-        "rangeAttack": 2
+        "armour": 3,
+        "kinetic": 1
       }
     },
     {
       "id": "building_76",
       "ownerId": "city_6",
-      "tileIndex": 31837,
+      "tileIndex": 31838,
       "segment": 0,
       "attributes": {
-        "defence": 4
+        "splashAttack": 3,
+        "kinetic": 1
       }
     },
     {
       "id": "building_77",
       "ownerId": "city_6",
-      "tileIndex": 31837,
+      "tileIndex": 31838,
       "segment": 1,
       "attributes": {
-        "repair": 3
+        "rangeAttack": 4,
+        "kinetic": 1
       }
     },
     {
       "id": "building_78",
       "ownerId": "city_6",
-      "tileIndex": 31837,
-      "segment": 5,
+      "tileIndex": 31838,
+      "segment": 2,
       "attributes": {
-        "antiAir": 4
+        "defence": 2,
+        "repair": 2
       }
     },
     {
       "id": "building_79",
       "ownerId": "city_6",
-      "tileIndex": 32001,
-      "segment": 0,
+      "tileIndex": 31838,
+      "segment": 3,
       "attributes": {
-        "armour": 3,
-        "kinetic": 1
+        "kinetic": 3,
+        "rangeAttack": 2
       }
     },
     {
       "id": "building_80",
       "ownerId": "city_6",
-      "tileIndex": 32001,
-      "segment": 1,
+      "tileIndex": 31754,
+      "segment": 2,
       "attributes": {
-        "splashAttack": 3,
-        "kinetic": 1
+        "defence": 4
       }
     },
     {
       "id": "building_81",
       "ownerId": "city_6",
-      "tileIndex": 32001,
-      "segment": 2,
-      "attributes": {
-        "rangeAttack": 4,
-        "kinetic": 1
-      }
-    },
-    {
-      "id": "building_82",
-      "ownerId": "city_6",
-      "tileIndex": 32083,
-      "segment": 1,
-      "attributes": {
-        "defence": 2,
-        "repair": 2
-      }
-    },
-    {
-      "id": "building_83",
-      "ownerId": "city_6",
-      "tileIndex": 32083,
-      "segment": 2,
-      "attributes": {
-        "kinetic": 3,
-        "rangeAttack": 2
-      }
-    },
-    {
-      "id": "building_84",
-      "ownerId": "city_6",
-      "tileIndex": 32164,
-      "segment": 1,
-      "attributes": {
-        "defence": 4
-      }
-    },
-    {
-      "id": "building_85",
-      "ownerId": "city_6",
-      "tileIndex": 32164,
-      "segment": 2,
+      "tileIndex": 31754,
+      "segment": 3,
       "attributes": {
         "repair": 3
-      }
-    },
-    {
-      "id": "building_86",
-      "ownerId": "city_6",
-      "tileIndex": 32164,
-      "segment": 3,
-      "attributes": {
-        "antiAir": 4
-      }
-    },
-    {
-      "id": "building_87",
-      "ownerId": "city_6",
-      "tileIndex": 32165,
-      "segment": 0,
-      "attributes": {
-        "armour": 3,
-        "kinetic": 1
-      }
-    },
-    {
-      "id": "building_88",
-      "ownerId": "city_6",
-      "tileIndex": 32165,
-      "segment": 3,
-      "attributes": {
-        "splashAttack": 3,
-        "kinetic": 1
-      }
-    },
-    {
-      "id": "building_89",
-      "ownerId": "city_6",
-      "tileIndex": 32166,
-      "segment": 0,
-      "attributes": {
-        "rangeAttack": 4,
-        "kinetic": 1
-      }
-    },
-    {
-      "id": "building_90",
-      "ownerId": "city_6",
-      "tileIndex": 32166,
-      "segment": 3,
-      "attributes": {
-        "defence": 2,
-        "repair": 2
-      }
-    },
-    {
-      "id": "building_91",
-      "ownerId": "city_6",
-      "tileIndex": 32166,
-      "segment": 4,
-      "attributes": {
-        "kinetic": 3,
-        "rangeAttack": 2
-      }
-    },
-    {
-      "id": "building_92",
-      "ownerId": "city_6",
-      "tileIndex": 32166,
-      "segment": 5,
-      "attributes": {
-        "defence": 4
-      }
-    },
-    {
-      "id": "building_93",
-      "ownerId": "city_6",
-      "tileIndex": 32086,
-      "segment": 0,
-      "attributes": {
-        "repair": 3
-      }
-    },
-    {
-      "id": "building_94",
-      "ownerId": "city_6",
-      "tileIndex": 32086,
-      "segment": 1,
-      "attributes": {
-        "antiAir": 4
-      }
-    },
-    {
-      "id": "building_95",
-      "ownerId": "city_6",
-      "tileIndex": 32086,
-      "segment": 2,
-      "attributes": {
-        "armour": 3,
-        "kinetic": 1
-      }
-    },
-    {
-      "id": "building_96",
-      "ownerId": "city_6",
-      "tileIndex": 32086,
-      "segment": 3,
-      "attributes": {
-        "splashAttack": 3,
-        "kinetic": 1
-      }
-    },
-    {
-      "id": "building_97",
-      "ownerId": "city_6",
-      "tileIndex": 32005,
-      "segment": 0,
-      "attributes": {
-        "rangeAttack": 4,
-        "kinetic": 1
       }
     }
   ],
   "playerColor": "#00e5ff",
-  "battleCentreTile": 2123
+  "battleCentreTile": 177
 }

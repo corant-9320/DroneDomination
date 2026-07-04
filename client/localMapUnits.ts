@@ -212,15 +212,80 @@ export function drawUnits(
     ctx.fillStyle = showRed ? 'rgba(255,80,80,0.95)' : 'rgba(220,220,220,0.85)';
     ctx.fillText(`#${idSuffix}`, labelX, labelY);
     ctx.restore();
+  }
+}
 
-    // Selection ring for selected units
-    if (selectedUnits.has(unit.id)) {
-      ctx.beginPath();
-      ctx.arc(sx, sy, size * 1.8, 0, Math.PI * 2);
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+/**
+ * Draw selection rings for selected units. Call this after terrain and units
+ * are drawn to avoid clipping issues on slopes.
+ *
+ * @param ctx           Canvas 2D context
+ * @param world         Current world data
+ * @param flatTiles     Visible flat tile list
+ * @param selectedUnits Set of selected unit ids
+ * @param wts           worldToScreen bound to current view params
+ * @param moveAnims     Optional map of unit id → in-flight glide state
+ */
+export function drawUnitSelectionRings(
+  ctx: CanvasRenderingContext2D,
+  world: WorldData,
+  flatTiles: FlatTile[],
+  selectedUnits: Set<string>,
+  wts: (wx: number, wy: number) => [number, number],
+  moveAnims: Map<
+    string,
+    { fromTile: number; fromSeg: number; toTile: number; toSeg: number; progress: number }
+  > = new Map(),
+): void {
+  if (selectedUnits.size === 0) return;
+
+  const units = world.units;
+  if (!units || units.length === 0) return;
+
+  const ftByTile = new Map<number, FlatTile>();
+  for (const ft of flatTiles) {
+    ftByTile.set(ft.tileIndex, ft);
+  }
+
+  for (const unit of units) {
+    if (!selectedUnits.has(unit.id)) continue;
+
+    const ft = ftByTile.get(unit.tileIndex);
+    if (!ft) continue;
+    const tile = world.tiles[unit.tileIndex];
+    if (tile.s !== 6) continue;
+
+    const segPos = getSegmentCentroid(ft, unit.segment);
+    if (!segPos) continue;
+
+    // Handle move animations same as drawUnits
+    const anim = moveAnims.get(unit.id);
+    let sx: number;
+    let sy: number;
+    if (anim) {
+      const ftFrom = ftByTile.get(anim.fromTile);
+      const ftTo = ftByTile.get(anim.toTile);
+      const cFrom = ftFrom ? getSegmentCentroid(ftFrom, anim.fromSeg) : null;
+      const cTo = ftTo ? getSegmentCentroid(ftTo, anim.toSeg) : null;
+      if (cFrom && cTo) {
+        const wx = cFrom.x + (cTo.x - cFrom.x) * anim.progress;
+        const wy = cFrom.y + (cTo.y - cFrom.y) * anim.progress;
+        [sx, sy] = wts(wx, wy);
+      } else {
+        [sx, sy] = wts(segPos.x, segPos.y);
+      }
+    } else {
+      [sx, sy] = wts(segPos.x, segPos.y);
     }
+
+    const size = getSegmentIconSize(ft, unit.segment, wts);
+
+    // Draw the selection ring unclipped
+    ctx.beginPath();
+    ctx.arc(sx, sy, size * 1.8, 0, Math.PI * 2);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
   }
 }
 
@@ -264,28 +329,43 @@ export function drawBuildings(
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(sprite, sx - spriteSize / 2, sy - spriteSize / 2, spriteSize, spriteSize);
       ctx.restore();
-      continue;
+      // Fall through to draw the label below.
+    } else {
+      // Fallback: vector block + roof while the sprite renders.
+      const w = size * 1.3;
+      const h = size * 1.1;
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.rect(sx - w / 2, sy - h / 2, w, h);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.beginPath();
+      ctx.moveTo(sx - w / 2, sy - h / 2);
+      ctx.lineTo(sx, sy - h);
+      ctx.lineTo(sx + w / 2, sy - h / 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
     }
 
-    // Fallback: vector block + roof while the sprite renders.
-    const w = size * 1.3;
-    const h = size * 1.1;
+    // Building number label — same format as unit labels (#N id suffix).
+    const idSuffix = b.id.replace(/^building_/, '');
+    const fontSize = Math.max(6, size * 0.75);
+    const labelX = sx + size * 0.5;
+    const labelY = sy + size * 0.9 + fontSize;
     ctx.save();
-    ctx.fillStyle = color;
-    ctx.strokeStyle = 'rgba(0,0,0,0.65)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.rect(sx - w / 2, sy - h / 2, w, h);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.beginPath();
-    ctx.moveTo(sx - w / 2, sy - h / 2);
-    ctx.lineTo(sx, sy - h);
-    ctx.lineTo(sx + w / 2, sy - h / 2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    ctx.font = `${fontSize}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillText(`#${idSuffix}`, labelX + 1, labelY + 1);
+    ctx.fillStyle = 'rgba(220,220,220,0.85)';
+    ctx.fillText(`#${idSuffix}`, labelX, labelY);
     ctx.restore();
   }
 }

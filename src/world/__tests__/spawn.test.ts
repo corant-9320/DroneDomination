@@ -119,7 +119,7 @@ describe('spawn', () => {
       expect(rangedUnits).toHaveLength(3);
     });
 
-    it('all units have maxHealth = 1 and currentHealth = 10', () => {
+    it('all units spawn at size 1 with full health (10)', () => {
       const tiles = buildSimpleMap();
       const cities = [{ id: 'city_0', tileIndex: 0 }];
       const units = spawnInitialUnits(tiles, cities);

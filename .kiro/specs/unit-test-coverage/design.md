@@ -23,6 +23,25 @@ This is a test-only change set. No production code under `src/world/**`, `server
 
 ## Architecture
 
+### Coverage-driven gap-finding
+
+The static module inventory below is the starting map, not the whole map. To find the behaviour that is actually untested — rather than guessing from filenames — this effort uses the existing coverage tooling as a gap locator.
+
+**Tooling:** `npm run test:cov` runs Vitest with the `@vitest/coverage-v8` provider (already configured in `vite.config.ts`). Coverage is scoped to `src/**`, `shared/**`, and `server/**`; `client/**` is intentionally excluded (3D/DOM-heavy, e2e/snapshot territory), matching this spec's scope. The run emits three artifacts:
+
+- the **terminal text summary** (quick per-tree overview),
+- `coverage/coverage-summary.json` (per-file statement/branch/function/line numbers, machine-readable),
+- `coverage/index.html` (drill-down to the exact uncovered lines and branches).
+
+**How coverage is used:**
+
+- **As a map of gaps, not a score to game.** The goal is behavioural confidence, not a percentage. Prioritise **uncovered branches** and **uncovered functions** in business logic — combat math, transformations, validation, and error handling — over chasing line totals.
+- **Report-only.** Do **not** add or enforce coverage thresholds (e.g. `coverage.thresholds`) unless explicitly asked. The report informs where to write tests; it is not an enforced gate.
+- **Cite specifics.** When a gap drives a test, reference the concrete file and line range from the report (e.g. `combatFormula.ts:42–58 branch uncovered`) so the change report is traceable.
+- **Note the genuinely untestable.** Where the report flags code that is not meaningfully unit-testable (pure type modules, thin IO wrappers, 3D/DOM glue), record that as a deliberate note rather than forcing a brittle test to turn the line green.
+
+Coverage complements the combat-correctness priority ordering: it surfaces *which* branches within each priority tier are still dark, but it does not reorder the tiers — combat modules are still covered first regardless of their raw coverage numbers.
+
 ### Module-under-test inventory
 
 The suite covers three source trees. Existing test files and the gaps this effort fills:
@@ -329,9 +348,18 @@ At most one labelled golden smoke test per balance formula (`repair`, `combatFor
 
 Where randomness matters, the seed is set through `src/world/rng.ts`. Time, network, and filesystem are mocked only at their boundaries. All other code runs for real.
 
+### Coverage pass
+
+Coverage runs bracket the P3 remaining-gap work to direct effort and confirm it landed:
+
+1. **Before P3**, run `npm run test:cov` and read the report (`coverage/coverage-summary.json` for per-file numbers, `coverage/index.html` for exact uncovered lines/branches). Let the uncovered branches and functions in in-scope business logic drive **which** remaining modules and branches get tests first, ahead of modules that are already well-exercised.
+2. **After P3 implementation**, re-run `npm run test:cov` to confirm the targeted gaps closed and that no previously-covered behaviour regressed.
+
+Coverage stays **report-only** — no thresholds are added or enforced. It informs prioritisation; it is not an acceptance gate.
+
 ### Verification
 
-The whole suite must pass under a **single** `npm test` run (Vitest single-run, no watch mode) — the global acceptance gate (Requirement 7.3). Each test file is kept under 300 lines, splitting by concern where needed. Run:
+The whole suite must pass under a **single** `npm test` run (Vitest single-run, no watch mode) — the global acceptance gate (Requirement 7.3). The coverage pass above is a prioritisation/confirmation aid layered on top of this gate, not a replacement for it. Each test file is kept under 300 lines, splitting by concern where needed. Run:
 
 ```
 npm test

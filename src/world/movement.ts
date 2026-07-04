@@ -55,11 +55,6 @@ export function getMovementMode(unit: Unit): MovementMode {
 // Terrain classification for movement
 // ---------------------------------------------------------------------------
 
-/** Whether a tile counts as "hill" for movement purposes. */
-export function isHillTerrain(tile: Tile): boolean {
-  return tile.elevationType === 'hills';
-}
-
 /**
  * Whether a tile is impassable to ground units by virtue of the cell itself.
  * Only ocean qualifies now — high elevation is no longer a blanket block;
@@ -100,7 +95,7 @@ export function hexEntryCost(
 /**
  * Calculate total MP cost for a multi-hex path (segment cost approximation).
  * path[0] is the starting tile (not counted), path[1..] are tiles entered.
- * Uses segmentCost per tile.
+ * Uses segmentCost per tile (arrival segment = neighbour facing back to origin).
  *
  * Returns Infinity if any tile in the path is impassable.
  */
@@ -112,7 +107,8 @@ export function pathMovementCost(
 ): number {
   let total = 0;
   for (let i = 1; i < path.length; i++) {
-    const cost = segmentCostShared(tiles[path[i]], mode, tiles[path[i - 1]]);
+    const arrivalSeg = tiles[path[i]].neighbours.indexOf(path[i - 1]);
+    const cost = segmentCostShared(tiles[path[i]], arrivalSeg >= 0 ? arrivalSeg : 0, mode);
     if (cost === Infinity) return Infinity;
     total += cost;
   }
@@ -132,7 +128,8 @@ export function maxHexesWithAttack(
   let spent = 0;
   let hexes = 0;
   for (let i = 1; i < path.length; i++) {
-    const cost = segmentCostShared(tiles[path[i]], mode, tiles[path[i - 1]]);
+    const arrivalSeg = tiles[path[i]].neighbours.indexOf(path[i - 1]);
+    const cost = segmentCostShared(tiles[path[i]], arrivalSeg >= 0 ? arrivalSeg : 0, mode);
     if (cost === Infinity) break;
     spent += cost;
     if (spent + 1 > totalMP) break; // need at least 1 MP remaining for attack
@@ -153,7 +150,8 @@ export function maxReachableHexes(
   let spent = 0;
   let hexes = 0;
   for (let i = 1; i < path.length; i++) {
-    const cost = segmentCostShared(tiles[path[i]], mode, tiles[path[i - 1]]);
+    const arrivalSeg = tiles[path[i]].neighbours.indexOf(path[i - 1]);
+    const cost = segmentCostShared(tiles[path[i]], arrivalSeg >= 0 ? arrivalSeg : 0, mode);
     if (cost === Infinity) break;
     spent += cost;
     if (spent > totalMP) break;
@@ -199,9 +197,11 @@ export function moveUnit(
       const mode = getMovementMode(unit);
       const destTile = tiles[toTileIndex];
 
-      // Unified segment-step cost: one step into the destination tile, priced
-      // by destination terrain and gated by the height step from the origin.
-      const cost = segmentCostShared(destTile, mode, tiles[fromIndex]);
+      // Unified segment-step cost: arrival segment is the face pointing back
+      // toward the origin tile, so the steepness gate applies to the exact
+      // segment the unit steps onto.
+      const arrivalSeg = destTile.neighbours.indexOf(fromIndex);
+      const cost = segmentCostShared(destTile, arrivalSeg >= 0 ? arrivalSeg : 0, mode);
 
       if (cost === Infinity) return false;
       const remaining = movementRemaining(unit, turnState);

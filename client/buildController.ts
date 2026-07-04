@@ -49,6 +49,7 @@ export function makePlacementContext(world: WorldData, factionId: string): Place
         sides: t.s,
         neighbours: t.n,
         groundPassable: t.terrain !== 'ocean',
+        segSteep: t.ss ?? new Array<number>(t.s).fill(0),
       };
     },
     buildings: world.buildings.map((b) => ({
@@ -175,7 +176,11 @@ export function foundCity(world: WorldData, city: CityData): BuildingData | null
   city.ownerId = factionId;
   city.ownedHexes = [city.tileIndex];
   const tile = world.tiles[city.tileIndex];
-  if (tile) tile.city = city.id;
+  if (tile) {
+    tile.city = city.id;
+    // A city hex is a settled, cleared site — never forested.
+    tile.f = false;
+  }
 
   const segment = chooseFoundingSegment(makePlacementContext(world, factionId), city.tileIndex);
   if (segment === null) return null;

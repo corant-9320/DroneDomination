@@ -11,7 +11,27 @@
         "create_entities",
         "create_relations",
         "search_nodes",
-        "add_observations"
+        "add_observations",
+        "open_nodes"
+      ]
+    },
+    "git": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@cyanheads/git-mcp-server"
+      ],
+      "env": {
+        "GIT_MCP_BASE_DIR": "c:\\Kiro\\DroneDomination"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "git_status",
+        "git_log",
+        "git_diff",
+        "git_branch_list",
+        "git_set_working_dir",
+        "git_add"
       ]
     },
     "chrome-devtools": {
@@ -37,7 +57,8 @@
         "new_page",
         "take_snapshot",
         "click",
-        "wait_for"
+        "wait_for",
+        "resize_page"
       ]
     }
   }

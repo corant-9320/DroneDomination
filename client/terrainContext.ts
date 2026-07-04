@@ -51,21 +51,17 @@ export class TerrainContext {
     if (tile.bridge) return false;          // a bridge deck is dry crossing
     if (tile.rv !== undefined) return true; // river hexes are whole-hex water
     const terrain = String(tile.terrain ?? '').toLowerCase();
-    const elev = String(tile.elevType ?? '').toLowerCase();
     return (
       terrain === 'ocean' ||
       terrain === 'water' ||
-      terrain === 'lake' ||
-      elev === 'ocean' ||
-      elev === 'water' ||
-      elev === 'lake'
+      terrain === 'lake'
     );
   }
 
   /** Base colour for feathering only; cities keep their hard faction fill. */
   terrainFillColor(tile: TileData): string {
     if (tile.city) return factionColor(this.world, tile.city);
-    if (tile.elevType === 'mountain' || tile.terrain === 'mountain') return '#cfcfcf';
+    if ((tile.h ?? 0) >= 9) return '#cfcfcf';
     return baseTerrainColor(tile);
   }
 
@@ -90,21 +86,15 @@ export class TerrainContext {
     return tileHeight(tile);
   }
 
-  /** Convert elevation labels into discrete contour levels. */
+  /** Convert terrain height into discrete contour levels for rendering. */
   elevationLevel(tile: TileData): number {
-    const elev = tile.elevType ?? tile.terrain;
-    switch (elev) {
-      case 'ocean':    return -1;
-      case 'flat':     return 0;
-      case 'rolling':  return 1;
-      case 'hills':    return 2;
-      case 'mountain': return 3;
-      default:
-        if (tile.terrain === 'ocean')    return -1;
-        if (tile.terrain === 'hills')    return 2;
-        if (tile.terrain === 'mountain') return 3;
-        return 0;
-    }
+    const terrain = tile.terrain;
+    if (terrain === 'ocean' && tile.rv === undefined) return -1;
+    const h = tileHeight(tile);
+    if (h >= 9) return 3;
+    if (h >= 6) return 2;
+    if (h >= 3) return 1;
+    return 0;
   }
 
   /** True when this tile sits on the outer edge of an elevation threshold. */

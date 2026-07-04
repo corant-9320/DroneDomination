@@ -87,7 +87,10 @@ export function findPath(
   for (let i = 0; i < pathTiles.length; i++) indexMap.set(pathTiles[i], i);
 
   return sharedFindPath(pathTiles, fromIndex, toIndex, (pt) => {
-    const idx = indexMap.get(pt);
-    return idx !== undefined ? costFn(tiles[idx]) : 1;
+    // Every PathTile passed to sharedFindPath originates from `pathTiles`,
+    // and every one of those was registered in indexMap above — so the lookup
+    // always succeeds. The non-null assertion is safe by construction.
+    const idx = indexMap.get(pt)!;
+    return costFn(tiles[idx]);
   });
 }

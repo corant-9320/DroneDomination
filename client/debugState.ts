@@ -132,12 +132,12 @@ export function installDebugState(deps: DebugStateDeps): void {
       const startTile = world.tiles[unit.tileIndex];
       const neighbours = (startTile as unknown as { n: number[] }).n ?? [];
       const neighbourReach = neighbours.map((nTile, dir) => {
-        const nt = world.tiles[nTile] as unknown as { terrain?: string; elevType?: string; f?: boolean };
+        const nt = world.tiles[nTile] as unknown as { terrain?: string; h?: number; f?: boolean };
         return {
           dir,
           tile: nTile,
           terrain: nt?.terrain,
-          elevType: nt?.elevType,
+          height: nt?.h,
           forested: nt?.f,
           reachable: res.moveRangeTiles.has(nTile),
           cost: res.moveRangeTiles.get(nTile) ?? null,

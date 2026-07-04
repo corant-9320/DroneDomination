@@ -27,6 +27,7 @@ import {
 import { facingFromTravel } from './facing.js';
 import {
   buildEnemySegmentSet,
+  buildBuildingSegmentSet,
   getRangeTiles,
   MovementRangeResult,
   weaponRangeInTileHops,
@@ -187,6 +188,8 @@ export function computeMovementCostRoute(
   const mode = getMovementMode(unit.attributes);
   const tiles = world.tiles;
   const enemySegments = buildEnemySegmentSet(world, unit.ownerId);
+  // Ground units cannot pass through building-occupied segments.
+  const buildingSegments = mode !== 'flight' ? buildBuildingSegmentSet(world) : null;
 
   const encode = (tile: number, seg: number) => tile * 6 + seg;
   const startKey = encode(unit.tileIndex, unit.segment);
@@ -213,13 +216,14 @@ export function computeMovementCostRoute(
     const currentSeg = currentKey % 6;
     const tile = tiles[currentTile];
 
-    const intraStepCost = sharedSegmentCost(tile, mode);
+    const intraStepCost = sharedSegmentCost(tile, 0, mode);
     if (intraStepCost !== Infinity) {
       for (let delta = -1; delta <= 1; delta += 2) {
         const adjSeg = ((currentSeg + delta) % 6 + 6) % 6;
         const adjKey = encode(currentTile, adjSeg);
         if (enemySegments.has(adjKey)) continue;
-        const newCost = currentCost + intraStepCost;
+        if (buildingSegments?.has(adjKey)) continue;
+        const newCost = currentCost + sharedSegmentCost(tile, adjSeg, mode);
         if (newCost > remainingMP) continue;
         const existing = dist.get(adjKey);
         if (existing === undefined || newCost < existing) {
@@ -233,16 +237,17 @@ export function computeMovementCostRoute(
     if (currentSeg < tile.n.length) {
       const neighbour = tile.n[currentSeg];
       const nTile = tiles[neighbour];
-      const crossCost = sharedSegmentCost(nTile, mode, tile);
+      const arrivalSeg = nTile.n.indexOf(currentTile);
+      const arrival = arrivalSeg >= 0 ? arrivalSeg : 0;
+      const crossCost = sharedSegmentCost(nTile, arrival, mode);
       if (crossCost !== Infinity) {
         const newCost = currentCost + crossCost;
         if (newCost <= remainingMP) {
-          const arrivalSeg = nTile.n.indexOf(currentTile);
-          const arrival = arrivalSeg >= 0 ? arrivalSeg : 0;
           const candidateSegs = [arrival, (arrival + 1) % 6, (arrival + 5) % 6];
           for (const cSeg of candidateSegs) {
             const nKey = encode(neighbour, cSeg);
             if (enemySegments.has(nKey)) continue;
+            if (buildingSegments?.has(nKey)) continue;
             const existing = dist.get(nKey);
             if (existing === undefined || newCost < existing) {
               dist.set(nKey, newCost);
@@ -269,12 +274,11 @@ export function computeMovementCostRoute(
 
   const hops: MovementRouteHop[] = [];
   let cumulative = 0;
-  let prevHopKey = startKey;
 
   for (const key of segPath) {
     const tileIdx = Math.floor(key / 6);
-    const prevTileIdx = Math.floor(prevHopKey / 6);
-    const hopCost = sharedSegmentCost(tiles[tileIdx], mode, tiles[prevTileIdx]);
+    const seg = key % 6;
+    const hopCost = sharedSegmentCost(tiles[tileIdx], seg, mode);
     cumulative += hopCost;
     const mpAfter = remainingMP - cumulative;
     let zone: RouteHopZone;
@@ -292,7 +296,6 @@ export function computeMovementCostRoute(
       cumulativeCost: Math.round(cumulative * 100) / 100,
       zone,
     });
-    prevHopKey = key;
   }
 
   return {

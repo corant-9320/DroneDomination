@@ -421,20 +421,26 @@ function affordableSteps(
     const departure = departureSeg >= 0 ? departureSeg : 0;
     const diff = Math.abs(currentSegment - departure);
     const pivotSteps = Math.min(diff, 6 - diff);
-    const pivotStepCost = segmentCost(tiles[path[i - 1]], mode);
-    if (pivotStepCost === Infinity) break;
-    spent += pivotSteps * pivotStepCost;
+    // Cost each pivot step by its actual target segment (steepness-gated)
+    const direction = ((departure - currentSegment + 9) % 6) < 3 ? 1 : -1;
+    let pivotSeg = currentSegment;
+    for (let p = 0; p < pivotSteps; p++) {
+      pivotSeg = ((pivotSeg + direction) % 6 + 6) % 6;
+      const pivotCost = segmentCost(tiles[path[i - 1]], pivotSeg, mode);
+      if (pivotCost === Infinity) break;
+      spent += pivotCost;
+    }
     if (spent + reserve > totalMP) break;
 
-    // Cross border
-    const crossCost = segmentCost(tiles[path[i]], mode, tiles[path[i - 1]]);
+    // Cross border — gate on arrival segment
+    const arrivalSeg = tiles[path[i]].n.indexOf(path[i - 1]);
+    const arrival = arrivalSeg >= 0 ? arrivalSeg : 0;
+    const crossCost = segmentCost(tiles[path[i]], arrival, mode);
     if (crossCost === Infinity) break;
     spent += crossCost;
     if (spent + reserve > totalMP) break;
 
-    // Arrival segment in the new hex
-    const arrivalSeg = tiles[path[i]].n.indexOf(path[i - 1]);
-    currentSegment = (arrivalSeg >= 0 ? arrivalSeg : 0) as UnitData['segment'];
+    currentSegment = arrival as UnitData['segment'];
     steps++;
   }
   return steps;
@@ -458,8 +464,8 @@ function getAttackRange(unit: UnitData): number {
 // executeAiTurn is retained as a reference implementation / fallback.
 
 /** Map a client tile to the minimal wire shape the combat/AI endpoints expect. */
-function aiMinimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; elev: string; f?: boolean; h?: number; pos: [number, number, number]; b: [number, number, number][] } {
-  return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, elev: t.elevType, f: t.f || undefined, h: t.h, pos: t.pos, b: t.b };
+function aiMinimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; f?: boolean; h?: number; pos: [number, number, number]; b: [number, number, number][] } {
+  return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, f: t.f || undefined, h: t.h, pos: t.pos, b: t.b };
 }
 
 /**

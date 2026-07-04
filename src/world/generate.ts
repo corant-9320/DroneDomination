@@ -20,9 +20,10 @@
  *   seed always produces the same world.
  */
 
-import { World, Tile, City, Vec3, TerrainType, ElevationType } from './types.js';
+import { World, Tile, City, Vec3, TerrainType } from './types.js';
 import * as v from './vec3.js';
-import { graphDistance } from './pathfinding.js';
+import { graphDistance, tilesWithinRadius } from './pathfinding.js';
+import { computeSegmentSteepness } from './segmentSteepness.js';
 
 // Re-export PRNG and geometry from their focused modules
 export { mulberry32 } from './rng.js';
@@ -46,7 +47,7 @@ import { generateGeodesicSphere, computeDual } from './geodesic.js';
  *
  * Three independent dimensions per tile:
  *   TerrainType  — grassland | plains | tundra | desert | ocean
- *   ElevationType — flat | rolling | hills | mountain  (ocean tiles are always flat)
+ *   height       — 0–11 (continuous elevation; ocean = 0)
  *   forested      — boolean                            (false for ocean/tundra/desert)
  *
  * ─── Scale-aware feature sizing ──────────────────────────────────────────────
@@ -515,7 +516,6 @@ function growDesertPatches(
 
 export interface TileTerrainData {
   terrainType: TerrainType;
-  elevationType: ElevationType;
   /** Discrete terrain height 0–11. Ocean tiles are 0. */
   height: number;
   forested: boolean;
@@ -909,9 +909,6 @@ export function generateTerrain(
     return Math.max(0, Math.min(8, Math.round(Math.max(baseH, apron))));
   };
 
-  const heightBand = (h: number): ElevationType =>
-    h >= 9 ? 'mountain' : h >= 6 ? 'hills' : h >= 3 ? 'rolling' : 'flat';
-
   // Build heights once, then smooth only mountain-core heights.  This avoids
   // salt-and-pepper 9/10/11 peak blobs while keeping visible summit variation.
   const heights = new Array<number>(numTiles).fill(0);
@@ -942,7 +939,7 @@ export function generateTerrain(
 
   return positions.map((pos, i) => {
     if (isOceanMap[i]) {
-      return { terrainType: 'ocean', elevationType: 'flat', height: 0, forested: false };
+      return { terrainType: 'ocean', height: 0, forested: false } as TileTerrainData;
     }
 
     const len = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z) || 1;
@@ -956,8 +953,7 @@ export function generateTerrain(
     const subtropical = 1 - Math.min(1, Math.abs(latAbs - 0.45) / 0.28);
 
     const height = heights[i];
-    const elevationType = heightBand(height);
-    const isMountain = mountainSet.has(i) || elevationType === 'mountain';
+    const isMountain = mountainSet.has(i) || height >= 9;
 
     let terrainType: TerrainType;
     if (isPolarIce(i)) {
@@ -979,12 +975,12 @@ export function generateTerrain(
 
     const forested =
       terrainType === 'grassland' &&
-      elevationType !== 'mountain' &&
+      height < 9 &&
       moisture > 0.52 &&
       temp > 0.38 &&
       climateNoise[i] > -0.05;
 
-    return { terrainType, elevationType, height, forested };
+    return { terrainType, height, forested };
   });
 }
 
@@ -1047,14 +1043,14 @@ function smoothMountainPeakHeights(
 
 function classifyForested(
   terrain: TerrainType,
-  elevationType: ElevationType,
+  height: number,
   forestNoise: number,
 ): boolean {
   if (terrain === 'ocean')    return false;
   if (terrain === 'tundra')   return false;
   if (terrain === 'desert')   return false;
   if (terrain === 'plains')   return false;
-  if (elevationType === 'mountain') return false;
+  if (height >= 9) return false;
 
   return forestNoise > 0.15;
 }
@@ -1529,7 +1525,7 @@ function buildMountainExclusionSet(tiles: Tile[], radius: number): Set<number> {
   const dist = new Map<number, number>();
 
   for (let i = 0; i < tiles.length; i++) {
-    if (tiles[i].elevationType === 'mountain') {
+    if ((tiles[i].height ?? 0) >= 9) {
       excluded.add(i);
       queue.push(i);
       dist.set(i, 0);
@@ -1666,7 +1662,6 @@ export function generateWorld(seed: number): World {
     position3d: dt.position3d,
     boundary: dt.boundary,
     terrainType: terrainData[i].terrainType,
-    elevationType: terrainData[i].elevationType,
     height: terrainData[i].height,
     forested: terrainData[i].forested,
   }));
@@ -1683,13 +1678,10 @@ export function generateWorld(seed: number): World {
   // so the client renders them as river-blue and engineers can bridge them.
   // We KEEP the carved height (set in generateRivers) so the river blends into
   // the terrain as a valley — the globe extrudes river hexes by this height
-  // rather than dropping them to sea level. ElevationType tracks that height.
-  const heightBand = (h: number): Tile['elevationType'] =>
-    h >= 9 ? 'mountain' : h >= 6 ? 'hills' : h >= 3 ? 'rolling' : 'flat';
+  // rather than dropping them to sea level.
   for (const t of tiles) {
     if (t.riverTo !== undefined) {
       t.terrainType = 'ocean';
-      t.elevationType = heightBand(t.height ?? 0);
       t.forested = false;
     }
   }
@@ -1707,12 +1699,13 @@ export function generateWorld(seed: number): World {
     console.log(`  ${k}: ${v}`);
   });
 
-  // Elevation types
+  // Elevation distribution (by height)
   const elevCounts: Record<string, number> = {};
   for (const tile of tiles) {
-    elevCounts[tile.elevationType] = (elevCounts[tile.elevationType] || 0) + 1;
+    const band = tile.height >= 9 ? 'mountain(9+)' : tile.height >= 6 ? 'hills(6-8)' : tile.height >= 3 ? 'rolling(3-5)' : 'lowlands(0-2)';
+    elevCounts[band] = (elevCounts[band] || 0) + 1;
   }
-  console.log('\nElevation types:');
+  console.log('\nElevation distribution:');
   Object.entries(elevCounts).sort((a, b) => b[1] - a[1]).forEach(([k, v]) => {
     console.log(`  ${k}: ${v}`);
   });
@@ -1734,7 +1727,7 @@ export function generateWorld(seed: number): World {
     let combo = tile.terrainType;
     // Elevation applies to all land tiles
     if (tile.terrainType !== 'ocean') {
-      combo += `:${tile.elevationType}`;
+      combo += `:h${tile.height}`;
     }
     // Vegetation applies to land tiles except tundra and desert
     if (tile.terrainType !== 'ocean' && tile.terrainType !== 'tundra' && tile.terrainType !== 'desert') {
@@ -1742,7 +1735,7 @@ export function generateWorld(seed: number): World {
     }
     comboCounts[combo] = (comboCounts[combo] || 0) + 1;
   }
-  console.log('\nValid combinations (terrain[:elevation][:vegetation]):');
+  console.log('\nValid combinations (terrain[:height][:vegetation]):');
   Object.entries(comboCounts).sort((a, b) => b[1] - a[1]).forEach(([k, v]) => {
     console.log(`  ${k}: ${v}`);
   });
@@ -1753,33 +1746,41 @@ export function generateWorld(seed: number): World {
   console.log(`  Cities placed: ${cities.length}`);
   console.timeEnd('cities');
 
-  // Step 6: Sanitise city neighbourhoods
-  // Tiles adjacent to a city must not be mountain or ocean — they would block
-  // unit movement and look wrong next to a settlement.
+  // Step 6: Flatten city platforms (radius 3)
+  // Every city sits on a lowlands hex platform of radius 3 — all tiles within 3
+  // hops of the city centre are lowered (or kept) to height ≤ 2. Rivers and
+  // ocean within the platform are converted to passable land. This guarantees
+  // unit deployment space and clean building sites.
+  const CITY_FLAT_RADIUS = 3;
+  const MAX_FLAT_HEIGHT = 2;
+
   for (const city of cities) {
-    // A city's own hex is a settled, cleared site — never forested.
-    tiles[city.tileIndex].forested = false;
-    for (const ni of tiles[city.tileIndex].neighbours) {
-      const t = tiles[ni];
+    const platform = tilesWithinRadius(tiles, city.tileIndex, CITY_FLAT_RADIUS);
+
+    for (const [idx] of platform) {
+      const t = tiles[idx];
+
+      // A city's own hex is a settled, cleared site — never forested.
+      if (idx === city.tileIndex) t.forested = false;
+
+      // Convert ocean/river tiles within the platform to passable land.
       if (t.terrainType === 'ocean') {
-        // Promote to plains at flat elevation
-        t.terrainType  = 'plains';
-        t.elevationType = 'flat';
-        t.height        = 1;
-        t.forested      = false;
-        t.riverTo       = undefined; // no river running through a city's doorstep
-      } else if (t.elevationType === 'mountain') {
-        // Demote mountain → hills, keep terrain type (already 'plains' for mountains)
-        t.elevationType = 'hills';
-        t.height        = 7;
+        t.terrainType = 'plains';
+        t.forested = false;
+        t.riverTo = undefined;
+      }
+
+      // Cap height to ensure lowlands.
+      if (t.height > MAX_FLAT_HEIGHT) {
+        t.height = MAX_FLAT_HEIGHT;
       }
     }
   }
 
-  // City sanitisation can clear a river tile on a city's doorstep (rivers carry
-  // terrain 'ocean', so the ocean→plains branch above also strips their
-  // riverTo), orphaning the river upstream. Re-guarantee drainage, routing the
-  // orphaned channels around the city (its hex + doorsteps are off-limits) to
+  // City platform flattening can clear river tiles (rivers carry terrain
+  // 'ocean', so the ocean→plains conversion above also strips their riverTo),
+  // orphaning the river upstream. Re-guarantee drainage, routing the orphaned
+  // channels around the platform (radius 3 from each city is off-limits) to
   // the sea — or truncating cleanly where a city fully blocks the outlet. Then
   // reconcile terrain so every river tile reads as water and any truncated tile
   // reverts to land (no stray inland ocean).
@@ -1789,32 +1790,28 @@ export function generateWorld(seed: number): World {
 
     const forbidden = new Set<number>();
     for (const city of cities) {
-      forbidden.add(city.tileIndex);
-      for (const ni of tiles[city.tileIndex].neighbours) forbidden.add(ni);
+      const platform = tilesWithinRadius(tiles, city.tileIndex, CITY_FLAT_RADIUS);
+      for (const [idx] of platform) forbidden.add(idx);
     }
     ensureRiverDrainage(tiles, forbidden);
 
-    const band = (h: number): Tile['elevationType'] =>
-      h >= 9 ? 'mountain' : h >= 6 ? 'hills' : h >= 3 ? 'rolling' : 'flat';
     for (let i = 0; i < tiles.length; i++) {
       const t = tiles[i];
       if (t.riverTo !== undefined) {
         // Active river tile — water, same as ocean for movement.
         t.terrainType = 'ocean';
-        t.elevationType = band(t.height ?? 0);
         t.forested = false;
       } else if (wasRiver.has(i)) {
         // Truncated channel — return it to passable land.
         t.terrainType = 'plains';
-        t.elevationType = band(t.height ?? 0);
         t.forested = false;
       }
     }
   }
 
-  // City sanitisation can alter neighbouring elevations after rivers have been
-  // carved. Re-apply the river rule as the last terrain mutation: every river
-  // tile has exactly the same height as its lowest neighbour.
+  // City platform flattening can alter neighbouring elevations after rivers
+  // have been carved. Re-apply the river rule as the last terrain mutation:
+  // every river tile has exactly the same height as its lowest neighbour.
   {
     const riverTiles = tiles
       .map((t, i) => (t.riverTo !== undefined ? i : -1))
@@ -1832,12 +1829,15 @@ export function generateWorld(seed: number): World {
       }
       if (!changed) break;
     }
-    const heightBandFinal = (h: number): Tile['elevationType'] =>
-      h >= 9 ? 'mountain' : h >= 6 ? 'hills' : h >= 3 ? 'rolling' : 'flat';
-    for (const i of riverTiles) tiles[i].elevationType = heightBandFinal(tiles[i].height ?? 0);
   }
 
   console.timeEnd('total');
+
+  // Step 4.6: Compute per-segment steepness — must run after all terrain
+  // mutations (rivers, city sanitisation, river re-levelling) are done.
+  console.time('steepness');
+  computeSegmentSteepness(tiles);
+  console.timeEnd('steepness');
 
   return {
     tiles,

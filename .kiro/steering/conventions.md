@@ -58,6 +58,17 @@ inclusion: always
 - **Add tests for new code paths.** When you introduce a new code path that isn't covered — a new module, endpoint, or distinct branch of behaviour — add focused tests for it proactively, so it has ongoing coverage. Also add a regression guard when fixing a bug. Don't pad the suite with tests for trivial, already-covered, or purely-cosmetic code.
 - **Keep test files under 300 lines.** If a test file grows past that, it's testing too many implementation details.
 
+## Git Tools
+
+Two Git capabilities are available — use the right one for the job:
+
+| Tool | When to use |
+|------|-------------|
+| **Built-in `mcp_git_*` tools** (Kiro native) | Committing, pushing, branching, cherry-pick, reset — any write operation. Preferred for all standard git workflow tasks. |
+| **`@cyanheads/git-mcp-server`** (MCP server) | Complex read-heavy queries: structured log filtering, blame, diffstat, stash inspection. Use when the built-in tools don't cover the query. |
+
+Never use both for the same operation in one turn. Prefer the built-in tools by default.
+
 ## Related Files
 
 - `architecture.md` (+ `architecture-*.md`) — auto-load the relevant `docs/architecture/` wiki page when editing `src/`, `server/`, or config files

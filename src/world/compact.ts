@@ -43,11 +43,13 @@ export function toCompactTile(t: Tile): WireTile {
       Math.round(v.z * 1e5) / 1e5,
     ]),
     terrain: t.terrainType,
-    elevType: t.elevationType,
-    h: t.height,
+    h: t.height || undefined,
     f: t.forested || undefined,
     rv: t.riverTo,
     city: t.cityId || undefined,
+    ss: t.segSteep
+      ? t.segSteep.map((v) => Math.round(v * 1e4) / 1e4)
+      : undefined,
   };
 }
 

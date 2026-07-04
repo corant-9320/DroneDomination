@@ -24,7 +24,7 @@ import {
 // ---------------------------------------------------------------------------
 
 export const DEFENCE_SCALE = 0.75;
-export const MAX_DAMAGE = 30;
+export const MAX_DAMAGE = 50;
 export const MIN_DAMAGE = 1;
 export const SPLASH_SCALE = 0.3;
 
@@ -131,16 +131,38 @@ export function calculateRangeEfficiency(distance: number): number {
 
 /**
  * Modified attack power.
- * AttackPower = (baseWeaponValue × chassisModifier × rangeEfficiency) + orientationBonus,
+ * AttackPower = baseWeaponValue × chassisModifier × rangeEfficiency,
  * floored at 0.01 to avoid zero-division in the damage formula.
+ *
+ * Orientation no longer boosts attack power — it degrades the defender's armour
+ * instead (see effectiveDefenceWithOrientation).
  */
 export function modifiedAttackPower(
   chassisModifier: number,
   baseWeaponValue: number,
-  orientationBonus: number,
   rangeEfficiency: number,
 ): number {
-  return Math.max(0.01, baseWeaponValue * chassisModifier * rangeEfficiency + orientationBonus);
+  return Math.max(0.01, baseWeaponValue * chassisModifier * rangeEfficiency);
+}
+
+/**
+ * Compose the defender's effective defence, applying the orientation-based
+ * armour penalty before scaling.
+ *
+ *   effectiveArmour  = max(0, armour − orientationArmourPenalty)
+ *   effectiveDefence = (effectiveArmour + otherDefence) × DEFENCE_SCALE
+ *
+ * Front attacks (penalty 0) leave armour intact; rear attacks (penalty up to 3)
+ * strip armour (never below 0). Only the armour component is affected — EW and
+ * terrain are unchanged.
+ */
+export function effectiveDefenceWithOrientation(
+  armour: number,
+  otherDefence: number,
+  orientationArmourPenalty: number,
+): number {
+  const effectiveArmour = Math.max(0, armour - orientationArmourPenalty);
+  return (effectiveArmour + otherDefence) * DEFENCE_SCALE;
 }
 
 /**
@@ -198,12 +220,18 @@ export interface DamageInput {
   attackerChassis: ChassisType;
   /** Raw weapon attribute value (kinetic / splashAttack / antiAir). Clamped to [1,5] internally. */
   baseWeaponValue: number;
-  /** Bearing-based orientation bonus (0–2). Pass 0 for non-primary splash victims. */
-  orientationBonus: number;
+  /**
+   * Bearing-based orientation armour penalty (0–3). Subtracted from the
+   * defender's armour before scaling. Pass 0 for front / non-primary splash
+   * victims / reaction fire.
+   */
+  orientationArmourPenalty: number;
   /** Segment distance attacker→target, for range falloff. */
   distance: number;
-  /** Defender's effective defence (DefencePower × DEFENCE_SCALE), already composed by the caller. */
-  effectiveDefence: number;
+  /** Defender's raw armour component (0–5, unscaled). The orientation penalty is applied to this. */
+  armour: number;
+  /** Defender's other defence components (EW + terrain), unscaled. Not affected by orientation. */
+  defenceOther: number;
   /** Whether the target is a drone (drives incoming-damage modifier). */
   targetIsDrone: boolean;
   /** Anti-air reaction fire: no range falloff, no orientation bonus (snap shot). */
@@ -224,21 +252,25 @@ export interface DamageBreakdown {
  * Compute damage for a single attack from fully-gathered, plain inputs.
  *
  * Order of operations (matches the documented combat rules):
- *   1. AttackPower = (clamp(base,1,5) × chassisMod × rangeEff) + orientation
- *   2. rawFormulaDamage = ratio curve vs effectiveDefence
- *   3. × SPLASH_SCALE (splash mode only)
- *   4. × drone incoming-damage modifier (drone targets only)
+ *   1. AttackPower = clamp(base,1,5) × chassisMod × rangeEff
+ *   2. effectiveDefence = (max(0, armour − orientationPenalty) + other) × SCALE
+ *   3. rawFormulaDamage = ratio curve vs effectiveDefence
+ *   4. × SPLASH_SCALE (splash mode only)
+ *   5. × drone incoming-damage modifier (drone targets only)
  *
- * Elevation no longer affects damage (it affects range — see rangeCheck.ts).
+ * Orientation degrades the defender's armour (step 2) instead of boosting
+ * attack power. Elevation no longer affects damage (it affects range — see
+ * rangeCheck.ts).
  */
 export function computeDamage(input: DamageInput): DamageBreakdown {
   const chassisModifier = getChassisModifier(input.attackerChassis);
   const rangeEfficiency = input.isReactionFire ? 1 : calculateRangeEfficiency(input.distance);
-  const orientation = input.isReactionFire ? 0 : input.orientationBonus;
+  const penalty = input.isReactionFire ? 0 : input.orientationArmourPenalty;
   const base = clamp(input.baseWeaponValue, 1, 5);
-  const attackPower = modifiedAttackPower(chassisModifier, base, orientation, rangeEfficiency);
+  const attackPower = modifiedAttackPower(chassisModifier, base, rangeEfficiency);
 
-  const rawFormulaDamage = calculateFormulaDamage(attackPower, input.effectiveDefence);
+  const effectiveDefence = effectiveDefenceWithOrientation(input.armour, input.defenceOther, penalty);
+  const rawFormulaDamage = calculateFormulaDamage(attackPower, effectiveDefence);
 
   let damage = rawFormulaDamage;
 
@@ -252,7 +284,7 @@ export function computeDamage(input: DamageInput): DamageBreakdown {
     chassisModifier,
     rangeEfficiency,
     attackPower,
-    effectiveDefence: input.effectiveDefence,
+    effectiveDefence,
     rawFormulaDamage,
     finalDamage: damage,
   };

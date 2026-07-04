@@ -129,9 +129,26 @@ describe('vec3', () => {
   });
 
   describe('midpoint', () => {
-    it('returns a normalized point between two vectors', () => {
-      const m = v.midpoint(a, b);
-      expect(v.length(m)).toBeCloseTo(1);
+    const p: Vec3 = { x: 1, y: 0, z: 0 };
+    const q: Vec3 = { x: 0, y: 1, z: 0 };
+
+    it('returns a unit-length vector', () => {
+      expect(v.length(v.midpoint(p, q))).toBeCloseTo(1);
+    });
+
+    it('lies angularly halfway between the two inputs', () => {
+      // The midpoint direction must be equidistant (in angle) from both
+      // inputs: cos(angle to p) === cos(angle to q). A degenerate result
+      // such as normalize(p) would satisfy length≈1 but fail this.
+      const m = v.midpoint(p, q);
+      const toP = v.dot(m, v.normalize(p));
+      const toQ = v.dot(m, v.normalize(q));
+      expect(toP).toBeCloseTo(toQ);
+      expect(toP).toBeGreaterThan(0); // genuinely between, not opposite
+    });
+
+    it('is symmetric in its arguments', () => {
+      expect(v.equals(v.midpoint(p, q), v.midpoint(q, p))).toBe(true);
     });
   });
 

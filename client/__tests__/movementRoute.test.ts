@@ -81,7 +81,7 @@ function buildHexGrid(radius: number): { tiles: TileData[]; at: (q: number, r: n
       pos: onSphere(cx, cy),
       b,
       terrain: 'plains',
-      elevType: 'flat',
+      h: 1,
     };
   });
 

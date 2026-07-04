@@ -5,8 +5,8 @@ export interface Vec3 {
   z: number;
 }
 
-/** Elevation layers for terrain height */
-export type ElevationType = 'flat' | 'rolling' | 'hills' | 'mountain';
+/** @deprecated Elevation bands are no longer used — use numeric `height` (0–11). */
+export type ElevationType = 'lowlands' | 'rolling' | 'hills' | 'mountain';
 
 /**
  * Terrain types — the 5 base surface types.
@@ -37,19 +37,12 @@ export interface Tile {
   boundary: Vec3[];
   terrainType: TerrainType;
   /**
-   * Elevation layer. Always set, but semantically ignored for ocean tiles.
-   * Derived band over `height` (see HEIGHT_LEVELS): used for textures, terrain
-   * classification, and the combat elevation-advantage multiplier.
-   */
-  elevationType: ElevationType;
-  /**
    * Discrete terrain height, 0–11 (HEIGHT_LEVELS). The authoritative elevation
-   * scalar: movement steepness, globe cliff shadows, and the continuous
-   * first-person terrain mesh all read this. `elevationType` is a 4-way band
-   * derived from it. Optional only so test/mock tiles can omit it; real
-   * generated worlds always set it. Ocean tiles are 0.
+   * scalar: movement steepness, globe cliff shadows, combat range multiplier,
+   * and the first-person terrain mesh all read this directly.
+   * Ocean tiles are 0.
    */
-  height?: number;
+  height: number;
   /**
    * Whether this tile has forest cover.
    * Always false for ocean, tundra, and desert.
@@ -62,6 +55,16 @@ export interface Tile {
    * land tile of a river points at the ocean tile it empties into.
    */
   riverTo?: number;
+  /**
+   * Per-segment visible steepness, in radians, one entry per side (index 0–5
+   * for hexes, 0–4 for pentagons). segSteep[N] is the angle between segment N's
+   * elevation-adjusted triangle normal and local radial "up" on the sphere:
+   * 0 = dead flat, larger = steeper. Computed once at world generation from the
+   * elevated-vertex model that mirrors the rendered first-person terrain.
+   * Optional only so test/mock tiles can omit it; real generated worlds always
+   * set it.
+   */
+  segSteep?: number[];
   ownerId?: string;
   cityId?: string;
   buildingIds?: string[];

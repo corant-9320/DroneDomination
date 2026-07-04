@@ -98,7 +98,7 @@ export class TerrainRenderer {
       // Mountains are deliberately light grey rather than white so the
       // leading-edge contour highlights remain visible against them.
       // River hexes keep their water colour even on high ground.
-      if (!tile.city && tile.rv === undefined && (tile.elevType === 'mountain' || tile.terrain === 'mountain')) {
+      if (!tile.city && tile.rv === undefined && (tile.h ?? 0) >= 9) {
         color = '#cfcfcf';
       }
       if (tile.city) {
@@ -118,9 +118,12 @@ export class TerrainRenderer {
 
       // Composite the terrain texture over the solid fill (cities keep their
       // hard faction colour). The solid fill remains a fallback until textures
-      // finish loading.
+      // finish loading. City hexes instead get a road texture painted onto
+      // every open (building-free) street segment.
       if (!tile.city) {
         this.fillTileTexture(ft, tile);
+      } else {
+        this.drawCityRoads(ft, tile);
       }
 
       if (this.c.isWaterTile(tile)) {
@@ -192,7 +195,7 @@ export class TerrainRenderer {
   private fillTileTexture(ft: FlatTile, tile: TileData): void {
     const tex = this.c.textures;
     if (!tex || !tex.ready) return;
-    const key = tex.keyForTile(tile);
+    const key = tex.keyForTile(tile, this.c.world);
     const img = key ? tex.get(key) : undefined;
     if (!img) return;
 
@@ -232,6 +235,153 @@ export class TerrainRenderer {
       ctx.drawImage(img, minX, minY, w, h);
     }
     ctx.restore();
+  }
+
+  /**
+   * Paint the road/street surface on a city hex. Every segment that is NOT
+   * occupied by a building is an open street.
+   *
+   * Road flow: the texture runs **parallel to the outer edge** of each segment
+   * (edge = poly[s] → poly[(s+1)%6]). Image y=0 sits exactly on the outer edge
+   * (shared boundary with the neighbour), image y=imgH reaches the hex centre.
+   * Image x maps across the edge at the same pixel-per-world-unit scale so that
+   * both sides of a shared boundary use the same pixels — no gap or overlap.
+   *
+   * A fully-open hex draws six strips that together form a small inner hexagon.
+   */
+  private drawCityRoads(ft: FlatTile, tile: TileData): void {
+    if (tile.s !== 6 || ft.poly.length < 6) return;
+    const tex = this.c.textures;
+    if (!tex || !tex.ready) return;
+    const img = tex.get('road');
+    if (!img || img.width < 1 || img.height < 1) return;
+
+    const occupied = new Set<number>();
+    for (const b of this.c.world.buildings) {
+      if (b.tileIndex === ft.tileIndex) occupied.add(b.segment);
+    }
+    if (occupied.size >= 6) return;
+
+    const ctx = this.c.ctx;
+    const [cx, cy] = this.c.worldToScreen(ft.cx, ft.cy);
+    const ROAD_ALPHA = 0.9;
+
+    for (let s = 0; s < 6; s++) {
+      if (occupied.has(s)) continue;
+
+      const v0 = ft.poly[s];
+      const v1 = ft.poly[(s + 1) % 6];
+      const [ax, ay] = this.c.worldToScreen(v0.x, v0.y);
+      const [bx, by] = this.c.worldToScreen(v1.x, v1.y);
+
+      // --- "Along" axis: left vertex (poly[s]) → right vertex (poly[s+1]).
+      // The road runs along this direction; image y maps to it.
+      // Scale: edgeLen world-pixels = img.height image-pixels.
+      // This means both neighbours of this shared edge use the same pixel/unit
+      // ratio — they just read in opposite y-directions from the same edge.
+      const edgeLen = Math.hypot(bx - ax, by - ay);
+      if (edgeLen < 1e-3) continue;
+      const alongX = (bx - ax) / edgeLen;
+      const alongY = (by - ay) / edgeLen;
+
+      // --- "Depth" axis: outer edge → hex centre (inward).
+      // Image x maps to depth. We use the midpoint→centre vector for direction
+      // but scale by edgeLen so the road width equals the road length, giving a
+      // square tile that tiles cleanly.
+      const mx = (ax + bx) / 2;
+      const my = (ay + by) / 2;
+      let depthX = cx - mx;
+      let depthY = cy - my;
+      const depth = Math.hypot(depthX, depthY);
+      if (depth < 1e-3) continue;
+      depthX /= depth; depthY /= depth;
+
+      // Both image axes use the same screen pixels-per-image-pixel ratio so the
+      // road artwork is undistorted: 1 image pixel = edgeLen / img.height screen px.
+      const scale = edgeLen / img.height;
+
+      // image (0,0) → outer edge left vertex (ax, ay).
+      // image x → depth (inward), image y → along (left→right).
+      // ctx.transform(a, b, c, d, e, f):  screen = (a*ix + c*iy + e, b*ix + d*iy + f)
+      const a = depthX * scale;
+      const b2 = depthY * scale;
+      const c2 = alongX * scale;
+      const d = alongY * scale;
+
+      // Nudge the origin 1px outside the outer edge so the clip never eats the
+      // very first row of pixels — this closes hairline seams at the boundary.
+      const EDGE_BLEED = 1.5; // screen px
+      const ox = ax - depthX * EDGE_BLEED;
+      const oy = ay - depthY * EDGE_BLEED;
+
+      ctx.save();
+      // Clip strictly to the triangular segment — this is the shape constraint.
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.closePath();
+      ctx.clip();
+
+      ctx.transform(a, b2, c2, d, ox, oy);
+      ctx.globalAlpha = ROAD_ALPHA;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, img.width, img.height);
+      ctx.restore();
+    }
+
+    // Draw pavement under building-occupied segments.
+    const pavImg = tex.get('pavement');
+    if (pavImg && pavImg.width >= 1) {
+      const PAVE_ALPHA = 0.85;
+      for (let s = 0; s < 6; s++) {
+        if (!occupied.has(s)) continue;
+
+        const v0 = ft.poly[s];
+        const v1 = ft.poly[(s + 1) % 6];
+        const [ax, ay] = this.c.worldToScreen(v0.x, v0.y);
+        const [bx, by] = this.c.worldToScreen(v1.x, v1.y);
+
+        const edgeLen = Math.hypot(bx - ax, by - ay);
+        if (edgeLen < 1e-3) continue;
+        const alongX = (bx - ax) / edgeLen;
+        const alongY = (by - ay) / edgeLen;
+
+        const mx = (ax + bx) / 2;
+        const my = (ay + by) / 2;
+        let depthX = cx - mx;
+        let depthY = cy - my;
+        const depth = Math.hypot(depthX, depthY);
+        if (depth < 1e-3) continue;
+        depthX /= depth; depthY /= depth;
+
+        const scale = edgeLen / pavImg.height;
+        const a = depthX * scale;
+        const b2 = depthY * scale;
+        const c2 = alongX * scale;
+        const d = alongY * scale;
+
+        const EDGE_BLEED = 1.5;
+        const ox = ax - depthX * EDGE_BLEED;
+        const oy = ay - depthY * EDGE_BLEED;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(ax, ay);
+        ctx.lineTo(bx, by);
+        ctx.closePath();
+        ctx.clip();
+
+        ctx.transform(a, b2, c2, d, ox, oy);
+        ctx.globalAlpha = PAVE_ALPHA;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(pavImg, 0, 0, pavImg.width, pavImg.height);
+        ctx.restore();
+      }
+    }
   }
 
   /**

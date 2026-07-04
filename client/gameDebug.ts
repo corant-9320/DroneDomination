@@ -587,7 +587,7 @@ export function installGameDebug(deps: GameDebugDeps): void {
         s: t.s,
         n: t.n,
         t: t.terrain,
-        elev: t.elevType,
+        h: t.h,
         f: t.f || undefined,
       }));
     },

@@ -23,13 +23,15 @@
  *
  * ─── STEEPNESS GATE ──────────────────────────────────────────────────────────
  *
- * Elevation is a discrete height 0–11 (HEIGHT_LEVELS). Units are NOT blocked by
- * absolute height — a tank can stand on the highest peak if it climbed a gentle
- * ramp to get there. They are blocked by the *step* between two adjacent hexes:
- * crossing a border whose |height delta| exceeds the chassis climb limit is
- * forbidden. Drones (flight) ignore steepness entirely. This is why segmentCost
- * takes an optional `fromTile` — the cost of a step depends on the edge, not
- * just the destination cell.
+ * Each hex segment carries a precomputed `segSteep` (radians), computed at
+ * world generation and delivered over the wire as `ss`. A ground unit may step
+ * onto a destination segment only if its steepness is within the chassis limit:
+ *   MAX_STEEP_WHEELED for tanks, MAX_STEEP_LIMB (larger) for spiders.
+ * Drones (flight) ignore steepness entirely.
+ *
+ * The gate is on the *destination* segment — independent of the origin — so
+ * any sub-path of a reachable path is itself reachable (path composability).
+ * The old tile-level height-delta gate (MAX_CLIMB_WHEELED/LIMB) is removed.
  */
 
 import type { UnitAttributes } from './unitTypes.js';
@@ -66,12 +68,8 @@ export function getMovementMode(attrs: UnitAttributes): MovementMode {
  * Both TileData (client) and Tile (src/world/types.ts) satisfy this.
  */
 export interface MovementTile {
-  /** Elevation type string — 'mountain' | 'hills' | 'flat' | … */
-  elevationType?: string;
   /** Terrain type string — 'ocean' | 'plains' | … */
   terrainType?: string;
-  /** Elevation type as used in the compact/client wire format. */
-  elevType?: string;
   /** Terrain type as used in the compact/client wire format. */
   terrain?: string;
   /** Whether this tile has forest cover. */
@@ -86,58 +84,51 @@ export interface MovementTile {
   bridge?: boolean;
   /** Bridge flag as used in the compact/client wire format. */
   br?: boolean;
+  /**
+   * Per-segment steepness in radians (authoritative server field, from segSteep).
+   * Present on Tile after world-gen; absent on old/test tiles (treated as flat).
+   */
+  segSteep?: number[];
+  /**
+   * Per-segment steepness in radians (compact/client wire field, from ss).
+   * Present on TileData after loading world.json or /api/world-tiles.
+   */
+  ss?: number[];
 }
 
 // ---------------------------------------------------------------------------
 // Terrain helpers
 // ---------------------------------------------------------------------------
 
-/** Whether a tile counts as "hill" for movement purposes. */
-function isHill(tile: MovementTile): boolean {
-  const elev = tile.elevationType ?? tile.elevType ?? '';
-  return elev === 'hills';
-}
-
 /** Number of discrete terrain height levels (0 … HEIGHT_LEVELS-1). */
 export const HEIGHT_LEVELS = 12;
 
-/**
- * Representative height for an elevation band, used as a fallback when a tile
- * carries no explicit `height`/`h` (e.g. test mocks or legacy data). Bands span
- * the 0–11 range in even thirds: flat 0–2, rolling 3–5, hills 6–8, mountain 9–11.
- */
-export function bandToHeight(band: string | undefined): number {
-  switch (band) {
-    case 'mountain': return 10;
-    case 'hills':    return 7;
-    case 'rolling':  return 4;
-    case 'flat':     return 1;
-    case undefined:  return 1;
-    default:         return 1;
-  }
-}
-
-/** Derive the 4-way elevation band from a discrete height 0–11. */
-export function heightToBand(height: number): 'flat' | 'rolling' | 'hills' | 'mountain' {
-  if (height >= 9) return 'mountain';
-  if (height >= 6) return 'hills';
-  if (height >= 3) return 'rolling';
-  return 'flat';
-}
-
-/** Discrete terrain height 0–11 for a tile, with band fallback when absent. */
+/** Discrete terrain height 0–11 for a tile. */
 export function tileHeight(tile: MovementTile): number {
   if (typeof tile.height === 'number') return tile.height;
   if (typeof tile.h === 'number') return tile.h;
-  return bandToHeight(tile.elevationType ?? tile.elevType);
+  return 0;
 }
 
 /**
- * Maximum climbable step (|height delta|) per movement mode. Crossing a border
- * steeper than this is forbidden. Tanks are limited to gentle grades; spiders
- * can scale almost any slope; drones (flight) are unaffected.
+ * Maximum traversable segment steepness (radians) per chassis.
+ * Spiders climb steeper than tanks. Drones ignore steepness.
+ *
+ * Values are calibrated outputs (scripts/calibrateSteepness.ts).
+ * Seed 1 calibration: wheeled blocked fraction ≈ old gate's blocked fraction.
+ */
+export const MAX_STEEP_WHEELED = 0.44; // ~25° — calibrated
+export const MAX_STEEP_LIMB = 0.79;    // ~45° — calibrated, > wheeled
+
+/**
+ * @deprecated Height-delta climb limits replaced by steepness gate.
+ * Kept only for legacy test code that hasn't been migrated. Do not use.
  */
 export const MAX_CLIMB_WHEELED = 3;
+/**
+ * @deprecated Height-delta climb limits replaced by steepness gate.
+ * Kept only for legacy test code that hasn't been migrated. Do not use.
+ */
 export const MAX_CLIMB_LIMB = 8;
 
 /** Whether a tile is ocean. */
@@ -169,7 +160,7 @@ export const COST_SPIDER = 0.50;
 /** Cost per segment step for tank on flat/clear terrain. */
 export const COST_TANK_FLAT = 0.25;
 
-/** Cost per segment step for tank on hills. */
+/** Cost per segment step for tank on hills. @deprecated Hills surcharge removed — tanks pay flat everywhere now. */
 export const COST_TANK_HILLS = 0.75;
 
 /**
@@ -191,6 +182,23 @@ export function pivotStepCost(mode: MovementMode): number {
     case 'limb': return COST_SPIDER;
     case 'wheeled': return COST_TANK_FLAT;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Steepness helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Steepness (radians) of a destination segment. Returns 0 (flat) for tiles
+ * that lack segSteep/ss data (legacy tiles, test mocks) so behaviour degrades
+ * gracefully to "steepness never blocks" rather than crashing.
+ *
+ * Reads `tile.segSteep` (server/Tile) or `tile.ss` (wire/client TileData).
+ */
+export function segmentSteepness(tile: MovementTile, segment: number): number {
+  const ss = tile.segSteep ?? tile.ss;
+  if (!ss || segment < 0 || segment >= ss.length) return 0;
+  return ss[segment];
 }
 
 // ---------------------------------------------------------------------------
@@ -223,62 +231,51 @@ export function isImpassableTerrain(terrain: string): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Cost to move one segment step into a destination tile, given the unit's
- * movement mode. The destination tile's terrain determines the base cost; the
- * step (delta) between `fromTile` and `tile` determines whether the move is
- * climbable at all.
+ * Cost to move one segment step onto `toSegment` of `toTile`, given the unit's
+ * movement mode.
  *
- * For intra-hex moves (same tile), omit `fromTile` (or pass the same tile) —
- * there is no height delta within a hex.
+ * The gate is on the **destination segment** only — independent of the origin —
+ * so any sub-path of a finite-cost path is itself finite-cost (path composability).
  *
- * Returns Infinity if the destination is forbidden for this movement mode, or
- * if the border step is too steep for the chassis.
+ * Returns Infinity when forbidden (ocean, steepness over chassis limit, or
+ * forest for tanks). Otherwise returns a flat base cost.
  *
  * Drones can traverse ocean segments but cannot end a turn there — that
  * restriction is enforced at the turn-state level, not here.
+ *
+ * **Migration note**: call sites that previously passed `(tile, mode, fromTile?)`
+ * must now pass the destination segment index. For a border crossing the arrival
+ * segment is `destTile.neighbours.indexOf(fromTileIndex)`. For intra-hex pivots
+ * it is the target segment. See the `hexEntryCost` deprecated forwarder below.
  */
 export function segmentCost(
-  tile: MovementTile,
+  toTile: MovementTile,
+  toSegment: number,
   mode: MovementMode,
-  fromTile?: MovementTile,
 ): number {
-  // Drones can go anywhere (ocean end-of-turn restriction is separate) and are
-  // unaffected by terrain steepness.
-  if (mode === 'flight') {
-    return COST_DRONE;
+  // Drones: unaffected by terrain steepness or ground blocks.
+  if (mode === 'flight') return COST_DRONE;
+
+  const bridged = isBridged(toTile);
+
+  // Ground units cannot enter ocean unless bridged.
+  if (isOcean(toTile) && !bridged) return Infinity;
+
+  // Steepness gate on the destination segment. A bridged tile bypasses this
+  // (the bridge deck is flat regardless of the underlying terrain).
+  if (!bridged) {
+    const steep = segmentSteepness(toTile, toSegment);
+    const limit = mode === 'limb' ? MAX_STEEP_LIMB : MAX_STEEP_WHEELED;
+    if (steep > limit) return Infinity;
   }
 
-  const bridged = isBridged(tile);
+  // Spider: flat cost on any passable segment.
+  if (mode === 'limb') return COST_SPIDER;
 
-  // Ground units cannot enter ocean (rivers are ocean too) — unless a bridge
-  // has been built across it. Mountains are no longer impassable by height
-  // alone — only the steepness gate below can block a high tile.
-  if (isOcean(tile) && !bridged) return Infinity;
+  // Tank: forbidden from forest (a bridge deck is clear).
+  if (!bridged && isForested(toTile)) return Infinity;
 
-  // Steepness gate: a border step taller than the chassis climb limit is
-  // impassable. A bridge spans the gap, so stepping onto or off a bridge tile
-  // ignores the steepness gate (a river sits at sea level but its banks may be
-  // high ground).
-  if (fromTile && !bridged && !isBridged(fromTile)) {
-    const delta = Math.abs(tileHeight(tile) - tileHeight(fromTile));
-    const limit = mode === 'limb' ? MAX_CLIMB_LIMB : MAX_CLIMB_WHEELED;
-    if (delta > limit) return Infinity;
-  }
-
-  // Spider: constant cost, any non-ocean terrain within the climb limit
-  if (mode === 'limb') {
-    return COST_SPIDER;
-  }
-
-  // Tank (wheeled): forbidden from forest (a bridge deck is clear)
-  if (!bridged && isForested(tile)) return Infinity;
-
-  // Tank: hills (a bridge deck is flat)
-  if (!bridged && isHill(tile)) {
-    return COST_TANK_HILLS;
-  }
-
-  // Tank: flat/clear
+  // Tank: flat cost everywhere (hills surcharge removed — steepness is the gate now).
   return COST_TANK_FLAT;
 }
 
@@ -287,14 +284,19 @@ export function segmentCost(
 // ---------------------------------------------------------------------------
 
 /**
- * @deprecated Use segmentCost() instead. Kept for call sites not yet migrated.
+ * @deprecated Use segmentCost(tile, segment, mode) instead.
+ * This forwarder uses segment 0 as the representative destination segment.
+ * It no longer models the old height-delta border gate — it applies the new
+ * destination-segment steepness gate using segment 0, which may give a
+ * different result than using the true arrival segment. Kept for call sites
+ * that have not yet been migrated to the new signature.
  */
 export function hexEntryCost(
   tile: MovementTile,
   mode: MovementMode,
   _isFirstHex: boolean,
 ): number {
-  return segmentCost(tile, mode);
+  return segmentCost(tile, 0, mode);
 }
 
 // ---------------------------------------------------------------------------
@@ -306,8 +308,10 @@ export function hexEntryCost(
  * Uses the shortest arc (min clockwise vs counter-clockwise distance).
  * Returns 0 if segments are identical.
  *
- * NOTE: This uses COST_DRONE (0.25) per step as a lower bound. For the actual
- * terrain-aware intra-hex cost, use pivotStepCost(mode) per step.
+ * NOTE: Intra-hex steps are now steepness-gated via segmentCost. This function
+ * returns a lower-bound arc cost (COST_DRONE per step) without a steepness
+ * check. Use segmentCost(tile, targetSeg, mode) for the authoritative
+ * terrain-aware cost on each intermediate and target segment.
  */
 export function segmentStepCost(fromSegment: number, toSegment: number): number {
   if (fromSegment === toSegment) return 0;

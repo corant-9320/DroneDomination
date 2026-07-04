@@ -27,7 +27,7 @@ function lineTiles(n: number): Tile[] {
     tiles.push({
       id: `t${i}`, index: i, sides: 6, neighbours,
       position3d: { x: i * 0.1, y: 0, z: 1 },
-      boundary: [], terrainType: 'plains', elevationType: 'flat', height: 1, forested: false,
+      boundary: [], terrainType: 'plains', height: 1, forested: false,
     });
   }
   return tiles;

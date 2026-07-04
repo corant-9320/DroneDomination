@@ -103,7 +103,13 @@ export function validateWorld(world: World): ValidationResult {
   let symDetail = '';
   for (const tile of tiles) {
     for (const n of tile.neighbours) {
-      if (!tiles[n].neighbours.includes(tile.index)) {
+      const neighbour = tiles[n];
+      if (neighbour === undefined) {
+        symmetric = false;
+        symDetail = `Tile ${tile.index} → out-of-range neighbour ${n}`;
+        break;
+      }
+      if (!neighbour.neighbours.includes(tile.index)) {
         symmetric = false;
         symDetail = `Tile ${tile.index} → ${n} but not reverse`;
         break;
@@ -125,8 +131,10 @@ export function validateWorld(world: World): ValidationResult {
   let head = 0;
   while (head < queue.length) {
     const current = queue[head++];
-    for (const n of tiles[current].neighbours) {
-      if (!visited[n]) {
+    const tile = tiles[current];
+    if (tile === undefined) continue;
+    for (const n of tile.neighbours) {
+      if (n >= 0 && n < tiles.length && !visited[n]) {
         visited[n] = 1;
         visitCount++;
         queue.push(n);
@@ -186,7 +194,8 @@ export function validateWorld(world: World): ValidationResult {
   // City tiles are marked
   let allMarked = true;
   for (const city of cities) {
-    if (tiles[city.tileIndex].cityId !== city.id) {
+    const tile = tiles[city.tileIndex];
+    if (tile === undefined || tile.cityId !== city.id) {
       allMarked = false;
       break;
     }
@@ -198,7 +207,7 @@ export function validateWorld(world: World): ValidationResult {
   });
 
   // City tiles are not pentagons
-  const noCityPentagons = cities.every((c) => tiles[c.tileIndex].sides === 6);
+  const noCityPentagons = cities.every((c) => tiles[c.tileIndex]?.sides === 6);
   checks.push({
     name: 'no city on pentagon tile',
     passed: noCityPentagons,
@@ -210,7 +219,7 @@ export function validateWorld(world: World): ValidationResult {
     tiles.filter((t) => t.sides === 5).map((t) => t.index)
   );
   const noCityAdjacentPentagon = cities.every((c) =>
-    tiles[c.tileIndex].neighbours.every((n) => !pentagonIndexSet.has(n))
+    (tiles[c.tileIndex]?.neighbours ?? []).every((n) => !pentagonIndexSet.has(n))
   );
   checks.push({
     name: 'no city adjacent to pentagon',
@@ -241,6 +250,38 @@ export function validateWorld(world: World): ValidationResult {
     name: 'city-neighbour graph symmetric',
     passed: neighSymmetric,
     detail: neighSymmetric ? 'OK' : neighSymDetail,
+  });
+
+  // --- segSteep integrity ---
+
+  let segSteepOk = true;
+  let segSteepDetail = '';
+  for (const tile of tiles) {
+    if (tile.segSteep === undefined) {
+      segSteepOk = false;
+      segSteepDetail = `Tile ${tile.index} missing segSteep`;
+      break;
+    }
+    if (tile.segSteep.length !== tile.sides) {
+      segSteepOk = false;
+      segSteepDetail = `Tile ${tile.index}: segSteep.length=${tile.segSteep.length}, sides=${tile.sides}`;
+      break;
+    }
+    const HALF_PI = Math.PI / 2;
+    for (let s = 0; s < tile.segSteep.length; s++) {
+      const v = tile.segSteep[s];
+      if (!Number.isFinite(v) || v < 0 || v > HALF_PI + 1e-9) {
+        segSteepOk = false;
+        segSteepDetail = `Tile ${tile.index} seg ${s}: segSteep=${v} out of [0, π/2]`;
+        break;
+      }
+    }
+    if (!segSteepOk) break;
+  }
+  checks.push({
+    name: 'segSteep set on all tiles, length == sides, values in [0, π/2]',
+    passed: segSteepOk,
+    detail: segSteepOk ? 'OK' : segSteepDetail,
   });
 
   // --- City building / street invariants (Requirements 4 & 5) ---

@@ -54,7 +54,7 @@ export class TerrainRelief {
         const sameVisualFill =
           nColor === color &&
           neighbour.terrain === tile.terrain &&
-          neighbour.elevType === tile.elevType &&
+          Math.floor((neighbour.h ?? 0) / 3) === Math.floor((tile.h ?? 0) / 3) &&
           neighbour.f === tile.f;
 
         const v0 = ft.poly[seg];
@@ -111,7 +111,7 @@ export class TerrainRelief {
         if (
           nColor === color &&
           neighbour.terrain === tile.terrain &&
-          neighbour.elevType === tile.elevType
+          Math.floor((neighbour.h ?? 0) / 3) === Math.floor((tile.h ?? 0) / 3)
         ) continue;
 
         const v0 = ft.poly[seg];
@@ -558,14 +558,16 @@ export class TerrainRelief {
     let litAlpha: number;
     let shadowAlpha: number;
 
-    switch (tile.elevType) {
-      case 'rolling':
-        peakPull = 0.18; litAlpha = 0.27; shadowAlpha = 0.18;
+    switch (true) {
+      case (tile.h ?? 0) >= 9:
+        peakPull = 0.62; litAlpha = 0.93; shadowAlpha = 0.63;
         break;
-      case 'hills':
+      case (tile.h ?? 0) >= 6:
         peakPull = 0.38; litAlpha = 0.57; shadowAlpha = 0.36;
         break;
-      case 'mountain':
+      case (tile.h ?? 0) >= 3:
+        peakPull = 0.18; litAlpha = 0.27; shadowAlpha = 0.18;
+        break;
       default:
         peakPull = 0.62; litAlpha = 0.93; shadowAlpha = 0.63;
         break;
@@ -629,7 +631,7 @@ export class TerrainRelief {
 
       const relief = Math.min(1, Math.abs(heightDelta) * 2.0 + centreHeight * 0.15);
       const ridgeAlpha = dot >= 0
-        ? dot * relief * (tile.elevType === 'mountain' ? 0.63 : tile.elevType === 'hills' ? 0.36 : 0.18)
+        ? dot * relief * ((tile.h ?? 0) >= 9 ? 0.63 : (tile.h ?? 0) >= 6 ? 0.36 : 0.18)
         : 0.038 * relief;
       ctx.strokeStyle = `rgba(255,255,255,${ridgeAlpha.toFixed(3)})`;
       ctx.lineWidth = 0.5;

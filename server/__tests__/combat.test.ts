@@ -4,10 +4,10 @@ import type { UnitAttributes } from '../../shared/unitTypes.js';
 
 /**
  * Regression guard for KI-2: the server combat endpoint must preserve tile
- * elevation through the wire format. Before the fix, `rebuildTiles` dropped
- * `elevationType`, so the elevation modifier was always 1.0 on the server path.
+ * height through the wire format. Before the fix, `rebuildTiles` dropped
+ * elevation data, so the elevation modifier was always 1.0 on the server path.
  * Elevation now drives the attack-RANGE multiplier (COMBAT_RULES §13); this
- * test confirms the wire layer still carries elevation so the breakdown's
+ * test confirms the wire layer still carries height so the breakdown's
  * `elevationMultiplier` (now a range multiplier) reflects it.
  */
 
@@ -26,19 +26,19 @@ const ATTRS: UnitAttributes = {
 };
 
 /** Two adjacent ground tiles on a short arc (mirrors createLinearGrid geometry). */
-function wireTiles(elev0: string, elev1: string) {
+function wireTiles(height0: number, height1: number) {
   const spacing = 0.15;
   const pos = (i: number): [number, number, number] => {
     const theta = (i - 0.5) * spacing;
     return [Math.sin(theta), 0, Math.cos(theta)];
   };
   return [
-    { idx: 0, s: 6 as const, n: [1, 0, 0, 0, 0, 0], t: 'plains', elev: elev0, pos: pos(0), b: [] },
-    { idx: 1, s: 6 as const, n: [0, 1, 1, 1, 1, 1], t: 'plains', elev: elev1, pos: pos(1), b: [] },
+    { idx: 0, s: 6 as const, n: [1, 0, 0, 0, 0, 0], t: 'plains', h: height0, pos: pos(0), b: [] },
+    { idx: 1, s: 6 as const, n: [0, 1, 1, 1, 1, 1], t: 'plains', h: height1, pos: pos(1), b: [] },
   ];
 }
 
-function previewRequest(elev0: string, elev1: string): CombatRequest {
+function previewRequest(height0: number, height1: number): CombatRequest {
   return {
     action: 'preview',
     attackerId: 'a',
@@ -48,26 +48,26 @@ function previewRequest(elev0: string, elev1: string): CombatRequest {
       { id: 'a', label: 'A', ownerId: 'p1', tileIndex: 0, segment: 0, facing: 0, attributes: ATTRS, currentHealth: 50 },
       { id: 'd', label: 'D', ownerId: 'p2', tileIndex: 1, segment: 0, facing: 0, attributes: ATTRS, currentHealth: 50 },
     ],
-    tiles: wireTiles(elev0, elev1),
+    tiles: wireTiles(height0, height1),
   };
 }
 
 describe('server combat wire layer — elevation (KI-2)', () => {
   it('preserves elevation so uphill attackers gain a range multiplier', () => {
-    const res = handleCombat(previewRequest('hills', 'flat'));
+    const res = handleCombat(previewRequest(7, 1));
     expect(res.success).toBe(true);
-    // Attacker on hills (level 2) firing at flat (level 0): delta +2 → ×1.33 range.
+    // Attacker on height 7 firing at height 1: delta +6 → range bonus.
     expect(res.combats[0].breakdown?.elevationMultiplier).toBeGreaterThan(1.0);
   });
 
   it('applies a range penalty when the attacker is downhill', () => {
-    const res = handleCombat(previewRequest('flat', 'hills'));
+    const res = handleCombat(previewRequest(1, 7));
     expect(res.success).toBe(true);
     expect(res.combats[0].breakdown?.elevationMultiplier).toBeLessThan(1.0);
   });
 
   it('has no elevation effect when both tiles share elevation', () => {
-    const res = handleCombat(previewRequest('flat', 'flat'));
+    const res = handleCombat(previewRequest(1, 1));
     expect(res.success).toBe(true);
     expect(res.combats[0].breakdown?.elevationMultiplier).toBe(1.0);
   });

@@ -2,6 +2,7 @@ node_modules/
 dist/
 *.js.map
 artifacts/sessions/
+coverage/
 
 # Transient test output
 test-results/

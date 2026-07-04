@@ -14,6 +14,7 @@ import { WorldData, UnitData, TileData, BuildingData } from './worldData.js';
 import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
 import { esc, toneColor } from './htmlUtils.js';
+import { renderCombatBreakdownTable } from './combatBreakdownView.js';
 import type {
   ExplanationStep,
   SplashExplanation,
@@ -700,38 +701,48 @@ export class CombatPanel {
     }
 
     // ── Expanded detail section ────────────────────────────────────────
+    // Uses the same structured breakdown table as the hover preview
+    // (renderCombatBreakdownTable) whenever one is present, so the format
+    // the player reviews after an attack matches what they aimed with.
+    // Falls back to the step-by-step prose renderer for actions that don't
+    // carry a breakdown (reaction fire, building-component attacks).
     let detailHtml = '';
     if (isExpanded) {
       detailHtml = `<div class="cl-detail">`;
       if (!c.wasValid) {
         detailHtml += `<div class="cl-step"><span style="color:#f66;">Invalid: ${esc(c.reasonInvalid ?? '')}</span></div>`;
       } else {
-        // Build label→short-ref map so step descriptions don't repeat full names
-        const labelMap = buildLabelMap(this.world, [
-          { id: c.attackerId, label: c.attackerLabel },
-          { id: c.targetId,   label: c.targetLabel },
-        ]);
-        for (const step of c.steps) {
-          detailHtml += this.renderStep(step, labelMap);
-        }
-        if (c.splash.length > 0) {
-          detailHtml += `<div class="cl-splash-header">💥 Splash (${c.splash.length} victim${c.splash.length > 1 ? 's' : ''})</div>`;
-          for (const s of c.splash) {
-            const vUnit = this.world.units.find((u) => u.id === s.victimId);
-            const vMax = vUnit ? (vUnit.attributes.size ?? 1) * 10 : '?';
-            const vSuffix = s.victimId.replace(/^unit_/, '');
-            const vColor = factionColorForUnit(this.world, s.victimId);
-            detailHtml += `<div class="cl-step"><span class="cl-step-title"><span style="color:${esc(vColor)};">#${esc(vSuffix)}</span></span> <span style="color:#999;">${s.victimHealthBefore}→${s.victimHealthAfter}/${vMax} HP</span>`;
-            if (s.victimDestroyed) detailHtml += ` <span style="color:#f44;">☠</span>`;
-            detailHtml += `</div>`;
-            // Splash steps: include victim in the label map too
-            const splashLabelMap = buildLabelMap(this.world, [
-              { id: c.attackerId, label: c.attackerLabel },
-              { id: c.targetId,   label: c.targetLabel },
-              { id: s.victimId,   label: s.victimLabel },
-            ]);
-            for (const step of s.steps) {
-              detailHtml += this.renderStep(step, splashLabelMap);
+        const breakdownHtml = renderCombatBreakdownTable(c, this.world);
+        if (breakdownHtml) {
+          detailHtml += breakdownHtml;
+        } else {
+          // Build label→short-ref map so step descriptions don't repeat full names
+          const labelMap = buildLabelMap(this.world, [
+            { id: c.attackerId, label: c.attackerLabel },
+            { id: c.targetId,   label: c.targetLabel },
+          ]);
+          for (const step of c.steps) {
+            detailHtml += this.renderStep(step, labelMap);
+          }
+          if (c.splash.length > 0) {
+            detailHtml += `<div class="cl-splash-header">💥 Splash (${c.splash.length} victim${c.splash.length > 1 ? 's' : ''})</div>`;
+            for (const s of c.splash) {
+              const vUnit = this.world.units.find((u) => u.id === s.victimId);
+              const vMax = vUnit ? (vUnit.attributes.size ?? 1) * 10 : '?';
+              const vSuffix = s.victimId.replace(/^unit_/, '');
+              const vColor = factionColorForUnit(this.world, s.victimId);
+              detailHtml += `<div class="cl-step"><span class="cl-step-title"><span style="color:${esc(vColor)};">#${esc(vSuffix)}</span></span> <span style="color:#999;">${s.victimHealthBefore}→${s.victimHealthAfter}/${vMax} HP</span>`;
+              if (s.victimDestroyed) detailHtml += ` <span style="color:#f44;">☠</span>`;
+              detailHtml += `</div>`;
+              // Splash steps: include victim in the label map too
+              const splashLabelMap = buildLabelMap(this.world, [
+                { id: c.attackerId, label: c.attackerLabel },
+                { id: c.targetId,   label: c.targetLabel },
+                { id: s.victimId,   label: s.victimLabel },
+              ]);
+              for (const step of s.steps) {
+                detailHtml += this.renderStep(step, splashLabelMap);
+              }
             }
           }
         }
@@ -834,8 +845,8 @@ export class CombatPanel {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function minimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; elev: string; f?: boolean; h?: number; pos: [number, number, number]; b: [number, number, number][] } {
-  return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, elev: t.elevType, f: t.f || undefined, h: t.h, pos: t.pos, b: t.b };
+function minimalTile(t: TileData): { idx: number; s: 5 | 6; n: number[]; t: string; f?: boolean; h?: number; pos: [number, number, number]; b: [number, number, number][] } {
+  return { idx: t.idx, s: t.s, n: t.n, t: t.terrain, f: t.f || undefined, h: t.h, pos: t.pos, b: t.b };
 }
 
 /** Return the faction colour for a unit, looking it up from the live world. */

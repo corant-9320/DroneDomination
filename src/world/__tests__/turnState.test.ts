@@ -8,6 +8,7 @@ import {
   canMove,
   recordPivot,
   recordMove,
+  ROTATION_FEE,
 } from '../turnState.js';
 import { Unit, HexSegment } from '../units.js';
 
@@ -209,16 +210,18 @@ describe('turnState', () => {
       const unit = makeUnit({ id: 'u', facing: 0 as HexSegment, attributes: { wheeledMovement: 4 } });
       const state = createTurnState();
       recordPivot(unit, state, 2 as HexSegment);
-      expect(movementRemaining(unit, state)).toBe(3.75); // 4 - ROTATION_FEE(0.25)
+      // Derive the expected remaining from the source constant so the test
+      // survives rotation-fee tuning while still guarding "charged once".
+      expect(movementRemaining(unit, state)).toBe(4 - ROTATION_FEE);
     });
 
     it('further facing changes in the same turn are free', () => {
       const unit = makeUnit({ id: 'u', facing: 0 as HexSegment, attributes: { wheeledMovement: 4 } });
       const state = createTurnState();
-      recordPivot(unit, state, 2 as HexSegment); // pays 0.25
+      recordPivot(unit, state, 2 as HexSegment); // pays ROTATION_FEE
       recordPivot(unit, state, 5 as HexSegment); // free
       recordPivot(unit, state, 1 as HexSegment); // free
-      expect(movementRemaining(unit, state)).toBe(3.75);
+      expect(movementRemaining(unit, state)).toBe(4 - ROTATION_FEE);
       expect(unit.facing).toBe(1);
     });
 

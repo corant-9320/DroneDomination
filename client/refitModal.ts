@@ -322,7 +322,7 @@ export function showRefitModal(unit: { label: string; attributes: UnitAttributes
       },
       {
         heading: '  Attack side',
-        text: 'Kinetic, Splash, or Anti-Air — whichever weapon mode is used. The attack value sets both the damage ceiling (6 × attack, max 30) and your share of it. Doubling your attack raises the ceiling AND wins a bigger share.',
+        text: 'Kinetic, Splash, or Anti-Air — whichever weapon mode is used. The attack value sets both the damage ceiling (6 × attack, max 50) and your share of it. Doubling your attack raises the ceiling AND wins a bigger share.',
       },
       {
         heading: '  Flanking / facing (attack bonus)',
@@ -339,7 +339,7 @@ export function showRefitModal(unit: { label: string; attributes: UnitAttributes
       },
       {
         heading: 'Example — attacker dominates',
-        text: 'Attack 5 vs Defence 1 → ceiling is 30, attacker wins ~96% → ~29 damage.',
+        text: 'Attack 5 vs Defence 1 → ceiling is 50, attacker wins ~96% → ~48 damage.',
         example: true,
       },
       {

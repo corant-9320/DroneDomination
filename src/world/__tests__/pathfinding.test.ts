@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import fc from 'fast-check';
 import { graphDistance, tilesWithinRadius, findPath } from '../pathfinding.js';
 import type { Tile } from '../types.js';
 
@@ -19,7 +20,7 @@ function linearGraph(n: number): Tile[] {
       position3d: { x: Math.cos((i / n) * Math.PI), y: Math.sin((i / n) * Math.PI), z: 0 },
       boundary: [],
       terrainType: 'plains' as const,
-      elevationType: 'rolling' as const,
+      height: 4,
       forested: false,
     };
   });
@@ -41,7 +42,7 @@ function ringGraph(n: number): Tile[] {
       position3d: { x: Math.cos(angle), y: Math.sin(angle), z: 0 },
       boundary: [],
       terrainType: 'plains' as const,
-      elevationType: 'rolling' as const,
+      height: 4,
       forested: false,
     };
   });
@@ -78,12 +79,12 @@ describe('pathfinding', () => {
         {
           id: 'a', index: 0, sides: 5, neighbours: [],
           position3d: { x: 1, y: 0, z: 0 }, boundary: [],
-          terrainType: 'plains', elevationType: 'rolling', forested: false,
+          terrainType: 'plains', height: 4, forested: false,
         },
         {
           id: 'b', index: 1, sides: 5, neighbours: [],
           position3d: { x: -1, y: 0, z: 0 }, boundary: [],
-          terrainType: 'plains', elevationType: 'rolling', forested: false,
+          terrainType: 'plains', height: 4, forested: false,
         },
       ];
       expect(graphDistance(tiles, 0, 1)).toBe(-1);
@@ -174,12 +175,12 @@ describe('pathfinding', () => {
         {
           id: 'a', index: 0, sides: 5, neighbours: [],
           position3d: { x: 1, y: 0, z: 0 }, boundary: [],
-          terrainType: 'plains', elevationType: 'rolling', forested: false,
+          terrainType: 'plains', height: 4, forested: false,
         },
         {
           id: 'b', index: 1, sides: 5, neighbours: [],
           position3d: { x: -1, y: 0, z: 0 }, boundary: [],
-          terrainType: 'plains', elevationType: 'rolling', forested: false,
+          terrainType: 'plains', height: 4, forested: false,
         },
       ];
       expect(findPath(tiles, 0, 1)).toBeNull();
@@ -187,3 +188,97 @@ describe('pathfinding', () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// Path-validity invariants on the server Tile adapter (exercises the costFn
+// adapter path in findPath that wraps shared findPath with index lookup).
+// ---------------------------------------------------------------------------
+
+/** Build a W×H grid of server Tiles with 4-neighbour adjacency. */
+function tileGrid(width: number, height: number): Tile[] {
+  const tiles: Tile[] = [];
+  for (let r = 0; r < height; r++) {
+    for (let c = 0; c < width; c++) {
+      const neighbours: number[] = [];
+      if (c > 0) neighbours.push(r * width + (c - 1));
+      if (c < width - 1) neighbours.push(r * width + (c + 1));
+      if (r > 0) neighbours.push((r - 1) * width + c);
+      if (r < height - 1) neighbours.push((r + 1) * width + c);
+      const x = c + 1;
+      const y = r + 1;
+      const len = Math.sqrt(x * x + y * y + 1);
+      tiles.push({
+        id: `tile_${r}_${c}`,
+        index: r * width + c,
+        sides: 6,
+        neighbours,
+        position3d: { x: x / len, y: y / len, z: 1 / len },
+        boundary: [],
+        terrainType: 'plains',
+        height: 4,
+        forested: false,
+      });
+    }
+  }
+  return tiles;
+}
+
+const arbTileScenario = fc
+  .tuple(fc.integer({ min: 2, max: 6 }), fc.integer({ min: 2, max: 6 }))
+  .chain(([width, height]) => {
+    const n = width * height;
+    return fc.record({
+      tiles: fc.constant(tileGrid(width, height)),
+      from: fc.integer({ min: 0, max: n - 1 }),
+      to: fc.integer({ min: 0, max: n - 1 }),
+      blocked: fc.uniqueArray(fc.integer({ min: 0, max: n - 1 }), {
+        maxLength: Math.floor(n / 2),
+      }),
+    });
+  })
+  .map(({ tiles, from, to, blocked }) => ({
+    tiles,
+    from,
+    to,
+    blockedSet: new Set(blocked.filter((b) => b !== from && b !== to)),
+  }));
+
+describe('pathfinding path-validity invariants (Tile adapter)', () => {
+  // Feature: unit-test-coverage, adapter path with a costFn is contiguous, correctly bounded, and avoids blocked tiles
+  it('costFn path is contiguous, bounded, and avoids blocked tiles', () => {
+    fc.assert(
+      fc.property(arbTileScenario, ({ tiles, from, to, blockedSet }) => {
+        const path = findPath(tiles, from, to, (t) =>
+          blockedSet.has(t.index) ? Infinity : 1,
+        );
+        if (path === null) return;
+        expect(path[0]).toBe(from);
+        expect(path[path.length - 1]).toBe(to);
+        for (let i = 1; i < path.length; i++) {
+          expect(tiles[path[i - 1]].neighbours).toContain(path[i]);
+        }
+        for (const idx of path) {
+          if (idx === from) continue;
+          expect(blockedSet.has(idx)).toBe(false);
+        }
+      }),
+      { numRuns: 200 },
+    );
+  });
+
+  // Feature: unit-test-coverage, a found uniform-cost adapter path is never shorter than the BFS distance
+  it('uniform-cost path length is at least the graph distance', () => {
+    fc.assert(
+      fc.property(arbTileScenario, ({ tiles, from, to }) => {
+        const path = findPath(tiles, from, to);
+        const dist = graphDistance(tiles, from, to);
+        if (path === null) {
+          expect(dist).toBe(-1);
+          return;
+        }
+        expect(path.length - 1).toBeGreaterThanOrEqual(dist);
+      }),
+      { numRuns: 200 },
+    );
+  });
+});

@@ -46,8 +46,13 @@ describe('handleAiTurn', () => {
     const attacks = res.events.filter((e) => e.kind === 'attack');
     expect(attacks.length).toBeGreaterThanOrEqual(1);
     expect(attacks[0].targetId).toBe('player');
-    // The final snapshot is authoritative and excludes any destroyed unit.
-    expect(res.finalUnits.every((u) => u.currentHealth > 0)).toBe(true);
+    // Real combat resolution ran: the attack landed observable damage
+    // (any positive amount — not a pinned balance value).
+    expect(attacks[0].damage).toBeGreaterThan(0);
+    // The authoritative final snapshot reflects that damage: the target either
+    // survives with reduced health or was destroyed and removed.
+    const playerAfter = res.finalUnits.find((u) => u.id === 'player');
+    expect(playerAfter === undefined || playerAfter.currentHealth < 50).toBe(true);
   });
 
   it('returns no events when the faction has no enemies', () => {

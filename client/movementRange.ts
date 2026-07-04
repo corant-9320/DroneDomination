@@ -90,6 +90,24 @@ export function buildEnemySegmentSet(world: WorldData, ownerId: string): Set<num
   return set;
 }
 
+/**
+ * Build a set of segment keys occupied by buildings, for ground-movement blocking.
+ *
+ * Tanks (wheeled) and spiders (limb) cannot pass through a segment that holds a
+ * building — buildings are permanent full-segment occupants on city hexes and
+ * count as impassable walls for ground units. Drones (flight) are unaffected and
+ * pass freely over buildings, so callers must skip this check for flight mode.
+ *
+ * Key encoding: tileIndex * 6 + segment.
+ */
+export function buildBuildingSegmentSet(world: WorldData): Set<number> {
+  const set = new Set<number>();
+  for (const b of world.buildings) {
+    set.add(b.tileIndex * 6 + b.segment);
+  }
+  return set;
+}
+
 // ─── Result type ──────────────────────────────────────────────────────────────
 
 export interface MovementRangeResult {
@@ -149,6 +167,9 @@ export function computeMovementRange(
   const tiles     = world.tiles;
 
   const enemySegments = buildEnemySegmentSet(world, unit.ownerId);
+  // Ground units cannot pass through building-occupied segments (road-only
+  // pathing within cities). Drones fly over buildings freely.
+  const buildingSegments = mode !== 'flight' ? buildBuildingSegmentSet(world) : null;
 
   const encode = (tile: number, seg: number) => tile * 6 + seg;
   const dist = new Map<number, number>();
@@ -171,14 +192,14 @@ export function computeMovementRange(
     const currentSeg = currentKey % 6;
     const tile = tiles[currentTile];
 
-    // Edge type 1: intra-hex pivot
-    const intraStepCost = sharedSegmentCost(tile, mode);
+    // Edge type 1: intra-hex pivot — each adjacent segment is steepness-gated
     {
       for (let delta = -1; delta <= 1; delta += 2) {
         const adjSeg = ((currentSeg + delta) % 6 + 6) % 6;
         const adjKey = encode(currentTile, adjSeg);
         if (enemySegments.has(adjKey)) continue;
-        const newCost = currentCost + intraStepCost;
+        if (buildingSegments?.has(adjKey)) continue;
+        const newCost = currentCost + sharedSegmentCost(tile, adjSeg, mode);
         if (newCost > remainingMP) continue;
         const existing = dist.get(adjKey);
         if (existing === undefined || newCost < existing) {
@@ -188,20 +209,21 @@ export function computeMovementRange(
       }
     }
 
-    // Edge type 2: cross hex border
+    // Edge type 2: cross hex border — gate on arrival segment
     if (currentSeg < tile.n.length) {
       const neighbour = tile.n[currentSeg];
       const nTile = tiles[neighbour];
-      const crossCost = sharedSegmentCost(nTile, mode, tile);
+      const arrivalSeg = nTile.n.indexOf(currentTile);
+      const arrival = arrivalSeg >= 0 ? arrivalSeg : 0;
+      const crossCost = sharedSegmentCost(nTile, arrival, mode);
       if (crossCost !== Infinity) {
         const newCost = currentCost + crossCost;
         if (newCost <= remainingMP) {
-          const arrivalSeg = nTile.n.indexOf(currentTile);
-          const arrival = arrivalSeg >= 0 ? arrivalSeg : 0;
           const candidateSegs = [arrival, (arrival + 1) % 6, (arrival + 5) % 6];
           for (const cSeg of candidateSegs) {
             const nKey = encode(neighbour, cSeg);
             if (enemySegments.has(nKey)) continue;
+            if (buildingSegments?.has(nKey)) continue;
             const existing = dist.get(nKey);
             if (existing === undefined || newCost < existing) {
               dist.set(nKey, newCost);
@@ -269,6 +291,7 @@ export function computeMovementRange(
   for (const [key, cost] of dist) {
     if (key === startKey) continue;
     if (enemySegments.has(key)) continue;
+    if (buildingSegments?.has(key)) continue;
     const zone: 'attackReady' | 'moveOnly' =
       remainingMP - cost >= 1 ? 'attackReady' : 'moveOnly';
     reachableSegments.set(key, zone);

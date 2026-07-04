@@ -2,111 +2,29 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   classifyAttackArc,
   getFacingModifier,
-  getOrientationBonus,
   getEWProtection,
   getTerrainDefense,
-  getDefencePower,
   clamp,
   calculateFormulaDamage,
+  effectiveDefenceWithOrientation,
   applyDamage,
-  calculateSplashDamage,
-  SPLASH_SCALE,
-  resolveAttack,
-  resolveReactionFire,
-  moveUnit,
-  resolveSimultaneousAttacks,
-  getCrossfireBonus,
   DEFENCE_SCALE,
-  type CombatContext,
 } from '../combat.js';
-import { Unit, HexSegment } from '../units.js';
-import { Tile, Building } from '../types.js';
+import { Tile } from '../types.js';
+import { createTestGrid, makeUnit, makeBuilding, makeCtx } from './combat.fixtures.js';
 
-// ---------------------------------------------------------------------------
-// Test helpers
-// ---------------------------------------------------------------------------
+// Core combat: arc classification, the damage formula, applyDamage, and the
+// defence components. Attack resolution lives in `combat.resolve.test.ts`.
 
-function createTestGrid(): Tile[] {
-  const centerPos = { x: 0, y: 0, z: 1 };
-  const angularSpacing = 0.15;
-
-  const neighbourPositions: Array<{ x: number; y: number; z: number }> = [];
-  for (let i = 0; i < 6; i++) {
-    const angle = (i * Math.PI) / 3;
-    neighbourPositions.push({
-      x: Math.sin(angularSpacing) * Math.sin(angle),
-      y: Math.sin(angularSpacing) * Math.cos(angle),
-      z: Math.cos(angularSpacing),
-    });
-  }
-
-  const baseTile = {
-    id: '', index: 0, sides: 6 as const, neighbours: [] as number[],
-    position3d: centerPos, boundary: [], terrainType: 'plains' as const,
-    elevationType: 'rolling' as const, forested: false,
-  };
-
-  const tiles: Tile[] = [];
-  tiles.push({ ...baseTile, id: 't0', index: 0, position3d: centerPos, neighbours: [1, 2, 3, 4, 5, 6] });
-  for (let i = 1; i <= 6; i++) {
-    const prev = i === 1 ? 6 : i - 1;
-    const next = i === 6 ? 1 : i + 1;
-    tiles.push({ ...baseTile, id: `t${i}`, index: i, position3d: neighbourPositions[i - 1], neighbours: [0, next, prev, 0, next, prev] });
-  }
-  return tiles;
-}
-
-function createLinearGrid(): Tile[] {
-  const baseTile = {
-    id: '', index: 0, sides: 6 as const, neighbours: [] as number[],
-    position3d: { x: 0, y: 0, z: 1 }, boundary: [],
-    terrainType: 'plains' as const, elevationType: 'rolling' as const, forested: false,
-  };
-  const spacing = 0.15;
-  const tiles: Tile[] = [];
-  for (let i = 0; i < 6; i++) {
-    const neighbours: number[] = [];
-    if (i > 0) neighbours.push(i - 1);
-    if (i < 5) neighbours.push(i + 1);
-    while (neighbours.length < 6) neighbours.push(i);
-    const theta = (i - 2.5) * spacing;
-    tiles.push({ ...baseTile, id: `t${i}`, index: i, position3d: { x: Math.sin(theta), y: 0, z: Math.cos(theta) }, neighbours });
-  }
-  return tiles;
-}
-
-function makeUnit(overrides: Partial<Unit> & { id: string; ownerId: string }): Unit {
-  return {
-    label: overrides.id, tileIndex: 0, segment: 0, facing: 0,
-    attributes: { size: 3, kinetic: 2, rangeAttack: 2, limbMovement: 1 },
-    currentHealth: 30, ...overrides,
-  };
-}
-
-// An EW-bearing structure. `defence` is the EW screen radius/strength; omit
-// `defence` (or pass attributes:undefined) for a plain unequipped building.
-function makeBuilding(
-  overrides: Partial<Building> & { id: string; ownerId: string },
-): Building {
-  return { tileIndex: 0, segment: 0, ...overrides };
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-describe('combat', () => {
+describe('combat (core)', () => {
   let tiles: Tile[];
   beforeEach(() => { tiles = createTestGrid(); });
 
-  // Build a CombatContext for the combat functions. Defaults tiles to the
-  // current per-test grid and buildings to none; pass a grid explicitly for
-  // linear-grid cases.
   const ctx = (
-    units: Unit[],
+    units: Parameters<typeof makeCtx>[0],
     t: Tile[] = tiles,
-    buildings: CombatContext['buildings'] = [],
-  ): CombatContext => ({ units, tiles: t, buildings });
+    buildings: Parameters<typeof makeCtx>[2] = [],
+  ) => makeCtx(units, t, buildings);
 
   // =========================================================================
   // Attack arc classification (stable logic — exact values are correct)
@@ -161,8 +79,8 @@ describe('combat', () => {
       expect(calculateFormulaDamage(1, ed(5, 5, 4))).toBeGreaterThanOrEqual(1);
     });
 
-    it('damage never exceeds 30', () => {
-      expect(calculateFormulaDamage(7, ed(0, 0, 0))).toBeLessThanOrEqual(30);
+    it('damage never exceeds 50', () => {
+      expect(calculateFormulaDamage(7, ed(0, 0, 0))).toBeLessThanOrEqual(50);
     });
 
     it('more attack power → more damage (monotonic)', () => {
@@ -192,6 +110,44 @@ describe('combat', () => {
   });
 
   // =========================================================================
+  // Orientation armour penalty (defence-side) — front no penalty, rear −3
+  // =========================================================================
+
+  describe('effectiveDefenceWithOrientation', () => {
+    it('front attack (penalty 0) leaves armour intact', () => {
+      // armour 4, other 1 → (4 + 1) × 0.75
+      expect(effectiveDefenceWithOrientation(4, 1, 0)).toBeCloseTo(5 * DEFENCE_SCALE, 5);
+    });
+
+    it('rear attack strips armour by the penalty', () => {
+      // armour 4 − 3 = 1, + other 1 → (1 + 1) × 0.75
+      expect(effectiveDefenceWithOrientation(4, 1, 3)).toBeCloseTo(2 * DEFENCE_SCALE, 5);
+    });
+
+    it('armour never goes below 0 (clamped)', () => {
+      // armour 2 − 3 → 0, + other 1 → (0 + 1) × 0.75
+      expect(effectiveDefenceWithOrientation(2, 1, 3)).toBeCloseTo(1 * DEFENCE_SCALE, 5);
+    });
+
+    it('only armour is affected — EW/terrain (otherDefence) untouched', () => {
+      // Same otherDefence, more penalty → strictly less effective defence until armour hits 0
+      const front = effectiveDefenceWithOrientation(5, 3, 0);
+      const side = effectiveDefenceWithOrientation(5, 3, 1.5);
+      const rear = effectiveDefenceWithOrientation(5, 3, 3);
+      expect(side).toBeLessThan(front);
+      expect(rear).toBeLessThan(side);
+      // otherDefence floor: with armour fully stripped, defence is other × scale
+      expect(effectiveDefenceWithOrientation(3, 3, 3)).toBeCloseTo(3 * DEFENCE_SCALE, 5);
+    });
+
+    it('higher orientation penalty → more damage (via lower defence)', () => {
+      const dFront = calculateFormulaDamage(4, effectiveDefenceWithOrientation(5, 0, 0));
+      const dRear = calculateFormulaDamage(4, effectiveDefenceWithOrientation(5, 0, 3));
+      expect(dRear).toBeGreaterThan(dFront);
+    });
+  });
+
+  // =========================================================================
   // Apply damage
   // =========================================================================
 
@@ -214,31 +170,31 @@ describe('combat', () => {
   // =========================================================================
 
   describe('getTerrainDefense', () => {
-    it('plains flat clear = 0', () => {
-      const tile = { ...tiles[0], terrainType: 'plains' as const, elevationType: 'flat' as const, forested: false };
+    it('plains lowlands clear = 0', () => {
+      const tile = { ...tiles[0], terrainType: 'plains' as const, forested: false };
       expect(getTerrainDefense(tile)).toBe(0);
     });
 
     it('forested adds 1', () => {
-      const tile = { ...tiles[0], elevationType: 'flat' as const, forested: true };
+      const tile = { ...tiles[0], forested: true };
       expect(getTerrainDefense(tile)).toBe(1);
     });
 
     it('elevation does not contribute to terrain defence (handled by elevation multiplier)', () => {
-      expect(getTerrainDefense({ ...tiles[0], elevationType: 'hills' as const, forested: false })).toBe(0);
-      expect(getTerrainDefense({ ...tiles[0], elevationType: 'mountain' as const, forested: false })).toBe(0);
+      expect(getTerrainDefense({ ...tiles[0], forested: false })).toBe(0);
+      expect(getTerrainDefense({ ...tiles[0], forested: false })).toBe(0);
     });
   });
 
   describe('getEWProtection', () => {
-    it('same-hex sources contribute full defence, additive with no cap', () => {
+    it('same-hex sources contribute full defence, capped at 5', () => {
       const target = makeUnit({ id: 't', ownerId: 'p1', tileIndex: 0 });
       const ally = makeUnit({ id: 'a1', ownerId: 'p1', tileIndex: 0 });
       ally.attributes.defence = 4;
       const ally2 = makeUnit({ id: 'a2', ownerId: 'p1', tileIndex: 0 });
       ally2.attributes.defence = 4;
-      // Two same-hex EW-4 screens → 4 + 4 = 8 (no cap at 5).
-      expect(getEWProtection(target, ctx([target, ally, ally2]))).toBe(8);
+      // Two same-hex EW-4 screens → 4 + 4 = 8, capped at 5.
+      expect(getEWProtection(target, ctx([target, ally, ally2]))).toBe(5);
     });
 
     it('contribution falls off by 1 per hop', () => {
@@ -260,12 +216,12 @@ describe('combat', () => {
       expect(getEWProtection(target, ctx([target, dead, enemy, weakAdjacent]))).toBe(0);
     });
 
-    it('friendly buildings project EW screens, additive with unit sources', () => {
+    it('friendly buildings project EW screens, additive with unit sources, capped at 5', () => {
       const target = makeUnit({ id: 't', ownerId: 'p1', tileIndex: 0 });
-      // Same-hex EW-4 building → full 4; adjacent EW-5 building → max(0, 5 − 1) = 4.
+      // Same-hex EW-4 building → full 4; adjacent EW-5 building → max(0, 5 − 1) = 4; total = 8, capped at 5.
       const sameHex = makeBuilding({ id: 'b0', ownerId: 'p1', tileIndex: 0, attributes: { defence: 4 } });
       const adjacent = makeBuilding({ id: 'b1', ownerId: 'p1', tileIndex: 1, attributes: { defence: 5 } });
-      expect(getEWProtection(target, ctx([target], tiles, [sameHex, adjacent]))).toBe(8);
+      expect(getEWProtection(target, ctx([target], tiles, [sameHex, adjacent]))).toBe(5);
     });
 
     it('excludes enemy buildings and unequipped buildings', () => {
@@ -273,224 +229,6 @@ describe('combat', () => {
       const enemyBuilding = makeBuilding({ id: 'be', ownerId: 'p2', tileIndex: 0, attributes: { defence: 5 } });
       const plainBuilding = makeBuilding({ id: 'bp', ownerId: 'p1', tileIndex: 0 }); // no attributes → defence 0
       expect(getEWProtection(target, ctx([target], tiles, [enemyBuilding, plainBuilding]))).toBe(0);
-    });
-  });
-
-  // =========================================================================
-  // Splash damage — behavioral
-  // =========================================================================
-
-  describe('splash damage', () => {
-    it('splash chosen when multiple enemies in target hex', () => {
-      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      attacker.attributes.kinetic = 3;
-      attacker.attributes.splashAttack = 3;
-
-      const enemies = Array.from({ length: 4 }, (_, i) => {
-        const e = makeUnit({ id: `e${i}`, ownerId: 'p2', tileIndex: 0, facing: 0 });
-        e.attributes.armour = 0; e.currentHealth = 50;
-        return e;
-      });
-
-      const result = resolveAttack('a', 'e0', ctx([attacker, ...enemies]));
-      expect(result.wasValid).toBe(true);
-      expect(result.chosenWeaponMode).toBe('splash');
-      expect(result.splashEvents.length).toBe(4);
-    });
-
-    it('direct chosen when only one enemy in target hex', () => {
-      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      attacker.attributes.kinetic = 5;
-      attacker.attributes.splashAttack = 5;
-      const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
-      target.currentHealth = 50;
-
-      const result = resolveAttack('a', 't', ctx([attacker, target]));
-      expect(result.wasValid).toBe(true);
-      expect(result.chosenWeaponMode).toBe('direct');
-    });
-
-    it('splash only hits enemies in target hex, not adjacent', () => {
-      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 2, facing: 0 });
-      attacker.attributes.kinetic = 3;
-      attacker.attributes.splashAttack = 3;
-      attacker.attributes.rangeAttack = 5;
-
-      const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 3 });
-      target.currentHealth = 50;
-      const bystander = makeUnit({ id: 'b', ownerId: 'p2', tileIndex: 1, facing: 0 });
-      bystander.currentHealth = 50;
-
-      const result = resolveAttack('a', 't', ctx([attacker, target, bystander]));
-      expect(result.splashEvents.some((e) => e.victimId === 'b')).toBe(false);
-    });
-
-    it('splash does not hit friendlies', () => {
-      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      attacker.attributes.kinetic = 2;
-      attacker.attributes.splashAttack = 5;
-      const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
-      target.currentHealth = 50;
-      const friendly = makeUnit({ id: 'f', ownerId: 'p1', tileIndex: 0, facing: 0 });
-      friendly.currentHealth = 50;
-
-      const result = resolveAttack('a', 't', ctx([attacker, target, friendly]));
-      expect(result.splashEvents.some((e) => e.victimId === 'f')).toBe(false);
-    });
-
-    it('splash always deals at least 1 per unit', () => {
-      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      attacker.attributes.kinetic = 1;
-      attacker.attributes.splashAttack = 1;
-      const t1 = makeUnit({ id: 't1', ownerId: 'p2', tileIndex: 0, facing: 0 });
-      t1.attributes.armour = 5; t1.currentHealth = 50;
-      const t2 = makeUnit({ id: 't2', ownerId: 'p2', tileIndex: 0, facing: 0 });
-      t2.attributes.armour = 5; t2.currentHealth = 50;
-
-      const result = resolveAttack('a', 't1', ctx([attacker, t1, t2]));
-      for (const event of result.splashEvents) {
-        expect(event.damage).toBeGreaterThanOrEqual(1);
-      }
-    });
-  });
-
-  // =========================================================================
-  // Range
-  // =========================================================================
-
-  describe('range', () => {
-    it('allows attack within segment range', () => {
-      const linear = createLinearGrid();
-      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 0, facing: 0 });
-      attacker.attributes.rangeAttack = 5;
-      const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 2, facing: 0 });
-      target.currentHealth = 30;
-
-      expect(resolveAttack('a', 't', ctx([attacker, target], linear)).wasValid).toBe(true);
-    });
-
-    it('rejects attack beyond segment range', () => {
-      const linear = createLinearGrid();
-      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 0, facing: 0 });
-      attacker.attributes.rangeAttack = 2; attacker.attributes.kinetic = 0;
-      const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 3, facing: 0 });
-
-      const result = resolveAttack('a', 't', ctx([attacker, target], linear));
-      expect(result.wasValid).toBe(false);
-      expect(result.reasonInvalid).toContain('range');
-    });
-
-    it('rangeAttack 0 reaches adjacent tile (base threshold 1.0 >= fallback distance 1.0)', () => {
-      const linear = createLinearGrid();
-      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 0, facing: 0 });
-      attacker.attributes.kinetic = 2; attacker.attributes.rangeAttack = 0;
-
-      const near = makeUnit({ id: 'n', ownerId: 'p2', tileIndex: 1, facing: 0 });
-      near.currentHealth = 30;
-      expect(resolveAttack('a', 'n', ctx([attacker, near], linear)).wasValid).toBe(true);
-    });
-
-    it('rangeAttack 2 reaches adjacent tile (threshold 2.0 > fallback distance 1.0)', () => {
-      const linear = createLinearGrid();
-      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 0, facing: 0 });
-      attacker.attributes.kinetic = 2; attacker.attributes.rangeAttack = 2;
-
-      const near = makeUnit({ id: 'n', ownerId: 'p2', tileIndex: 1, facing: 0 });
-      near.currentHealth = 30;
-      expect(resolveAttack('a', 'n', ctx([attacker, near], linear)).wasValid).toBe(true);
-
-      const far = makeUnit({ id: 'f', ownerId: 'p2', tileIndex: 3, facing: 0 });
-      expect(resolveAttack('a', 'f', ctx([attacker, far], linear)).wasValid).toBe(false);
-    });
-  });
-
-  // =========================================================================
-  // Simultaneous resolution
-  // =========================================================================
-
-  describe('simultaneous resolution', () => {
-    it('both units can kill each other', () => {
-      const a = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      a.attributes.kinetic = 5; a.currentHealth = 1;
-      const b = makeUnit({ id: 'b', ownerId: 'p2', tileIndex: 0, facing: 0 });
-      b.attributes.kinetic = 5; b.currentHealth = 1;
-
-      resolveSimultaneousAttacks('a', 'b', ctx([a, b]));
-      expect(a.currentHealth).toBe(0);
-      expect(b.currentHealth).toBe(0);
-    });
-  });
-
-  // =========================================================================
-  // Reaction fire
-  // =========================================================================
-
-  describe('reaction fire', () => {
-    it('triggers AA when drone moves through enemy antiAir tile', () => {
-      const aa = makeUnit({ id: 'd', ownerId: 'p2', tileIndex: 1, facing: 0 });
-      aa.attributes.antiAir = 3;
-      const drone = makeUnit({ id: 'm', ownerId: 'p1', tileIndex: 3, facing: 0 });
-      drone.attributes.flightMovement = 3; drone.currentHealth = 50;
-
-      const results = resolveReactionFire('m', [3, 1], ctx([aa, drone]));
-      expect(results.length).toBeGreaterThan(0);
-      expect(results[0].chosenWeaponMode).toBe('antiAir');
-    });
-
-    it('does not trigger for ground units', () => {
-      const aa = makeUnit({ id: 'd', ownerId: 'p2', tileIndex: 1, facing: 0 });
-      aa.attributes.antiAir = 3;
-      const tank = makeUnit({ id: 'm', ownerId: 'p1', tileIndex: 3, facing: 0 });
-      tank.currentHealth = 50;
-
-      expect(resolveReactionFire('m', [3, 1], ctx([aa, tank])).length).toBe(0);
-    });
-
-    it('fires at most once per AA unit per action', () => {
-      const aa = makeUnit({ id: 'd', ownerId: 'p2', tileIndex: 1, facing: 0 });
-      aa.attributes.antiAir = 2;
-      const drone = makeUnit({ id: 'm', ownerId: 'p1', tileIndex: 4, facing: 0 });
-      drone.attributes.flightMovement = 3; drone.currentHealth = 50;
-
-      const results = resolveReactionFire('m', [4, 1, 2], ctx([aa, drone]));
-      expect(results.filter((r) => r.attackerId === 'd').length).toBeLessThanOrEqual(1);
-    });
-  });
-
-  // =========================================================================
-  // resolveAttack integration
-  // =========================================================================
-
-  describe('resolveAttack', () => {
-    it('rejects friendly fire', () => {
-      const a = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      const t = makeUnit({ id: 't', ownerId: 'p1', tileIndex: 0, facing: 0 });
-      const result = resolveAttack('a', 't', ctx([a, t]));
-      expect(result.wasValid).toBe(false);
-      expect(result.reasonInvalid).toContain('friendly');
-    });
-
-    it('destroys unit when health reaches 0', () => {
-      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      attacker.attributes.kinetic = 5;
-      const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 3 });
-      target.currentHealth = 1;
-
-      const result = resolveAttack('a', 't', ctx([attacker, target]));
-      expect(result.destroyedUnitIds).toContain('t');
-    });
-
-    it('always deals at least 1 damage even with max defence', () => {
-      tiles[0] = { ...tiles[0], elevationType: 'mountain', forested: true };
-      const attacker = makeUnit({ id: 'a', ownerId: 'p1', tileIndex: 1, facing: 0 });
-      attacker.attributes.kinetic = 1;
-      const target = makeUnit({ id: 't', ownerId: 'p2', tileIndex: 0, facing: 0 });
-      target.attributes.armour = 5; target.currentHealth = 50;
-      const ew = makeUnit({ id: 'ew', ownerId: 'p2', tileIndex: 0 });
-      ew.attributes.defence = 5;
-
-      const result = resolveAttack('a', 't', ctx([attacker, target, ew]));
-      expect(result.directDamage).toBeGreaterThanOrEqual(1);
     });
   });
 });

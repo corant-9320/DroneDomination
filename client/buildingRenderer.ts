@@ -9,7 +9,7 @@
  */
 
 import * as THREE from 'three';
-import { buildBuildingModel, EMPTY_BUILDING_ATTRS } from './buildingModel.js';
+import { buildBuildingModel, EMPTY_BUILDING_ATTRS, waitForBuildingTextures } from './buildingModel.js';
 import type { BuildingModelAttrs } from './buildingModel.js';
 import type { BuildingData, WorldData } from './worldData.js';
 import { factionColor } from './colors.js';
@@ -64,7 +64,7 @@ const spriteCache = new Map<string, ImageBitmap>();
 const pendingRenders = new Set<string>();
 
 /** Bump when camera/model rendering changes to invalidate stale cached sprites. */
-const SPRITE_VERSION = 'bld-v2';
+const SPRITE_VERSION = 'bld-v8';
 
 function attrKey(attrs: BuildingModelAttrs, faction?: string): string {
   return `${SPRITE_VERSION}:${attrs.kinetic}:${attrs.rangeAttack}:${attrs.splashAttack}:${attrs.antiAir}:${attrs.armour}:${attrs.defence}:${attrs.repair}:${faction ?? ''}`;
@@ -105,6 +105,10 @@ export function getBuildingSprite(building: BuildingData, factionHex?: string): 
 
 async function renderBuilding(attrs: BuildingModelAttrs, key: string, factionHex?: string): Promise<void> {
   ensureRenderer();
+
+  // Wait for wall + roof textures to finish loading so the sprite has full
+  // texture detail rather than rendering against grey unloaded textures.
+  await waitForBuildingTextures(attrs);
 
   const model = buildBuildingModel(attrs, factionHex);
   // Match the unit "facing 0" baseline so the structure reads at the same

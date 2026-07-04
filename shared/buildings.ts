@@ -26,6 +26,20 @@
  */
 
 // ---------------------------------------------------------------------------
+// Building placement steepness limit
+// ---------------------------------------------------------------------------
+
+/**
+ * Maximum segment steepness (radians) for building placement.
+ * A building may not be placed on a segment steeper than this.
+ * Calibrated to roughly align with MAX_STEEP_WHEELED (you shouldn't be able
+ * to build where a tank cannot stand).
+ *
+ * Value is a calibrated output (scripts/calibrateSteepness.ts).
+ */
+export const MAX_BUILD_STEEPNESS = 0.44; // ~25° — same as MAX_STEEP_WHEELED
+
+// ---------------------------------------------------------------------------
 // Abstract world view
 // ---------------------------------------------------------------------------
 
@@ -44,6 +58,12 @@ export interface BuildSegTile {
    * invariant). Set by the caller.
    */
   groundPassable: boolean;
+  /**
+   * Per-segment steepness in radians (from tile.segSteep or tile.ss).
+   * Defaults to a zero-filled array when absent so legacy/mock tiles are
+   * treated as flat/buildable.
+   */
+  segSteep?: number[];
 }
 
 /** A full-segment occupant position (building or unit). */
@@ -75,6 +95,7 @@ export type PlacementRejectionReason =
   | 'invalid-tile'
   | 'invalid-segment'
   | 'impassable-tile'
+  | 'too-steep'
   | 'segment-occupied-unit'
   | 'segment-occupied-building'
   | 'tile-full'
@@ -308,6 +329,14 @@ export function validateBuildingPlacement(
   }
   if (!tile.groundPassable) {
     return { legal: false, reason: 'impassable-tile', message: 'Cannot build on an impassable tile.' };
+  }
+
+  // Steepness gate: reject placement on a segment steeper than the build limit.
+  // Falls back to 0 (flat/passable) when segSteep is absent — preserves
+  // existing behaviour for test mocks and legacy tiles that predate this field.
+  const segSteepVal = tile.segSteep ? (tile.segSteep[placement.segment] ?? 0) : 0;
+  if (segSteepVal > MAX_BUILD_STEEPNESS) {
+    return { legal: false, reason: 'too-steep', message: 'Cannot build on a slope this steep.' };
   }
 
   const units = unitSet(ctx);

@@ -11,7 +11,8 @@
  * URL in dev and bundles them on build — no manual copy into `publicDir`.
  */
 
-import { TileData } from './worldData.js';
+import { TileData, WorldData } from './worldData.js';
+import { tileHeight, MAX_CLIMB_LIMB } from '../shared/movementConstants.js';
 
 import oceanUrl from '../artifacts/ocean.webp';
 import grassUrl from '../artifacts/grass.webp';
@@ -21,8 +22,17 @@ import tundraUrl from '../artifacts/tundra.webp';
 import hillsUrl from '../artifacts/hills.webp';
 import hillsPlainsUrl from '../artifacts/HillsPlains.webp';
 import mountainUrl from '../artifacts/mountain.webp';
+import cliffsUrl from '../artifacts/cliffs.webp';
+import roadUrl from '../artifacts/road.webp';
+import pavementUrl from '../artifacts/pavement.webp';
 
-/** Texture key → source URL. Keys are returned by {@link TerrainTextures.keyForTile}. */
+/**
+ * Texture key → source URL. Most keys are returned by
+ * {@link TerrainTextures.keyForTile} and composited per-tile. The `road` key is
+ * special: it is never returned by `keyForTile` (cities are not textured as a
+ * whole hex) — the local-map terrain renderer fetches it directly via
+ * {@link TerrainTextures.get} to paint open street segments inside cities.
+ */
 const SOURCES: Record<string, string> = {
   ocean: oceanUrl,
   grassland: grassUrl,
@@ -32,6 +42,9 @@ const SOURCES: Record<string, string> = {
   hills: hillsUrl,
   hillsPlains: hillsPlainsUrl,
   mountain: mountainUrl,
+  cliffs: cliffsUrl,
+  road: roadUrl,
+  pavement: pavementUrl,
 };
 
 export class TerrainTextures {
@@ -53,17 +66,34 @@ export class TerrainTextures {
    * in `baseTerrainColor` (water first, then mountain, then hills, then the
    * base terrain biome). Returns null for tiles that should not be textured
    * (e.g. cities, handled by the caller).
+   * 
+   * Cliffs are detected when a tile is adjacent to terrain at least MAX_CLIMB_LIMB
+   * height steps lower, indicating a steep unclimbable face. Cliff texture is
+   * prioritized over terrain type to visually emphasize the discontinuity.
    */
-  keyForTile(tile: Pick<TileData, 'terrain' | 'elevType'>): string | null {
+  keyForTile(tile: Pick<TileData, 'terrain' | 'h' | 'n'>, world?: WorldData): string | null {
     const terrain = String(tile.terrain ?? '').toLowerCase();
-    const elev = String(tile.elevType ?? '').toLowerCase();
 
-    if (terrain === 'ocean' || terrain === 'water' || terrain === 'lake' ||
-        elev === 'ocean' || elev === 'water' || elev === 'lake') {
+    if (terrain === 'ocean' || terrain === 'water' || terrain === 'lake') {
       return 'ocean';
     }
-    if (elev === 'mountain' || terrain === 'mountain') return 'mountain';
-    if (elev === 'hills') return terrain === 'plains' ? 'hillsPlains' : 'hills';
+    
+    // Check for cliff edges if world data is available — a tile with a steep
+    // unclimbable drop to any neighbor gets the cliff texture overlay.
+    if (world && tile.n && tile.n.length > 0) {
+      const thisHeight = tileHeight(tile);
+      for (const neighborIdx of tile.n) {
+        const neighbor = world.tiles[neighborIdx];
+        const neighborHeight = tileHeight(neighbor);
+        if (Math.abs(thisHeight - neighborHeight) > MAX_CLIMB_LIMB) {
+          return 'cliffs';
+        }
+      }
+    }
+
+    const h = tileHeight(tile);
+    if (h >= 9 || terrain === 'mountain') return 'mountain';
+    if (h >= 6) return terrain === 'plains' ? 'hillsPlains' : 'hills';
 
     switch (terrain) {
       case 'grassland': return 'grassland';

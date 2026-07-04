@@ -23,7 +23,7 @@
  * - Combat explanation text (combatExplainer.ts)
  */
 
-import { Tile, ElevationType, TerrainType, Building } from '../src/world/types.js';
+import { Tile, TerrainType, Building } from '../src/world/types.js';
 import { Unit, HexSegment } from '../src/world/units.js';
 import type { UnitAttributes } from '../shared/unitTypes.js';
 import {
@@ -93,6 +93,8 @@ export interface WireTile {
   pos?: [number, number, number];
   /** Boundary polygon vertices [[x,y,z], ...] (needed for segment-distance range check). */
   b?: [number, number, number][];
+  /** Per-segment steepness in radians (needed for steepness-gate movement validation). */
+  ss?: number[];
 }
 
 export interface CombatRequest {
@@ -434,19 +436,26 @@ export function computeMovePath(
     const departureSeg = prevTile.neighbours.indexOf(currentHex);
     if (departureSeg < 0) return { error: 'Move path is not contiguous' };
 
-    // Intra-hex pivot to the departure segment.
+    // Intra-hex pivot to the departure segment — each intermediate segment is
+    // now steepness-gated.
     const diff = Math.abs(currentSegment - departureSeg);
     const pivotSteps = Math.min(diff, 6 - diff);
-    const pivotStepCost = segmentCost(prevTile, mode);
-    if (!Number.isFinite(pivotStepCost)) return { error: 'Move path crosses impassable terrain' };
-    spent += pivotSteps * pivotStepCost;
+    // Step through each intermediate segment on the shortest arc
+    const direction = ((departureSeg - currentSegment + 9) % 6) < 3 ? 1 : -1;
+    let pivotSeg = currentSegment;
+    for (let p = 0; p < pivotSteps; p++) {
+      pivotSeg = ((pivotSeg + direction) % 6 + 6) % 6;
+      const pivotCost = segmentCost(prevTile, pivotSeg, mode);
+      if (!Number.isFinite(pivotCost)) return { error: 'Move path crosses impassable terrain' };
+      spent += pivotCost;
+    }
 
-    // Cross the border into the destination tile.
-    const crossCost = segmentCost(destTile, mode, prevTile);
+    // Cross the border into the destination tile — gate on arrival segment.
+    const arrivalSeg = destTile.neighbours.indexOf(prevHex);
+    const crossCost = segmentCost(destTile, arrivalSeg >= 0 ? arrivalSeg : 0, mode);
     if (!Number.isFinite(crossCost)) return { error: 'Move path crosses impassable terrain' };
     spent += crossCost;
 
-    const arrivalSeg = destTile.neighbours.indexOf(prevHex);
     currentSegment = arrivalSeg >= 0 ? arrivalSeg : 0;
   }
 
@@ -610,9 +619,9 @@ export function rebuildTiles(wireTiles: WireTile[]): Tile[] {
       position3d: pos,
       boundary,
       terrainType: (wt.t as TerrainType) ?? 'plains',
-      elevationType: (wt.elev as ElevationType) ?? 'flat',
-      height: wt.h,
+      height: wt.h ?? 0,
       forested: wt.f || undefined,
+      segSteep: wt.ss,
     };
   }
 

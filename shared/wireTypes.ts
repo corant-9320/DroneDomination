@@ -18,8 +18,7 @@
  *     position3d {x,y,z} → pos [x,y,z]
  *     boundary [{x,y,z}] → b  [[x,y,z]]
  *     terrainType      → terrain
- *     elevationType    → elevType
- *     height           → h        (omitted when 0)
+ *     height           → h
  *     forested         → f        (omitted when false)
  *     riverTo          → rv       (omitted when absent)
  *     cityId           → city     (omitted when absent)
@@ -54,8 +53,7 @@ export interface WireTile {
   /** Ordered boundary polygon vertices [[x,y,z], ...] */
   b: [number, number, number][];
   terrain: string;
-  elevType: string;
-  /** Discrete terrain height 0–11. Omitted when 0. */
+  /** Discrete terrain height 0–11. Omitted when 0 (ocean/sea-level). */
   h?: number;
   /** Whether this tile has forest cover. Omitted when false. */
   f?: boolean;
@@ -63,6 +61,12 @@ export interface WireTile {
   rv?: number;
   /** City id for tiles that are the capital of a city. Omitted when absent. */
   city?: string;
+  /**
+   * Per-segment steepness in radians (segSteep). One entry per side. Values are
+   * rounded to 4 decimals on the wire. Omitted only for tiles that have no
+   * computed steepness (never the case for generated worlds).
+   */
+  ss?: number[];
 }
 
 // ─── Unit ─────────────────────────────────────────────────────────────────────
