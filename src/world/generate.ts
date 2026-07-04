@@ -1760,8 +1760,8 @@ export function generateWorld(seed: number): World {
     for (const [idx] of platform) {
       const t = tiles[idx];
 
-      // A city's own hex is a settled, cleared site — never forested.
-      if (idx === city.tileIndex) t.forested = false;
+      // The entire city platform is settled land — never forested.
+      t.forested = false;
 
       // Convert ocean/river tiles within the platform to passable land.
       if (t.terrainType === 'ocean') {
