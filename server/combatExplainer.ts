@@ -18,17 +18,12 @@ import {
   getDefencePower,
   isDrone,
   clamp,
-  calculateFormulaDamage,
-  effectiveDefenceWithOrientation,
-  calculateSplashDamage,
-  calculateModifiedAttackPower,
-  calculateRangeEfficiency,
+  getChassisType,
   getChassisAttackModifier,
   getSegmentRangeThreshold,
-  applyDroneIncomingDamageModifier,
   evaluateWeaponOptions,
   chooseWeaponOption,
-  DEFENCE_SCALE,
+  computeDamage,
   SPLASH_SCALE,
   SEGMENT_RANGE_PER_POINT,
   SEGMENT_RANGE_BASE,
@@ -43,6 +38,8 @@ import {
   type CombatContext,
   type WeaponMode,
   type WeaponOption,
+  type DamageBreakdown,
+  type DamageInput,
 } from '../src/world/combat.js';
 import { calculateRepairAmount } from '../src/world/repair.js';
 import { HP_PER_POINT } from '../src/world/units.js';
@@ -105,7 +102,62 @@ function formatArcDetailed(angleDiffDeg: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Attack explanation
+// Item 2: Mapper — DamageBreakdown → CombatBreakdown
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a DamageBreakdown (from computeDamage) plus context into a CombatBreakdown
+ * wire object for the client preview table.
+ */
+function damageBreakdownToCombatBreakdown(
+  bd: DamageBreakdown,
+  opts: {
+    inRange: boolean;
+    distance: number;
+    attackRange: number;
+    weaponMode: CombatBreakdown['weaponMode'];
+    baseWeapon: number;
+    orientationArmourPenalty: number;
+    orientationLabel: string;
+    defPower: ReturnType<typeof getDefencePower>;
+    elevationMultiplier: number;
+    droneEvasion: number;
+    totalDamage: number;
+    weaponSelectionLabel: string;
+  },
+): CombatBreakdown {
+  const chassisLabel: CombatBreakdown['chassisLabel'] =
+    bd.chassisModifier === DRONE_ATTACK_MODIFIER ? 'Drone'
+    : bd.chassisModifier === SPIDER_ATTACK_MODIFIER ? 'Spider'
+    : 'Tank';
+
+  return {
+    inRange: opts.inRange,
+    distance: opts.distance,
+    attackRange: Math.round(opts.attackRange * 100) / 100,
+    weaponMode: opts.weaponMode,
+    baseWeapon: opts.baseWeapon,
+    chassisLabel,
+    chassisModifier: bd.chassisModifier,
+    rangeEfficiency: Math.round(bd.rangeEfficiency * 100) / 100,
+    orientationArmourPenalty: opts.orientationArmourPenalty,
+    orientationLabel: opts.orientationLabel,
+    attackTotal: Math.round(bd.attackPower * 100) / 100,
+    defArmour: opts.defPower.armour,
+    defEW: opts.defPower.ew,
+    defEWRaw: opts.defPower.ewRaw,
+    defEWMultiplier: opts.defPower.ewMultiplier,
+    defTerrain: opts.defPower.terrain,
+    elevationMultiplier: Math.round(opts.elevationMultiplier * 100) / 100,
+    droneEvasion: opts.droneEvasion,
+    defTotal: Math.round(bd.effectiveDefence * 100) / 100,
+    netDamage: opts.inRange ? opts.totalDamage : 0,
+    weaponSelectionLabel: opts.weaponSelectionLabel,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// buildBreakdown — now delegates to computeDamage + mapper
 // ---------------------------------------------------------------------------
 
 /**
@@ -135,10 +187,7 @@ function buildBreakdown(
   );
   const effectiveThreshold = rangeThreshold * elevMult;
   const inRange = segDist <= effectiveThreshold;
-  const chassisModifier = getChassisAttackModifier(attacker);
-  const rangeEfficiency = calculateRangeEfficiency(segDist);
   const targetIsDrone = isDrone(target);
-  const effectiveDefence = effectiveDefenceWithOrientation(defPower.armour, defPower.ew + defPower.terrain, orientationArmourPenalty);
 
   // Orientation label from angular difference
   const angleDiff = getAngularDifference(tiles, attacker.tileIndex, target.tileIndex, target.facing, attacker.segment, target.segment);
@@ -161,46 +210,44 @@ function buildBreakdown(
   else if ((attacker.attributes.splashAttack ?? 0) > 0) { baseWeapon = clamp(attacker.attributes.splashAttack!, 1, 5); weaponMode = 'splash'; }
   else if (antiAirAttack > 0) { baseWeapon = clamp(antiAirAttack, 1, 5); weaponMode = 'antiAir'; }
 
-  const attackPower = calculateModifiedAttackPower(attacker, baseWeapon, segDist);
-  const rawDamage = calculateFormulaDamage(attackPower, effectiveDefence);
+  // Call computeDamage once — single source of truth for all numeric values
+  const bd = computeDamage({
+    mode: chosenMode === 'none' ? 'direct' : chosenMode,
+    attackerChassis: getChassisType(attacker),
+    baseWeaponValue: baseWeapon,
+    orientationArmourPenalty,
+    distance: segDist,
+    armour: defPower.armour,
+    defenceOther: defPower.ew + defPower.terrain,
+    targetIsDrone,
+  });
 
   // Drone evasion: difference between raw and final damage when target is a drone
   let droneEvasion = 0;
-  if (targetIsDrone && chosenMode !== 'antiAir') {
-    const multiplier = chosenMode === 'splash'
-      ? (1 - (attacker.attributes.splashAttack ?? 0 > 0 ? 0.50 : 0.33))
-      : 0.67; // direct: 1 - 0.33
-    droneEvasion = Math.max(0, rawDamage - totalDamage);
+  if (targetIsDrone && chosenMode !== 'antiAir' && chosenMode !== 'none') {
+    droneEvasion = Math.max(0, bd.rawFormulaDamage - totalDamage);
   }
 
-  return {
+  return damageBreakdownToCombatBreakdown(bd, {
     inRange,
     distance: segDist,
-    attackRange: Math.round(effectiveThreshold * 100) / 100,
+    attackRange: effectiveThreshold,
     weaponMode,
     baseWeapon,
-    chassisLabel: chassisModifier === DRONE_ATTACK_MODIFIER ? 'Drone'
-      : chassisModifier === SPIDER_ATTACK_MODIFIER ? 'Spider'
-      : 'Tank',
-    chassisModifier,
-    rangeEfficiency: Math.round(rangeEfficiency * 100) / 100,
     orientationArmourPenalty,
     orientationLabel,
-    droneAttackPenalty: 0, // deprecated — chassis modifier is shown via chassisLabel row
-    attackTotal: Math.round(attackPower * 100) / 100,
-    defArmour: defPower.armour,
-    defEW: defPower.ew,
-    defEWRaw: defPower.ewRaw,
-    defEWMultiplier: defPower.ewMultiplier,
-    defFormation: defPower.defensiveFormation,
-    defTerrain: defPower.terrain,
-    elevationMultiplier: Math.round(elevMult * 100) / 100,
+    defPower,
+    elevationMultiplier: elevMult,
     droneEvasion,
-    defTotal: Math.round(effectiveDefence * 100) / 100,
-    netDamage: inRange ? totalDamage : 0,
+    totalDamage,
     weaponSelectionLabel,
-  };
+  });
 }
+
+
+// ---------------------------------------------------------------------------
+// Attack explanation
+// ---------------------------------------------------------------------------
 
 export function explainAttack(
   attacker: Unit,
@@ -268,12 +315,26 @@ export function explainAttack(
   const attackerIsDrone = isDrone(attacker);
   const defPower = getDefencePower(target, ctx, attackerIsDrone);
   const effectiveArmour = Math.max(0, defPower.armour - orientationArmourPenalty);
-  const effectiveDefence = effectiveDefenceWithOrientation(defPower.armour, defPower.ew + defPower.terrain, orientationArmourPenalty);
+
+  // Call computeDamage once for step 3's effectiveDefence display
+  // (we'll call it again per-weapon in buildBreakdown, but this gives us the defence value for narration)
+  const defInput: DamageInput = {
+    mode: 'direct',
+    attackerChassis: getChassisType(attacker),
+    baseWeaponValue: clamp(meleeAttack || (attacker.attributes.splashAttack ?? 0) || antiAirAttack, 1, 5),
+    orientationArmourPenalty,
+    distance: segDist,
+    armour: defPower.armour,
+    defenceOther: defPower.ew + defPower.terrain,
+    targetIsDrone: isDrone(target),
+  };
+  const defBd = computeDamage(defInput);
+  const effectiveDefence = defBd.effectiveDefence;
 
   steps.push({
     title: '🛡 Defence Power',
     description: `Armour(${defPower.armour}) − orientation(${orientationArmourPenalty.toFixed(1)}) = ${effectiveArmour.toFixed(1)}. + EW(${defPower.ewRaw.toFixed(2)} radius screen, ${attackerIsDrone ? 'applies vs drone attacker' : '0 vs ground attacker'}) + Terrain(${defPower.terrain}).`,
-    formula: `EffectiveDefence = (${effectiveArmour.toFixed(1)} + ${defPower.ew.toFixed(2)} + ${defPower.terrain}) × ${DEFENCE_SCALE} = ${effectiveDefence.toFixed(2)}`,
+    formula: `EffectiveDefence = (${effectiveArmour.toFixed(1)} + ${defPower.ew.toFixed(2)} + ${defPower.terrain}) × ${0.75} = ${effectiveDefence.toFixed(2)}`,
     result: `EffectiveDefence = ${effectiveDefence.toFixed(2)}`,
     tone: effectiveDefence > 0 ? 'negative' : 'neutral',
   });
@@ -331,48 +392,66 @@ export function explainAttack(
 
   const totalDamage = chosenOption.score;
 
-  // Step 5: Chosen weapon detail
+  // Step 5: Chosen weapon detail — format from DamageBreakdown (Item 1)
   if (chosenOption.mode === 'direct') {
     const baseAttack = clamp(meleeAttack, 1, 5);
-    const rangeEff = calculateRangeEfficiency(segDist);
-    const attackPower = calculateModifiedAttackPower(attacker, baseAttack, segDist);
-    const apSq = attackPower * attackPower;
-    const edDirect = effectiveDefence;
-    const edSq = edDirect * edDirect;
-    const cm = getChassisAttackModifier(attacker);
+    const bd = computeDamage({
+      mode: 'direct',
+      attackerChassis: getChassisType(attacker),
+      baseWeaponValue: baseAttack,
+      orientationArmourPenalty,
+      distance: segDist,
+      armour: defPower.armour,
+      defenceOther: defPower.ew + defPower.terrain,
+      targetIsDrone,
+    });
+    const apSq = bd.attackPower * bd.attackPower;
+    const edSq = bd.effectiveDefence * bd.effectiveDefence;
     steps.push({
       title: '💥 Kinetic Fire',
-      description: `rangeEfficiency = ${rangeEff.toFixed(2)} (segDist ${segDist.toFixed(2)}). AttackPower = ${baseAttack} × ${cm} × ${rangeEff.toFixed(2)} = ${attackPower.toFixed(2)}. Orientation strips ${orientationArmourPenalty.toFixed(1)} armour → ED = ${edDirect.toFixed(2)}.${targetIsDrone ? ` Drone incoming modifier ×${DRONE_DIRECT_FIRE_DAMAGE_MULTIPLIER} applied.` : ''}`,
+      description: `rangeEfficiency = ${bd.rangeEfficiency.toFixed(2)} (segDist ${segDist.toFixed(2)}). AttackPower = ${baseAttack} × ${bd.chassisModifier} × ${bd.rangeEfficiency.toFixed(2)} = ${bd.attackPower.toFixed(2)}. Orientation strips ${orientationArmourPenalty.toFixed(1)} armour → ED = ${bd.effectiveDefence.toFixed(2)}.${targetIsDrone ? ` Drone incoming modifier ×${DRONE_DIRECT_FIRE_DAMAGE_MULTIPLIER} applied.` : ''}`,
       formula: `round(1 + 49 × ${apSq.toFixed(2)} / (${apSq.toFixed(2)} + ${edSq.toFixed(2)}))${targetIsDrone ? ` × ${DRONE_DIRECT_FIRE_DAMAGE_MULTIPLIER}` : ''} = ${totalDamage}`,
       result: `${totalDamage} direct damage`,
       tone: totalDamage >= 15 ? 'critical' : totalDamage >= 5 ? 'positive' : 'neutral',
     });
   } else if (chosenOption.mode === 'splash') {
     const affectedCount = allUnits.filter((u) => u.ownerId !== attacker.ownerId && u.currentHealth > 0 && u.tileIndex === target.tileIndex).length;
-    const rangeEff = calculateRangeEfficiency(segDist);
-    const edSplash = effectiveDefence;
     const splashAttack = attacker.attributes.splashAttack ?? 0;
-    const cm = getChassisAttackModifier(attacker);
     const baseSplash = clamp(splashAttack, 1, 5);
-    const splashAttackPower = calculateModifiedAttackPower(attacker, baseSplash, segDist);
+    const bd = computeDamage({
+      mode: 'splash',
+      attackerChassis: getChassisType(attacker),
+      baseWeaponValue: baseSplash,
+      orientationArmourPenalty,
+      distance: segDist,
+      armour: defPower.armour,
+      defenceOther: defPower.ew + defPower.terrain,
+      targetIsDrone,
+    });
     steps.push({
       title: '💣 Splash Fire',
-      description: `splashAttack=${splashAttack}. rangeEfficiency = ${rangeEff.toFixed(2)} (segDist ${segDist.toFixed(2)}). AttackPower = ${baseSplash} × ${cm} × ${rangeEff.toFixed(2)} = ${splashAttackPower.toFixed(2)}. Orientation strips ${orientationArmourPenalty.toFixed(1)} armour (primary only) → ED = ${edSplash.toFixed(2)}. Affects ${affectedCount} enemy unit${affectedCount !== 1 ? 's' : ''} in target hex. Each takes ${Math.round(SPLASH_SCALE * 100)}% of formula damage.`,
+      description: `splashAttack=${splashAttack}. rangeEfficiency = ${bd.rangeEfficiency.toFixed(2)} (segDist ${segDist.toFixed(2)}). AttackPower = ${baseSplash} × ${bd.chassisModifier} × ${bd.rangeEfficiency.toFixed(2)} = ${bd.attackPower.toFixed(2)}. Orientation strips ${orientationArmourPenalty.toFixed(1)} armour (primary only) → ED = ${bd.effectiveDefence.toFixed(2)}. Affects ${affectedCount} enemy unit${affectedCount !== 1 ? 's' : ''} in target hex. Each takes ${Math.round(SPLASH_SCALE * 100)}% of formula damage.`,
       formula: `Total splash score = ${totalDamage}`,
       result: `${totalDamage} total splash damage across ${affectedCount} unit${affectedCount !== 1 ? 's' : ''}`,
       tone: totalDamage >= 15 ? 'critical' : totalDamage >= 5 ? 'positive' : 'neutral',
     });
   } else if (chosenOption.mode === 'antiAir') {
     const aaLevel = clamp(antiAirAttack, 1, 5);
-    const cm = getChassisAttackModifier(attacker);
-    const rangeEff = calculateRangeEfficiency(segDist);
-    const aaAttackPower = calculateModifiedAttackPower(attacker, aaLevel, segDist);
-    const apSq = aaAttackPower * aaAttackPower;
-    const edAntiAir = effectiveDefence;
-    const edSq = edAntiAir * edAntiAir;
+    const bd = computeDamage({
+      mode: 'antiAir',
+      attackerChassis: getChassisType(attacker),
+      baseWeaponValue: aaLevel,
+      orientationArmourPenalty,
+      distance: segDist,
+      armour: defPower.armour,
+      defenceOther: defPower.ew + defPower.terrain,
+      targetIsDrone: true,
+    });
+    const apSq = bd.attackPower * bd.attackPower;
+    const edSq = bd.effectiveDefence * bd.effectiveDefence;
     steps.push({
       title: '🚀 Anti-Air Fire',
-      description: `antiAir=${antiAirAttack}. rangeEfficiency = ${rangeEff.toFixed(2)} (segDist ${segDist.toFixed(2)}). AttackPower = ${aaLevel} × ${cm} × ${rangeEff.toFixed(2)} = ${aaAttackPower.toFixed(2)}. Orientation strips ${orientationArmourPenalty.toFixed(1)} armour → ED = ${edAntiAir.toFixed(2)}. Fires at drone target. Full damage formula, no drone penalty.`,
+      description: `antiAir=${antiAirAttack}. rangeEfficiency = ${bd.rangeEfficiency.toFixed(2)} (segDist ${segDist.toFixed(2)}). AttackPower = ${aaLevel} × ${bd.chassisModifier} × ${bd.rangeEfficiency.toFixed(2)} = ${bd.attackPower.toFixed(2)}. Orientation strips ${orientationArmourPenalty.toFixed(1)} armour → ED = ${bd.effectiveDefence.toFixed(2)}. Fires at drone target. Full damage formula, no drone penalty.`,
       formula: `round(1 + 49 × ${apSq.toFixed(2)} / (${apSq.toFixed(2)} + ${edSq.toFixed(2)})) = ${totalDamage}`,
       result: `${totalDamage} anti-air damage`,
       tone: totalDamage >= 15 ? 'critical' : totalDamage >= 5 ? 'positive' : 'neutral',
@@ -424,6 +503,7 @@ export function explainAttack(
   };
 }
 
+
 // ---------------------------------------------------------------------------
 // Splash explanation
 // ---------------------------------------------------------------------------
@@ -439,7 +519,6 @@ export function explainSplash(
   if (splashPower <= 0 || result.chosenWeaponMode !== 'splash') return [];
 
   const segDist = effectiveCombatDistance(tiles, attacker, primaryTarget);
-  const rangeEff = calculateRangeEfficiency(segDist);
   const explanations: SplashExplanation[] = [];
 
   for (const event of result.splashEvents) {
@@ -452,8 +531,8 @@ export function explainSplash(
       ? calculateOrientationArmourPenalty(tiles, attacker.tileIndex, victim.tileIndex, victim.facing, attacker.segment, victim.segment)
       : 0;
     const defPower = getDefencePower(victim, ctx, isDrone(attacker));
-    const effectiveDefence = effectiveDefenceWithOrientation(defPower.armour, defPower.ew + defPower.terrain, orientationArmourPenalty);
     const healthBefore = victim.currentHealth + event.damage;
+    const victimIsDrone = isDrone(victim);
 
     const angleDiff = isSelectedTarget
       ? getAngularDifference(tiles, attacker.tileIndex, victim.tileIndex, victim.facing, attacker.segment, victim.segment)
@@ -461,37 +540,42 @@ export function explainSplash(
     const arc: AttackArc = isSelectedTarget
       ? (isNaN(angleDiff) ? 'unknown' : classifyArcFromAngle(angleDiff))
       : 'front';
+
+    // Call computeDamage once per victim — single source of truth (Item 1)
     const baseSplash = clamp(splashPower, 1, 5);
-    const splashAttackPower = calculateModifiedAttackPower(attacker, baseSplash, segDist);
-    const chassisModifier = getChassisAttackModifier(attacker);
+    const bd = computeDamage({
+      mode: 'splash',
+      attackerChassis: getChassisType(attacker),
+      baseWeaponValue: baseSplash,
+      orientationArmourPenalty,
+      distance: segDist,
+      armour: defPower.armour,
+      defenceOther: defPower.ew + defPower.terrain,
+      targetIsDrone: victimIsDrone,
+    });
 
-    const apSq = splashAttackPower * splashAttackPower;
-    const edSq = effectiveDefence * effectiveDefence;
-    const fullDamage = calculateFormulaDamage(splashAttackPower, effectiveDefence);
     const scaledDamage = event.damage;
-    const victimIsDrone = isDrone(victim);
-
     const maxHpVictim = (victim.attributes.size ?? 1) * HP_PER_POINT;
 
     const steps: ExplanationStep[] = [
       {
         title: '💣 Splash Fire',
-        description: `${attacker.label} uses Splash Fire (splashAttack=${splashPower}, chassis ×${chassisModifier}, rangeEfficiency=${rangeEff.toFixed(2)} at segDist ${segDist.toFixed(2)}). ${victim.label} is in target hex. Deals ${Math.round(SPLASH_SCALE * 100)}% of formula damage.${isSelectedTarget ? ` Orientation: ${arc} (armour −${orientationArmourPenalty}).` : ' Orientation: front (no penalty for non-primary).'}`,
-        formula: `SplashAttackPower = ${splashPower} × ${chassisModifier} × ${rangeEff.toFixed(2)} = ${splashAttackPower.toFixed(2)}`,
-        result: `SplashAttackPower: ${splashAttackPower.toFixed(2)}`,
+        description: `${attacker.label} uses Splash Fire (splashAttack=${splashPower}, chassis ×${bd.chassisModifier}, rangeEfficiency=${bd.rangeEfficiency.toFixed(2)} at segDist ${segDist.toFixed(2)}). ${victim.label} is in target hex. Deals ${Math.round(SPLASH_SCALE * 100)}% of formula damage.${isSelectedTarget ? ` Orientation: ${arc} (armour −${orientationArmourPenalty}).` : ' Orientation: front (no penalty for non-primary).'}`,
+        formula: `SplashAttackPower = ${splashPower} × ${bd.chassisModifier} × ${bd.rangeEfficiency.toFixed(2)} = ${bd.attackPower.toFixed(2)}`,
+        result: `SplashAttackPower: ${bd.attackPower.toFixed(2)}`,
         tone: 'neutral',
       },
       {
         title: '🛡 Victim Defence',
-        description: `Armour(${defPower.armour}) − orientation(${orientationArmourPenalty.toFixed(1)}) + EW(${defPower.ew.toFixed(2)} anti-drone screen) + Terrain(${defPower.terrain}). EffectiveDefence = ${effectiveDefence.toFixed(2)}.`,
-        formula: `ED = (max(0, ${defPower.armour} − ${orientationArmourPenalty.toFixed(1)}) + ${defPower.ew.toFixed(2)} + ${defPower.terrain}) × ${DEFENCE_SCALE} = ${effectiveDefence.toFixed(2)}`,
-        result: `EffectiveDefence = ${effectiveDefence.toFixed(2)}`,
-        tone: effectiveDefence > 0 ? 'negative' : 'neutral',
+        description: `Armour(${defPower.armour}) − orientation(${orientationArmourPenalty.toFixed(1)}) + EW(${defPower.ew.toFixed(2)} anti-drone screen) + Terrain(${defPower.terrain}). EffectiveDefence = ${bd.effectiveDefence.toFixed(2)}.`,
+        formula: `ED = (max(0, ${defPower.armour} − ${orientationArmourPenalty.toFixed(1)}) + ${defPower.ew.toFixed(2)} + ${defPower.terrain}) × ${0.75} = ${bd.effectiveDefence.toFixed(2)}`,
+        result: `EffectiveDefence = ${bd.effectiveDefence.toFixed(2)}`,
+        tone: bd.effectiveDefence > 0 ? 'negative' : 'neutral',
       },
       {
         title: '💥 Splash Result',
-        description: `Full formula = ${fullDamage}, × ${SPLASH_SCALE} = ${Math.round(fullDamage * SPLASH_SCALE)}${victimIsDrone ? `, × ${DRONE_SPLASH_FIRE_DAMAGE_MULTIPLIER} drone modifier` : ''} = ${scaledDamage} splash damage.`,
-        formula: `max(1, round(${fullDamage} × ${SPLASH_SCALE}))${victimIsDrone ? ` × ${DRONE_SPLASH_FIRE_DAMAGE_MULTIPLIER}` : ''} = ${scaledDamage}`,
+        description: `Full formula = ${bd.rawFormulaDamage}, × ${SPLASH_SCALE} = ${Math.round(bd.rawFormulaDamage * SPLASH_SCALE)}${victimIsDrone ? `, × ${DRONE_SPLASH_FIRE_DAMAGE_MULTIPLIER} drone modifier` : ''} = ${scaledDamage} splash damage.`,
+        formula: `max(1, round(${bd.rawFormulaDamage} × ${SPLASH_SCALE}))${victimIsDrone ? ` × ${DRONE_SPLASH_FIRE_DAMAGE_MULTIPLIER}` : ''} = ${scaledDamage}`,
         result: event.victimDestroyed
           ? `${scaledDamage} damage — ${victim.label} destroyed!`
           : `${scaledDamage} damage → ${victim.currentHealth}/${maxHpVictim} HP remaining`,

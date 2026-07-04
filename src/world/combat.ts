@@ -53,6 +53,7 @@ export {
   clamp,
   applyDamage,
   calculateFormulaDamage,
+  modifiedAttackPower,
   effectiveDefenceWithOrientation,
   computeDamage,
   // Types
@@ -154,22 +155,7 @@ export function getChassisAttackModifier(unit: Unit): number {
   return getChassisModifier(getChassisType(unit));
 }
 
-/**
- * Modified attack power for a unit's weapon (adapter over combatFormula).
- * Orientation no longer affects attack power (it degrades defender armour).
- * @param distance graph distance for range falloff (1 = no falloff).
- */
-export function calculateModifiedAttackPower(
-  unit: Unit,
-  baseWeaponValue: number,
-  distance: number = 1,
-): number {
-  return modifiedAttackPower(
-    getChassisAttackModifier(unit),
-    baseWeaponValue,
-    calculateRangeEfficiency(distance),
-  );
-}
+
 
 /** Apply the drone incoming damage modifier (adapter — resolves isDrone). */
 export function applyDroneIncomingDamageModifier(

@@ -86,8 +86,6 @@ export interface CombatBreakdown {
   orientationArmourPenalty: number;
   /** Human-readable orientation label (e.g. 'Front', 'Front Flank', 'Rear Flank', 'Rear'). */
   orientationLabel: string;
-  /** @deprecated — always 0, kept for wire compatibility. Will be removed. */
-  droneAttackPenalty: number;
   /** Attack total (after all attack modifiers). */
   attackTotal: number;
   /** Armour component of defence. */
@@ -98,8 +96,6 @@ export interface CombatBreakdown {
   defEWRaw: number;
   /** EW multiplier applied (0.5 kinetic, 0.75 splash, 1.0 AA). */
   defEWMultiplier: number;
-  /** @deprecated Formation bonus removed 2026-06-21 — always 0. Retained for wire compatibility. */
-  defFormation: number;
   /** Terrain component of defence. */
   defTerrain: number;
   /** Elevation range multiplier (0.50–1.50). 1.0 = same elevation or drone involved. Higher ground shoots farther. */
