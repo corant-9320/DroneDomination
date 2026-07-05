@@ -17,6 +17,7 @@ inclusion: always
 | `npm run build` | tsc → dist/, then auto-regenerates `data/world.json` |
 | `npm run validate` | Checks `data/world.json` integrity |
 | `npm run e2e` | Playwright end-to-end tests |
+| `npm run deps:graph` | Regenerate dependency graph → `ai/generated/` |
 
 ## Import Rules
 

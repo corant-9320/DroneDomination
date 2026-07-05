@@ -1,0 +1,282 @@
+repo:
+  name: Drone Domination
+  purpose: >
+    Hex/sphere-based turn strategy game with world generation, local combat,
+    AI turns, browser UI, and server-generated game state.
+
+context_order:
+  - "Read always-loaded steering"
+  - "Search memory.mcp for relevant concepts"
+  - "Read ai/agent-map.yaml"
+  - "Read scoped steering and canonical docs for the relevant domain"
+  - "Use grep_search, file_search, and read_code for targeted navigation"
+  - "Inspect source code and tests"
+  - "Make the smallest safe change"
+  - "Verify once at the end"
+  - "Update memory/docs only for durable knowledge"
+
+domains:
+
+  world_generation:
+    purpose: >
+      Generate the globe/world model, terrain, elevation, rivers, cities,
+      hex segments, movement helpers, and compact world output.
+    steering:
+      - .kiro/steering/architecture-worldgen.md
+    canonical_docs:
+      - docs/architecture/world-generation.md
+    memory_nodes:
+      - WorldGeneration
+      - GoldbergPolyhedron
+      - HexTile
+      - HexSegment
+      - TerrainType
+    source:
+      - src/world/**
+      - src/generateCli.ts
+      - src/validate.ts
+    generated_outputs:
+      - data/world.json
+    likely_tests:
+      - src/world/__tests__/**
+    verification:
+      cheap:
+        - npm test
+        - npm run validate
+      full:
+        - npm run build
+    danger_zones:
+      - "Compact world format changes must stay in sync with client/worldData.ts."
+      - "River and elevation invariants should be validated, not judged visually only."
+      - "City placement interacts with terrain, mountains, coastlines, and polar exclusions."
+
+  combat:
+    purpose: >
+      Resolve attacks, damage types, armour, EW, range, facing, elevation,
+      buildings, and combat previews.
+    canonical_docs:
+      - COMBAT_RULES.md
+    memory_nodes:
+      - DamageFormula
+      - ChassisType
+      - FacingAndOrientation
+      - RangeAndDistance
+      - DefencePower
+      - ElectronicWarfare
+      - ElevationAdvantage
+    source:
+      - src/world/combat.ts
+      - src/world/combatFacing.ts
+      - src/world/combatFormula.ts
+      - server/combatApi.ts
+      - server/combatExplainer.ts
+      - shared/unitTypes.ts
+    likely_tests:
+      - src/world/__tests__/combat.test.ts
+      - src/world/__tests__/combat.resolve.test.ts
+      - src/world/__tests__/combatFacing.test.ts
+      - src/world/__tests__/combatFormula.test.ts
+      - server/__tests__/combat.test.ts
+      - server/__tests__/combatApi.test.ts
+      - server/__tests__/combatExplainer.test.ts
+    verification:
+      cheap:
+        - npm test
+      full:
+        - npm run build
+    danger_zones:
+      - "Do not pin exact damage values in tests unless deliberately creating a labelled golden smoke test."
+      - "Facing uses neighbour-relative indexes; do not treat them as global directions."
+      - "COMBAT_RULES.md may be stale for balance constants; cross-check formula code and recent git decisions."
+
+  client_ui:
+    purpose: >
+      Render globe view, local map, HUD, unit sprites, right curtain,
+      bottom detail bar, controls, first-person view, and debug state.
+    steering:
+      - .kiro/steering/ui-defaults.md
+      - .kiro/steering/architecture-debugging.md
+    memory_nodes:
+      - GlobeView
+      - LocalMapView
+      - FirstPersonView
+      - TurnManager
+    source:
+      - client/**
+      - index.html
+    likely_tests:
+      - e2e/**
+    debug_tools:
+      - npm run debug:snapshot
+      - "window.__DD_STATE__.snapshot()"
+      - window.gameDebug
+    verification:
+      cheap:
+        - npm test
+      full:
+        - npm run build
+    danger_zones:
+      - "Never apply 2D canvas rotation to isometric sprites."
+      - "Do not store SpriteFacing in unit.facing."
+      - "Ask the user before running Playwright/e2e or expensive browser tooling."
+
+  api_server:
+    purpose: >
+      Handle server data flow, generated game/world requests, API contracts,
+      match sessions, AI turns, and compact wire-format delivery.
+    steering:
+      - .kiro/steering/architecture-api.md
+    canonical_docs:
+      - docs/architecture/data-flow-and-api.md
+    memory_nodes:
+      - ServerAPI
+      - CompactWireFormat
+    source:
+      - server/**
+    likely_tests:
+      - server/__tests__/**
+    verification:
+      cheap:
+        - npm test
+      full:
+        - npm run build
+    danger_zones:
+      - "Compact wire format changes must stay synced with client interfaces."
+      - "Server changes may require restarting npm run dev."
+
+  movement:
+    purpose: >
+      Pathfinding, movement costs, hex traversal, steepness penalties,
+      and unit reach calculations.
+    memory_nodes:
+      - MovementSystem
+    source:
+      - src/world/movement.ts
+      - src/world/pathfinding.ts
+      - src/world/segmentGeometry.ts
+      - src/world/segmentSteepness.ts
+      - shared/movementConstants.ts
+      - shared/pathfinding.ts
+    likely_tests:
+      - src/world/__tests__/movement.test.ts
+      - src/world/__tests__/movement.reach.test.ts
+      - src/world/__tests__/pathfinding.test.ts
+      - src/world/__tests__/segmentGeometry.test.ts
+      - src/world/__tests__/segmentSteepness.test.ts
+      - server/__tests__/moveValidation.test.ts
+    verification:
+      cheap:
+        - npm test
+      full:
+        - npm run build
+    danger_zones:
+      - "Movement cost constants live in shared/movementConstants.ts — keep in sync with pathfinding."
+      - "Segment steepness affects both movement and combat elevation advantage."
+
+  build_config:
+    purpose: >
+      Control Vite, TypeScript, ESM resolution, client/server import
+      boundaries, and build behaviour.
+    steering:
+      - .kiro/steering/architecture-config.md
+      - .kiro/steering/conventions.md
+    canonical_docs:
+      - docs/architecture/configuration.md
+    source:
+      - vite.config.ts
+      - tsconfig.json
+      - tsconfig.client.json
+      - tsconfig.eslint.json
+      - eslint.config.js
+      - package.json
+      - .dependency-cruiser.cjs
+    generated_outputs:
+      - ai/generated/dep-graph.json
+      - ai/generated/dep-summary.md
+      - ai/generated/violations.md
+    verification:
+      cheap:
+        - npm test
+        - npm run deps:graph
+      full:
+        - npm run build
+    danger_zones:
+      - "Client bundle must not import from src/ or server/."
+      - "Imports use .js extensions even for TypeScript source files."
+      - "Changing config usually requires restarting npm run dev."
+      - "Run npm run deps:graph after changing module boundaries to keep generated context fresh."
+
+  debug_instrumentation:
+    purpose: >
+      Provide headless snapshots, DOM instrumentation, debug state,
+      gameDebug helpers, and repro tooling.
+    steering:
+      - .kiro/steering/debugging.md
+      - .kiro/steering/architecture-debugging.md
+      - .kiro/steering/efficiency.md
+    canonical_docs:
+      - docs/architecture/debugging.md
+    source:
+      - client/debugState.ts
+      - client/gameDebug.ts
+      - client/debug.ts
+      - scripts/**
+      - e2e/**
+    debug_tools:
+      - npm run debug:snapshot
+      - "artifacts/sessions/**"
+      - "window.__DD_STATE__.snapshot()"
+      - window.gameDebug
+    danger_zones:
+      - "Prefer cheap debug snapshots before asking for screenshots."
+      - "If static analysis turns into guessing, add focused diagnostics and ask the human for captured output."
+      - "Do not run expensive Chrome/Playwright tooling without approval."
+
+  ai_system:
+    purpose: >
+      AI opponent turn execution, decision logic, and playback.
+    memory_nodes:
+      - AISystem
+    source:
+      - client/aiPlayback.ts
+      - client/aiTurn.ts
+      - server/aiTurnApi.ts
+    likely_tests:
+      - server/__tests__/aiTurn.test.ts
+    verification:
+      cheap:
+        - npm test
+      full:
+        - npm run build
+    danger_zones:
+      - "AI turn results are replayed on client via aiPlayback — keep wire contract in sync."
+
+  buildings_and_cities:
+    purpose: >
+      Building placement, city design, building components, repair,
+      and building-related combat interactions.
+    memory_nodes:
+      - Building
+      - City
+    source:
+      - src/world/buildings.ts
+      - src/world/repair.ts
+      - shared/buildingComponents.ts
+      - shared/buildings.ts
+      - client/buildingModel.ts
+      - client/buildingRenderer.ts
+      - client/buildingAttackMenu.ts
+      - client/buildingRefitModal.ts
+      - client/cityDesignModal.ts
+      - client/cityContextMenus.ts
+      - client/cityPlan.ts
+    likely_tests:
+      - src/world/__tests__/buildings.test.ts
+      - src/world/__tests__/repair.test.ts
+    verification:
+      cheap:
+        - npm test
+      full:
+        - npm run build
+    danger_zones:
+      - "Building component lists in shared/ must stay in sync with server combat resolution."
