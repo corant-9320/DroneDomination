@@ -66,8 +66,10 @@ export interface MapViewInterface {
   readonly onTurnEnd: (() => void) | null;
   readonly onAttack: ((attackerId: string, targetId: string) => void) | null;
   readonly onAttackBuilding: ((attackerId: string, buildingId: string, mode: 'splash' | 'direct', component?: string) => void) | null;
+  readonly onBuildingAttackUnit: ((buildingId: string, targetId: string) => void) | null;
   readonly onRepair: ((repairerId: string, targetId: string) => void) | null;
   readonly onHoverEnemy: ((attacker: UnitData | null, target: UnitData | null) => void) | null;
+  readonly onBuildingHoverEnemy: ((buildingId: string, target: UnitData | null) => void) | null;
   readonly onCentreChange: ((tileIndex: number) => void) | null;
   readonly onSleepUnit: ((unitId: string) => void) | null;
   readonly onRefit: ((unitId: string) => void) | null;
@@ -336,7 +338,7 @@ export class MapInputHandler {
             this.canvas.style.cursor = 'crosshair';
             if (v.lastHoveredEnemyId !== enemy.id) {
               v.lastHoveredEnemyId = enemy.id;
-              v.onHoverEnemy?.(null, enemy);
+              v.onBuildingHoverEnemy?.(this.tm.selectedBuilding.id, enemy);
             }
             v.computeMovementCostRouteForHover(tileIdx, segment);
             v.render();
@@ -348,7 +350,7 @@ export class MapInputHandler {
       this.canvas.style.cursor = '';
       if (v.lastHoveredEnemyId !== null) {
         v.lastHoveredEnemyId = null;
-        v.onHoverEnemy?.(null, null);
+        v.onBuildingHoverEnemy?.(this.tm.selectedBuilding!.id, null);
       }
       v.clearMovementCostRoute();
     } else {
@@ -520,6 +522,18 @@ export class MapInputHandler {
       if (tileData && tileData.s === 6) {
         const ft = v.flatTiles.find((f) => f.tileIndex === capTile);
         if (ft) seg = v.findSegmentAt(cx, cy, ft);
+      }
+
+      // ─── Building offensive fire: selected building attacks enemy unit ───
+      const selBuilding = this.tm.selectedBuilding;
+      if (selBuilding && seg >= 0 && v.onBuildingAttackUnit) {
+        const enemy = v.world.units.find(
+          (u) => u.tileIndex === capTile && u.segment === seg && u.ownerId !== selBuilding.ownerId,
+        );
+        if (enemy && v.isInAttackRange(enemy.tileIndex, enemy.segment)) {
+          v.onBuildingAttackUnit(selBuilding.id, enemy.id);
+          return;
+        }
       }
 
       const homeCity = v.world.cities.find((c) => c.isPlayerHome);

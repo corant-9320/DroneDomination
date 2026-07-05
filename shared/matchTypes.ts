@@ -55,6 +55,7 @@ export type Intent =
   | { kind: 'move'; unitId: string; path: number[]; segment?: number }
   | { kind: 'attack'; attackerId: string; targetId: string }
   | { kind: 'attackBuilding'; attackerId: string; buildingId: string; weaponMode?: 'splash' | 'direct'; component?: BuildingComponent }
+  | { kind: 'buildingAttackUnit'; buildingId: string; targetId: string }
   | { kind: 'repair'; repairerId: string; targetId: string }
   | { kind: 'endTurn' };
 

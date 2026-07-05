@@ -161,6 +161,12 @@ export async function handleMatchIntent(req: MatchIntentRequest): Promise<MatchI
       combats = r.combats;
       break;
     }
+    case 'buildingAttackUnit': {
+      const r = applyBuildingAttackUnitIntent(state, ctx, activeFaction, intent);
+      if (r.error) return { success: false, error: r.error };
+      combats = r.combats;
+      break;
+    }
     case 'repair': {
       const r = applyRepairIntent(state, ctx, activeFaction, intent);
       if (r.error) return { success: false, error: r.error };
@@ -288,6 +294,71 @@ function applyAttackIntent(
 
   ts.acted = true;
   ts.mp -= 1;
+  return { combats: [explained] };
+}
+
+/**
+ * Building fires offensively at an enemy unit. The building is treated as a
+ * stationary "unit" with its weapon attributes, size=1, and full health.
+ * Buildings can fire once per turn (tracked via a synthetic turn-state key).
+ */
+function applyBuildingAttackUnitIntent(
+  state: MatchState,
+  ctx: CombatContext,
+  activeFaction: string,
+  intent: Extract<Intent, { kind: 'buildingAttackUnit' }>,
+): { error?: string; combats?: ExplainedCombat[] } {
+  const building = ctx.buildings.find((b) => b.id === intent.buildingId);
+  const target = ctx.units.find((u) => u.id === intent.targetId);
+  if (!building || !target) return { error: 'Building or target not found' };
+  if (building.ownerId !== activeFaction) return { error: 'Not this faction\'s building' };
+
+  // Check building hasn't already fired this turn (use building.id as turn-state key)
+  if (!state.unitTurn[building.id]) {
+    state.unitTurn[building.id] = { mp: 1, acted: false, rotated: false };
+  }
+  const bts = state.unitTurn[building.id];
+  if (bts.acted) return { error: 'Building has already fired this turn' };
+
+  // Create a synthetic attacker unit from the building
+  const attrs = building.attributes ?? {};
+  const syntheticAttacker = {
+    id: building.id,
+    label: `Building #${building.id.replace(/^building_/, '')}`,
+    ownerId: building.ownerId,
+    tileIndex: building.tileIndex,
+    segment: building.segment as HexSegment,
+    facing: building.segment as HexSegment,
+    attributes: { ...attrs, size: (attrs.size ?? 1) },
+    currentHealth: ((attrs.size ?? 1) as number) * 10,
+  };
+
+  // Inject the synthetic attacker into the combat context so resolveAttack can find it
+  ctx.units.push(syntheticAttacker);
+
+  const explained = explainAttack(syntheticAttacker, target, ctx);
+  if (!explained.wasValid) {
+    // Remove synthetic unit
+    ctx.units.pop();
+    return { error: explained.reasonInvalid ?? 'Invalid building attack' };
+  }
+
+  const result = resolveAttack(syntheticAttacker.id, target.id, ctx);
+  explained.targetHealthAfter = target.currentHealth;
+  explained.targetDestroyed = target.currentHealth <= 0;
+  explained.destroyedUnitIds = result.destroyedUnitIds;
+  explained.splash = explainSplash(syntheticAttacker, target, result, ctx);
+  explained.buildingDamage = result.buildingDamage.map((ev) => ({
+    buildingId: ev.buildingId,
+    component: ev.component,
+    newValue: ev.newValue,
+    destroyed: ev.destroyed,
+  }));
+
+  // Remove synthetic unit from context (it's not a real unit)
+  ctx.units = ctx.units.filter((u) => u.id !== building.id);
+
+  bts.acted = true;
   return { combats: [explained] };
 }
 

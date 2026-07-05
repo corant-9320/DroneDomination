@@ -94,6 +94,8 @@ export class LocalMapView implements MapViewInterface {
   onCentreChange: ((tileIndex: number) => void) | null = null;
   /** Callback when player hovers an enemy tile (for attack preview). */
   onHoverEnemy: ((attacker: UnitData | null, target: UnitData | null) => void) | null = null;
+  /** Callback when player hovers an enemy with a building selected (for building attack preview). */
+  onBuildingHoverEnemy: ((buildingId: string, target: UnitData | null) => void) | null = null;
   /** Track last hovered enemy to avoid redundant callbacks. */
   lastHoveredEnemyId: string | null = null;
   /** Active AI combat highlight (attacker → target). */
@@ -114,6 +116,8 @@ export class LocalMapView implements MapViewInterface {
   onAttack: ((attackerId: string, targetId: string) => void) | null = null;
   /** Attack an enemy building (building-damage feature). mode is 'splash'|'direct'; component required for direct. */
   onAttackBuilding: ((attackerId: string, buildingId: string, mode: 'splash' | 'direct', component?: string) => void) | null = null;
+  /** A player-owned building fires at an enemy unit (building offensive fire). */
+  onBuildingAttackUnit: ((buildingId: string, targetId: string) => void) | null = null;
   onRepair: ((repairerId: string, targetId: string) => void) | null = null;
   onSleepUnit: ((unitId: string) => void) | null = null;
   /**
@@ -306,6 +310,10 @@ export class LocalMapView implements MapViewInterface {
 
   setOnHoverEnemy(cb: (attacker: UnitData | null, target: UnitData | null) => void): void {
     this.onHoverEnemy = cb;
+  }
+
+  setOnBuildingHoverEnemy(cb: (buildingId: string, target: UnitData | null) => void): void {
+    this.onBuildingHoverEnemy = cb;
   }
 
   setHighlightCombat(attackerId: string | null, targetId: string | null): void {
@@ -1010,6 +1018,10 @@ export class LocalMapView implements MapViewInterface {
 
   setOnAttackBuilding(cb: (attackerId: string, buildingId: string, mode: 'splash' | 'direct', component?: string) => void): void {
     this.onAttackBuilding = cb;
+  }
+
+  setOnBuildingAttackUnit(cb: (buildingId: string, targetId: string) => void): void {
+    this.onBuildingAttackUnit = cb;
   }
 
   setOnRepair(cb: (repairerId: string, targetId: string) => void): void {

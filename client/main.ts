@@ -4,7 +4,7 @@
  * all controller logic to focused modules.
  */
 
-import { loadWorld, applyNewWorld } from './worldData.js';
+import { loadWorld, applyNewWorld, buildingAsAttackerUnit } from './worldData.js';
 import { GlobeView } from './globe.js';
 import { LocalMapView } from './localMap.js';
 import { CombatPanel } from './combatPanel.js';
@@ -29,6 +29,7 @@ import { advanceTurn } from './turnController.js';
 import {
   handlePlayerAttack,
   handlePlayerBuildingAttack,
+  handlePlayerBuildingAttackUnit,
   handlePlayerRepair,
   handlePlayerMove,
   handlePlayerSleep,
@@ -114,6 +115,10 @@ async function main() {
         const unit = world.units.find((u) => selected.has(u.id));
         combatPanel.showSelectedUnit(unit ?? null);
         ctx.switchRpTab('main');
+      } else if (turnManager.selectedBuilding) {
+        // A building is selected — show its card instead of the empty unit slot
+        detailPanel.showBuilding(turnManager.selectedBuilding);
+        combatPanel.showSelectedUnit(null);
       } else {
         combatPanel.showSelectedUnit(null);
       }
@@ -201,6 +206,20 @@ async function main() {
       if (!attacker || !target) detailPanel.showCombat(null);
       combatPanel.showPreview(attacker, target);
     });
+    localMap.setOnBuildingHoverEnemy((buildingId, target) => {
+      detailPanel.showEnemy(target);
+      if (!target) {
+        combatPanel.showPreview(null, null);
+        return;
+      }
+      const building = world.buildings.find((b) => b.id === buildingId);
+      if (!building) return;
+      const syntheticAttacker = buildingAsAttackerUnit(building);
+      combatPanel.showBuildingPreview(syntheticAttacker, target);
+    });
+    localMap.setOnBuildingAttackUnit((buildingId, targetId) => {
+      void handlePlayerBuildingAttackUnit(ctx, buildingId, targetId);
+    });
     localMap.setOnRepair((repairerId, targetId) => {
       void handlePlayerRepair(ctx, repairerId, targetId);
     });
@@ -216,6 +235,27 @@ async function main() {
     localMap.setOnBuildingRefit((buildingId) => {
       void handlePlayerBuildingRefit(ctx, buildingId);
     });
+
+    // Wire building selection → detail panel card update
+    localMap.setOnBuildingSelected((buildingId) => {
+      const building = buildingId ? world.buildings.find((b) => b.id === buildingId) ?? null : null;
+      detailPanel.showBuilding(building);
+      if (!building) {
+        combatPanel.showSelectedUnit(null);
+      }
+    });
+
+    // Wire building action callbacks on the detail panel
+    detailPanel.onBuildingRefit = (buildingId) => {
+      void handlePlayerBuildingRefit(ctx, buildingId);
+    };
+    detailPanel.onBuildingAttack = (_buildingId) => {
+      // Attack is triggered by right-clicking a target — show a hint in the combat panel.
+      combatPanel.showSelectedUnit(null);
+    };
+    detailPanel.onBuildingRepair = (_buildingId) => {
+      // Repair is triggered by right-clicking a target — no direct action here.
+    };
 
     // First-person view uses the same action handlers as the 2D map
     firstPerson.setCommandContext({

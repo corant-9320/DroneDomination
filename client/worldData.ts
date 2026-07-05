@@ -43,6 +43,25 @@ export type UnitData = WireUnit;
 /** A building in the client's working copy. Identical to the wire shape. */
 export type BuildingData = WireBuilding;
 
+/**
+ * Create a synthetic UnitData from a BuildingData for use in combat preview
+ * and attack resolution. Buildings are treated as stationary "units" with
+ * size 1, full health, and their own weapon/defence attributes.
+ */
+export function buildingAsAttackerUnit(building: BuildingData): UnitData {
+  const attrs = building.attributes ?? {};
+  return {
+    id: building.id,
+    label: `Building #${building.id.replace(/^building_/, '')}`,
+    ownerId: building.ownerId,
+    tileIndex: building.tileIndex,
+    segment: building.segment,
+    facing: building.segment, // buildings face outward from their segment
+    attributes: { ...attrs, size: attrs.size ?? 1 },
+    currentHealth: (attrs.size ?? 1) * 10, // buildings are always "full health" for attack purposes
+  };
+}
+
 /** A city in the client's working copy. Identical to the wire shape. */
 export type CityData = WireCity;
 

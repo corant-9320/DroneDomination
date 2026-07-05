@@ -66,6 +66,12 @@ export class CombatPanel {
    * shown elsewhere (Main tab) and must never clobber the history list.
    */
   private isHistoryTabActive: () => boolean = () => false;
+  /**
+   * When true, the next render() call while the history tab is active will
+   * auto-expand index 0 (the most recent player attack outcome). Cleared
+   * immediately after consuming it so subsequent re-renders don't re-expand.
+   */
+  private pendingAutoExpand = false;
 
   constructor(el: HTMLElement, world: WorldData) {
     this.el = el;
@@ -152,14 +158,39 @@ export class CombatPanel {
     this.fetchPreview(attacker.id, target.id);
   }
 
-  private async fetchPreview(attackerId: string, targetId: string): Promise<void> {
+  /**
+   * Show a combat preview where the attacker is a building (synthetic unit).
+   * The synthetic unit is injected into the units array sent to the server
+   * so the preview resolver can find it.
+   */
+  showBuildingPreview(syntheticAttacker: UnitData, target: UnitData | null): void {
+    if (!target) {
+      this.hoveredEnemy = null;
+      if (this.preview) {
+        this.preview = null;
+        this.render();
+        this.onPreviewReady?.(null);
+      }
+      return;
+    }
+
+    this.selectedUnit = syntheticAttacker;
+    this.hoveredEnemy = target;
+    this.render();
+    this.fetchPreview(syntheticAttacker.id, target.id, syntheticAttacker);
+  }
+
+  private async fetchPreview(attackerId: string, targetId: string, syntheticUnit?: UnitData): Promise<void> {
     const generation = this.previewGeneration;
+    const units = syntheticUnit
+      ? [...this.world.units, syntheticUnit]
+      : this.world.units;
     const payload = {
       action: 'preview',
       attackerId,
       targetId,
       activeFaction: this.activeFaction,
-      units: this.world.units,
+      units,
       tiles: this.world.tiles.map(minimalTile),
       buildings: this.world.buildings,
     };
@@ -249,6 +280,8 @@ export class CombatPanel {
       this.preview = null;
       this.selectedUnit = null;
       this.hoveredEnemy = null;
+      // Auto-expand the most recent result when the history tab is already open
+      this.pendingAutoExpand = true;
       this.render();
       return { units: data.updatedUnits, buildings: data.updatedBuildings as BuildingData[] | undefined, combat: data.combats[0] };
     } catch (err) {
@@ -311,6 +344,8 @@ export class CombatPanel {
       this.preview = null;
       this.selectedUnit = null;
       this.hoveredEnemy = null;
+      // Auto-expand the most recent result when the history tab is already open
+      this.pendingAutoExpand = true;
       this.render();
       return {
         units: data.updatedUnits,
@@ -478,6 +513,11 @@ export class CombatPanel {
     // History tab is always the history list — targeting/preview state lives
     // on the Main tab and must never overwrite the history list.
     if (this.isHistoryTabActive()) {
+      // Auto-expand the freshest entry (index 0) after a player attack
+      if (this.pendingAutoExpand && this.history.length > 0) {
+        this.expandedIndices.add(0);
+      }
+      this.pendingAutoExpand = false;
       if (this.history.length === 0) {
         this.el.innerHTML = this.buildEmptyHtml();
       } else {
