@@ -75,6 +75,7 @@ export interface MapViewInterface {
   readonly onViewSegment: ((tileIndex: number, segment: number) => void) | null;
   readonly onCityDesign: ((cityId: string) => void) | null;
   readonly onBuildingRefit: ((buildingId: string) => void) | null;
+  readonly onBuildingSelected: ((buildingId: string | null) => void) | null;
 
   // Coordinate conversion
   worldToScreen(wx: number, wy: number): [number, number];
@@ -208,6 +209,7 @@ export class MapInputHandler {
       if (event.shiftKey) {
         // Shift+click: select all active-faction units on the hex
         this.tm.selectedUnits.clear();
+        this.tm.clearBuilding();
         for (const u of tileUnits) {
           if (u.ownerId === v.activeFaction) {
             this.tm.selectedUnits.add(u.id);
@@ -216,22 +218,39 @@ export class MapInputHandler {
       } else if (segment >= 0) {
         // Normal click on segment: select whatever unit is in that segment
         this.tm.selectedUnits.clear();
+        this.tm.clearBuilding();
         const segUnit = tileUnits.find((u) => u.segment === segment);
         if (segUnit) {
           this.tm.selectedUnits.add(segUnit.id);
+        } else {
+          // No unit in this segment — check for a player-owned building
+          const homeCity = v.world.cities.find((c) => c.isPlayerHome);
+          const playerFaction = homeCity ? (homeCity.ownerId ?? homeCity.id) : null;
+          if (playerFaction) {
+            const segBuilding = v.world.buildings.find(
+              (b) => b.tileIndex === tileIdx && b.segment === segment && b.ownerId === playerFaction,
+            );
+            if (segBuilding) {
+              this.tm.selectBuilding(segBuilding);
+            }
+          }
         }
       } else {
         // Click on empty area of the tile
         this.tm.selectedUnits.clear();
+        this.tm.clearBuilding();
       }
 
       v.computeMovementRange();
+      v.onBuildingSelected?.(this.tm.selectedBuilding?.id ?? null);
       v.onTileSelectCb(tileIdx, segment >= 0 ? segment : undefined);
-      if (this.tm.selectedUnits.size === 0) this.canvas.style.cursor = '';
+      if (this.tm.selectedUnits.size === 0 && !this.tm.selectedBuilding) this.canvas.style.cursor = '';
       v.render();
     } else {
       this.tm.selectedUnits.clear();
+      this.tm.clearBuilding();
       v.computeMovementRange();
+      v.onBuildingSelected?.(null);
       this.canvas.style.cursor = '';
       v.render();
     }
@@ -301,6 +320,37 @@ export class MapInputHandler {
         v.lastHoveredEnemyId = null;
         v.onHoverEnemy(null, null);
       }
+    } else if (this.tm.selectedBuilding) {
+      // Building selected: show red attack-range line to enemies within weapon range
+      const tileIdx = v.findTileAt(x, y);
+      if (tileIdx >= 0) {
+        const ft = v.flatTiles.find((f) => f.tileIndex === tileIdx);
+        const segment = ft ? v.findSegmentAt(x, y, ft) : -1;
+
+        if (segment >= 0) {
+          const bOwner = this.tm.selectedBuilding.ownerId;
+          const enemy = v.world.units.find(
+            (u) => u.tileIndex === tileIdx && u.segment === segment && u.ownerId !== bOwner
+          );
+          if (enemy && v.isInAttackRange(enemy.tileIndex, enemy.segment)) {
+            this.canvas.style.cursor = 'crosshair';
+            if (v.lastHoveredEnemyId !== enemy.id) {
+              v.lastHoveredEnemyId = enemy.id;
+              v.onHoverEnemy?.(null, enemy);
+            }
+            v.computeMovementCostRouteForHover(tileIdx, segment);
+            v.render();
+            return;
+          }
+        }
+      }
+      // No enemy in range under cursor — clear
+      this.canvas.style.cursor = '';
+      if (v.lastHoveredEnemyId !== null) {
+        v.lastHoveredEnemyId = null;
+        v.onHoverEnemy?.(null, null);
+      }
+      v.clearMovementCostRoute();
     } else {
       this.canvas.style.cursor = '';
       v.clearMovementCostRoute();

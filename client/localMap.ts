@@ -44,6 +44,7 @@ import {
   drawUnits as _drawUnits,
   drawUnitSelectionRings as _drawUnitSelectionRings,
   drawBuildings as _drawBuildings,
+  drawBuildingSelectionRing as _drawBuildingSelectionRing,
   drawPlannedBuildings as _drawPlannedBuildings,
   drawCombatHighlight as _drawCombatHighlight,
   drawMoveHighlight as _drawMoveHighlight,
@@ -60,10 +61,15 @@ import {
   drawAttackRangeRings as _drawAttackRangeRings,
   weaponRangeInTileHops as _weaponRangeInTileHops,
   isInWeaponRange as _isInWeaponRange,
+  getRangeTiles as _getRangeTiles,
   MovementRangeResult,
   MovementCostRoute,
   MovePlan,
 } from './localMapMovement.js';
+import {
+  segmentDistance as _segmentDistance,
+  getRangeThreshold as _getRangeThreshold,
+} from '../shared/rangeCheck.js';
 
 export class LocalMapView implements MapViewInterface {
   private canvas: HTMLCanvasElement;
@@ -71,7 +77,7 @@ export class LocalMapView implements MapViewInterface {
   world: WorldData;
   flatTiles: FlatTile[] = [];
   centreTileIndex: number = -1;
-  radius: number = 12; // BFS hop radius; hex count ≈ 1+3r(r+1). r10→331, r12→469 (~+50% hexes shown)
+  radius: number = 17; // BFS hop radius; hex count ≈ 1+3r(r+1). r12→469, r17→919 (~2× hexes shown)
   /**
    * Current screen-up direction (world space) supplied by the globe camera.
    * Used as the flat-view basis so the map's orientation tracks the globe
@@ -124,6 +130,12 @@ export class LocalMapView implements MapViewInterface {
 
   /** Open the refit modal for a player-owned building (by building id). */
   onBuildingRefit: ((buildingId: string) => void) | null = null;
+  /**
+   * Fired when the player selects or deselects a building by left-clicking.
+   * Called with the building id when a building is selected, or null when
+   * the selection is cleared.
+   */
+  onBuildingSelected: ((buildingId: string | null) => void) | null = null;
   /** The faction (ownerId) allowed to select and move units. */
   activeFaction: string = '';
   /** Optional TurnManager — when set, endTurn() syncs state back to it. */
@@ -601,6 +613,15 @@ export class LocalMapView implements MapViewInterface {
       this.unitMoveAnims,
     );
 
+    // Draw selection ring for the selected building (gold ring, drawn unclipped)
+    _drawBuildingSelectionRing(
+      this.ctx,
+      this.world,
+      this.flatTiles,
+      this.turnManager.selectedBuilding?.id ?? null,
+      (wx, wy) => this.worldToScreen(wx, wy),
+    );
+
     // Draw AI move indicator (origin ring + dashed arrow to current position)
     _drawMoveHighlight(
       this.ctx,
@@ -742,18 +763,75 @@ export class LocalMapView implements MapViewInterface {
       maxAttackSegments: new Set(),
     };
 
-    if (this.selectedUnits.size === 0) return;
+    // Unit selected — standard movement + attack range
+    if (this.selectedUnits.size > 0) {
+      const unitId = [...this.selectedUnits][0];
+      const unit   = this.world.units.find((u) => u.id === unitId);
+      if (!unit) return;
 
-    const unitId = [...this.selectedUnits][0];
-    const unit   = this.world.units.find((u) => u.id === unitId);
-    if (!unit) return;
+      const remainingMP = this.movementPoints.has(unitId)
+        ? (this.movementPoints.get(unitId) ?? 0)
+        : sharedGetMaxMovement(unit.attributes);
+      if (remainingMP <= 0) return;
 
-    const remainingMP = this.movementPoints.has(unitId)
-      ? (this.movementPoints.get(unitId) ?? 0)
-      : sharedGetMaxMovement(unit.attributes);
-    if (remainingMP <= 0) return;
+      this._rangeResult = _computeMovementRange(this.world, unit, remainingMP);
+      return;
+    }
 
-    this._rangeResult = _computeMovementRange(this.world, unit, remainingMP);
+    // Building selected — static attack range only (buildings don't move)
+    const building = this.turnManager.selectedBuilding;
+    if (!building) return;
+    const attrs = building.attributes ?? {};
+    const hasWeaponAttr = (attrs.kinetic ?? 0) > 0
+      || (attrs.splashAttack ?? 0) > 0
+      || (attrs.antiAir ?? 0) > 0
+      || (attrs.rangeAttack ?? 0) > 0;
+    if (!hasWeaponAttr) return;
+
+    const tiles = this.world.tiles;
+    const rangeTiles = _getRangeTiles(tiles);
+    const rangeAttack = attrs.rangeAttack ?? 0;
+    const threshold = _getRangeThreshold(rangeAttack);
+    const weaponHops = _weaponRangeInTileHops(attrs);
+    const startTile = building.tileIndex;
+    const startSegment = building.segment;
+
+    // BFS outward from the building's tile to find candidate tiles
+    const candidateTiles = new Set<number>();
+    candidateTiles.add(startTile);
+    const bfsQ: { idx: number; d: number }[] = [{ idx: startTile, d: 0 }];
+    let bHead = 0;
+    const bVis = new Set<number>([startTile]);
+    while (bHead < bfsQ.length) {
+      const { idx, d } = bfsQ[bHead++];
+      if (d >= weaponHops) continue;
+      for (const nb of tiles[idx].n) {
+        if (!bVis.has(nb)) { bVis.add(nb); candidateTiles.add(nb); bfsQ.push({ idx: nb, d: d + 1 }); }
+      }
+    }
+
+    // Compute staticAttackSegments from building position
+    const staticAttackSegments = new Set<number>();
+    for (const candTile of candidateTiles) {
+      const candTileData = tiles[candTile];
+      const sides = candTileData.s;
+      for (let seg = 0; seg < sides; seg++) {
+        const segKey = candTile * 6 + seg;
+        const dist = _segmentDistance(rangeTiles, startTile, startSegment, candTile, seg);
+        if (dist <= threshold) {
+          staticAttackSegments.add(segKey);
+        }
+      }
+    }
+
+    this._rangeResult = {
+      moveRangeTiles: new Map(),
+      attackReadyTiles: new Set(),
+      weaponRangeTiles: new Set(),
+      reachableSegments: new Map(),
+      staticAttackSegments,
+      maxAttackSegments: staticAttackSegments, // same as static — building can't move
+    };
   }
 
   /**
@@ -770,6 +848,44 @@ export class LocalMapView implements MapViewInterface {
   computeMovementCostRouteForHover(destTile: number, destSegment: number): void {
     this._movementCostRoute = null;
 
+    // ─── Building selected: static red line to enemy ─────────────────────────
+    const building = this.turnManager.selectedBuilding;
+    if (this.selectedUnits.size === 0 && building) {
+      if (destTile === building.tileIndex && destSegment === building.segment) return;
+      const bAttrs = building.attributes ?? {};
+      const bHasWeapon = (bAttrs.kinetic ?? 0) > 0
+        || (bAttrs.splashAttack ?? 0) > 0
+        || (bAttrs.antiAir ?? 0) > 0
+        || (bAttrs.rangeAttack ?? 0) > 0;
+      if (!bHasWeapon) return;
+
+      // Only show line to enemies in range
+      const enemy = this.world.units.find(
+        (u) => u.tileIndex === destTile && u.segment === destSegment && u.ownerId !== building.ownerId,
+      );
+      if (!enemy) return;
+
+      // Range check using shared formula
+      const bForRange = { tileIndex: building.tileIndex, segment: building.segment, attributes: bAttrs };
+      const inRange = _isInWeaponRange(this.world.tiles, bForRange, enemy);
+      if (!inRange) return;
+
+      // Red-line-only route (no movement hops, single weapon-range hop)
+      this._movementCostRoute = {
+        startTile: building.tileIndex,
+        startSegment: building.segment,
+        hops: [{
+          tileIndex: destTile,
+          segment: destSegment,
+          hopCost: 0,
+          cumulativeCost: 0,
+          zone: 'weaponRange' as const,
+        }],
+      };
+      return;
+    }
+
+    // ─── Unit selected: standard route computation ───────────────────────────
     if (this.selectedUnits.size === 0) return;
     const unitId = [...this.selectedUnits][0];
     const unit = this.world.units.find((u) => u.id === unitId);
@@ -823,6 +939,30 @@ export class LocalMapView implements MapViewInterface {
    * the same unit the right-click handler would actually use to attack.
    */
   isInAttackRange(enemyTile: number, enemySegment?: number): boolean {
+    // ─── Building selected: check weapon range from building position ─────
+    const building = this.turnManager.selectedBuilding;
+    if (this.selectedUnits.size === 0 && building) {
+      const bAttrs = building.attributes ?? {};
+      const bHasWeapon = (bAttrs.kinetic ?? 0) > 0
+        || (bAttrs.splashAttack ?? 0) > 0
+        || (bAttrs.antiAir ?? 0) > 0
+        || (bAttrs.rangeAttack ?? 0) > 0;
+      if (!bHasWeapon) return false;
+
+      const enemy = enemySegment !== undefined
+        ? this.world.units.find(
+            (u) => u.tileIndex === enemyTile && u.segment === enemySegment && u.ownerId !== building.ownerId,
+          )
+        : this.world.units.find(
+            (u) => u.tileIndex === enemyTile && u.ownerId !== building.ownerId,
+          );
+      if (!enemy) return false;
+
+      const bForRange = { tileIndex: building.tileIndex, segment: building.segment, attributes: bAttrs };
+      return _isInWeaponRange(this.world.tiles, bForRange, enemy);
+    }
+
+    // ─── Unit selected: standard attacker check ──────────────────────────
     if (this.selectedUnits.size === 0) return false;
 
     // Find the first eligible attacker — mirrors the selection logic in onRightClick
@@ -902,6 +1042,10 @@ export class LocalMapView implements MapViewInterface {
 
   setOnBuildingRefit(cb: (buildingId: string) => void): void {
     this.onBuildingRefit = cb;
+  }
+
+  setOnBuildingSelected(cb: (buildingId: string | null) => void): void {
+    this.onBuildingSelected = cb;
   }
 
   setActiveFaction(factionId: string): void {
