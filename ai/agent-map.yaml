@@ -8,12 +8,34 @@ context_order:
   - "Read always-loaded steering"
   - "Search memory.mcp for relevant concepts"
   - "Read ai/agent-map.yaml"
+  - "Skim ai/generated/dep-summary.md for relevant module hubs and cross-area edges"
   - "Read scoped steering and canonical docs for the relevant domain"
   - "Use grep_search, file_search, and read_code for targeted navigation"
   - "Inspect source code and tests"
   - "Make the smallest safe change"
   - "Verify once at the end"
   - "Update memory/docs only for durable knowledge"
+
+navigation_resources:
+  dependency_graph:
+    purpose: >
+      Pre-computed import graph showing which modules are high-impact hubs
+      and how the four code areas (client, server, src, shared) connect.
+      Use before grepping broadly.
+    summary: ai/generated/dep-summary.md
+    full_graph: ai/generated/dep-graph.json
+    violations: ai/generated/violations.md
+    regenerate: npm run deps:graph
+    config: .dependency-cruiser.cjs
+    import_rules:
+      - "client/ must NOT import from src/ or server/"
+      - "server/ must NOT import from client/"
+      - "src/ must NOT import from client/ or server/"
+    when_to_read:
+      - "Before changing high-fan-in modules (shared/movementConstants, src/world/types, client/worldData)"
+      - "When deciding where to place new code"
+      - "When renaming or moving modules"
+      - "When investigating cross-boundary bugs"
 
 domains:
 

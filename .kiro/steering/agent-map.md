@@ -35,14 +35,49 @@ If the map conflicts with source code, source code wins. Update the map if the m
 
 ## Generated dependency graph
 
-`ai/generated/dep-summary.md` contains a dependency-cruiser output showing:
+The `ai/generated/` folder contains dependency-cruiser output committed to the repo.
+It exists specifically so agents can navigate the codebase without broad grepping.
 
-- Per-module fan-in (how many modules depend on it) and fan-out (how many it imports)
-- Key hubs per area (highest blast radius for changes)
-- Cross-area dependency edges (client→shared, server→src, etc.)
+### Files
 
-Use it for quick orientation before grepping. Regenerate with `npm run deps:graph`.
-The full machine-readable graph is in `ai/generated/dep-graph.json`.
+| File | Size | Use for |
+|------|------|---------|
+| `ai/generated/dep-summary.md` | ~5 KB | **Read this first.** Module hubs, fan-in/fan-out, cross-area edges |
+| `ai/generated/dep-graph.json` | ~270 KB | Machine-readable full graph — trace specific import chains |
+| `ai/generated/violations.md` | <1 KB | Import boundary violations (should always be clean) |
+
+### When to read `dep-summary.md`
+
+- **Before any change touching shared/ or src/world/types.ts** — these are high-fan-in hubs. The summary tells you exactly how many modules will be affected.
+- **When deciding where to put new code** — the cross-area edges section shows the existing import contracts between client, server, src, and shared.
+- **When renaming or moving a module** — check its fan-in count. High fan-in = many files to update.
+- **When investigating a bug that crosses boundaries** — the cross-area section shows which modules bridge areas and might be the coupling point.
+
+### When to read `dep-graph.json`
+
+- When you need the exact import chain from module A → module B (trace transitive deps).
+- When `dep-summary.md` shows a surprising edge and you want the full details.
+- Parse with `JSON.parse()` — each entry in `.modules[]` has `.source` and `.dependencies[].resolved`.
+
+### When to regenerate
+
+Run `npm run deps:graph` after:
+
+- Adding or removing source files
+- Changing import statements across module boundaries
+- Refactoring module structure
+
+The committed output is a snapshot. If your session adds new files or changes imports, regenerate before relying on it for navigation.
+
+### Import rules enforced
+
+These are checked by dependency-cruiser and reported in `violations.md`:
+
+- `client/` must NOT import from `src/` or `server/`
+- `server/` must NOT import from `client/`
+- `src/` must NOT import from `client/` or `server/`
+
+If you introduce a new cross-area import that violates these rules, `npm run deps:graph` will flag it.
 
 ## Context order
 
