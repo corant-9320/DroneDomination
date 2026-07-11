@@ -513,7 +513,8 @@ function handleMove(req: CombatRequest, ctx: CombatContext): CombatResponse<Wire
   if (isDrone(mover)) {
     const reactionResults = resolveReactionFire(unitId, path, ctx);
     const reactionExplained = reactionResults.map((r) => {
-      const reactor = units.find((u) => u.id === r.attackerId);
+      const reactor = units.find((u) => u.id === r.attackerId)
+        ?? ctx.buildings.find((b) => b.id === r.attackerId);
       const drone = units.find((u) => u.id === r.targetId);
       return buildReactionExplanation(r, reactor, drone);
     });

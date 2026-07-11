@@ -7,7 +7,7 @@
  * This is pure game logic with no rendering concerns.
  */
 
-import { WorldData, UnitData } from './worldData.js';
+import { WorldData, UnitData, BuildingData } from './worldData.js';
 import { dbg } from './debug.js';
 import { getMaxMovement as sharedGetMaxMovement } from '../shared/movementConstants.js';
 
@@ -41,6 +41,13 @@ export class TurnManager {
 
   /** Units currently selected for movement (by unit id). */
   selectedUnits: Set<string> = new Set();
+
+  /**
+   * The currently selected player-owned building, or null.
+   * Set when the player left-clicks a segment containing their building (and no
+   * unit). Cleared when the player clicks elsewhere or selects a unit.
+   */
+  selectedBuilding: BuildingData | null = null;
 
   private world: WorldData;
   private factions: string[];
@@ -185,6 +192,19 @@ export class TurnManager {
     );
   }
 
+  // ─── Building selection ─────────────────────────────────────────────────
+
+  /** Select a player-owned building. Clears unit selection. */
+  selectBuilding(building: BuildingData): void {
+    this.selectedUnits.clear();
+    this.selectedBuilding = building;
+  }
+
+  /** Clear the selected building. */
+  clearBuilding(): void {
+    this.selectedBuilding = null;
+  }
+
   // ─── Turn advancement ───────────────────────────────────────────────────
 
   /**
@@ -195,6 +215,7 @@ export class TurnManager {
   endTurn(): void {
     dbg.localMap.log('TurnManager: endTurn — resetting state for new player turn');
     this.selectedUnits.clear();
+    this.selectedBuilding = null;
     this.resetMovementPoints();
   }
 

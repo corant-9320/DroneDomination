@@ -6,13 +6,17 @@
         "-y",
         "@modelcontextprotocol/server-memory"
       ],
+      "env": {
+        "MEMORY_FILE_PATH": "C:\\Kiro\\DroneDomination\\.kiro\\memory\\graph.jsonl"
+      },
       "disabled": false,
       "autoApprove": [
         "create_entities",
         "create_relations",
         "search_nodes",
         "add_observations",
-        "open_nodes"
+        "open_nodes",
+        "read_graph"
       ]
     },
     "git": {
@@ -32,7 +36,9 @@
         "git_branch_list",
         "git_set_working_dir",
         "git_add",
-        "git_commit"
+        "git_commit",
+        "git_push",
+        "git_blame"
       ]
     },
     "chrome-devtools": {

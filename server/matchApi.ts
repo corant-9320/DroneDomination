@@ -37,6 +37,8 @@ import {
   type CombatRequest,
 } from './combatApi.js';
 import { getMaxMovement } from '../shared/movementConstants.js';
+import { resolveLogisticsTurn } from '../src/world/logistics.js';
+import { applyLogisticsIntent, isLogisticsIntent } from './logisticsApi.js';
 import { getSessionStore, VersionConflictError } from './sessionStore.js';
 import type {
   MatchState,
@@ -48,6 +50,7 @@ import type {
   MatchIntentResponse,
 } from '../shared/matchTypes.js';
 import type { ExplainedCombat, ExplainedRepair } from '../shared/combatTypes.js';
+import type { LogisticsEvent } from '../shared/logisticsTypes.js';
 
 // ---------------------------------------------------------------------------
 // Authoritative tiles (regenerated from the trusted seed, cached per process)
@@ -101,6 +104,7 @@ export async function handleCreateMatch(req: CreateMatchRequest): Promise<Create
     turn: 1,
     units: req.units,
     buildings: req.buildings ?? [],
+    logistics: { wells: [], refineries: [], routes: [], transports: [], hubs: [], home: {}, tasks: [], clearedForests: [], bridges: [] },
     unitTurn,
     version: 0,
   };
@@ -137,11 +141,12 @@ export async function handleMatchIntent(req: MatchIntentRequest): Promise<MatchI
   let combats: ExplainedCombat[] | undefined;
   let reactions: ExplainedCombat[] | undefined;
   let repair: ExplainedRepair | undefined;
+  let events: LogisticsEvent[] | undefined;
 
   const intent = req.intent;
   switch (intent.kind) {
     case 'endTurn':
-      advanceTurn(state);
+      events = advanceTurn(state, tiles);
       break;
     case 'move': {
       const r = applyMoveIntent(state, ctx, tiles, activeFaction, intent);
@@ -173,8 +178,16 @@ export async function handleMatchIntent(req: MatchIntentRequest): Promise<MatchI
       repair = r.repair;
       break;
     }
-    default:
+    default: {
+      // Logistics intents mutate state.logistics in place (they don't use ctx),
+      // so the ctx.units/ctx.buildings sync-back below does not touch them.
+      if (isLogisticsIntent(intent)) {
+        const r = applyLogisticsIntent(state, tiles, activeFaction, intent);
+        if (r.error) return { success: false, error: r.error };
+        break;
+      }
       return { success: false, error: 'Unknown intent' };
+    }
   }
 
   // Sync authoritative entity state back from the combat context.
@@ -207,6 +220,8 @@ export async function handleMatchIntent(req: MatchIntentRequest): Promise<MatchI
     combats,
     reactions,
     repair,
+    logistics: saved.logistics,
+    events,
   };
 }
 
@@ -240,7 +255,8 @@ function applyMoveIntent(
     reactions = results.map((res) =>
       buildReactionExplanation(
         res,
-        ctx.units.find((u) => u.id === res.attackerId),
+        ctx.units.find((u) => u.id === res.attackerId)
+          ?? ctx.buildings.find((b) => b.id === res.attackerId),
         ctx.units.find((u) => u.id === res.targetId),
       ),
     );
@@ -435,8 +451,18 @@ function applyRepairIntent(
  * Advance to the next faction in the turn order, resetting the incoming
  * faction's units to a fresh budget (full MP, not acted, not rotated). The turn
  * counter increments when the order wraps back to faction 0.
+ *
+ * Before rotating, the per-turn logistics pipeline resolves for the OUTGOING
+ * (currently-active) faction — the one whose turn is ending — updating
+ * `state.logistics` and returning the events it produced so the caller can
+ * surface them in the intent response.
  */
-function advanceTurn(state: MatchState): void {
+function advanceTurn(state: MatchState, tiles: Tile[]): LogisticsEvent[] {
+  // Resolve the ending faction's economy before turn rotation.
+  const outgoingFaction = state.factions[state.activeFactionIndex];
+  const resolved = resolveLogisticsTurn(state.logistics, tiles, outgoingFaction);
+  state.logistics = resolved.logistics;
+
   state.activeFactionIndex = (state.activeFactionIndex + 1) % state.factions.length;
   if (state.activeFactionIndex === 0) state.turn += 1;
 
@@ -446,4 +472,6 @@ function advanceTurn(state: MatchState): void {
       state.unitTurn[u.id] = { mp: getMaxMovement(u.attributes), acted: false, rotated: false };
     }
   }
+
+  return resolved.events;
 }

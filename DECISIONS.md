@@ -1,8 +1,25 @@
-# Decision Log
+# Decision Log — ARCHIVE (frozen)
 
-Append-only record of design decisions, gotchas, and known issues. The game's
-rules are invented as we go — this log is how that intent survives across
-sessions so agents stop re-discovering (or re-breaking) the same things.
+> **This file is no longer appended to.** It is the frozen historical record of
+> design decisions through 2026-07-04. The workflow changed because this log grew
+> to ~2400 lines and mixed two things with opposite lifecycles.
+>
+> **Going forward:**
+> - **Per-diff rationale** ("why we made this specific change") goes in the **git
+>   commit body**, using `Decision:` / `Why:` / `Impact:` lines so it's
+>   reconstructable with `git log --grep "^Decision:"`. See
+>   [`.kiro/steering/docs-as-we-go.md`](.kiro/steering/docs-as-we-go.md).
+> - **Open issues + enduring gotchas/invariants** (living knowledge that evolves)
+>   go in [`docs/architecture/known-issues.md`](docs/architecture/known-issues.md).
+>
+> This archive stays as a searchable reference — cite entries by date. Don't add
+> new entries here.
+
+---
+
+Historical append-only record of design decisions, gotchas, and known issues. The
+game's rules were invented as we go — this log is how that intent survived across
+sessions so agents stopped re-discovering (or re-breaking) the same things.
 
 ## 2026-07-04 — Removed ElevationType; switched to numeric height throughout
 

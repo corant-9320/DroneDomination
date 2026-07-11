@@ -2,7 +2,7 @@
  * Turn lifecycle: advanceTurn, confirmEndTurn, faction cycling, AI orchestration.
  */
 
-import { fetchAiTurn, replayAiTurn } from './aiTurn.js';
+import { fetchAiTurn, fetchBuildingTurn, replayAiTurn } from './aiTurn.js';
 import { dbg } from './debug.js';
 import { emitDebugEvent } from './gameDebug.js';
 import { getMaxMovement } from '../shared/movementConstants.js';
@@ -192,6 +192,19 @@ export async function advanceTurn(ctx: GameContext): Promise<void> {
   const factions = turnManager.getFactions();
   const playerFaction = turnManager.getPlayerFaction();
 
+  // Buildings are fully automated. Fire the player's buildings first (they act
+  // at the end of the player's turn), then each AI faction's units + buildings.
+  const runBuildingTurn = async (faction: string) => {
+    const result = await fetchBuildingTurn(world, faction);
+    if (!result.success) {
+      dbg.input.error('Building turn resolution failed:', result.error);
+    } else if (result.events.length > 0) {
+      await replayAiTurn(world, result.events, combatPanel, aiPlayback, aiCallbacks);
+    }
+  };
+
+  await runBuildingTurn(playerFaction);
+
   for (let i = 1; i < factions.length; i++) {
     turnManager.activeFactionIndex = (turnManager.activeFactionIndex + 1) % factions.length;
     const faction = turnManager.getActiveFaction();
@@ -207,6 +220,8 @@ export async function advanceTurn(ctx: GameContext): Promise<void> {
     } else {
       await replayAiTurn(world, aiResult.events, combatPanel, aiPlayback, aiCallbacks);
     }
+    // Then this faction's buildings auto-fire.
+    await runBuildingTurn(faction);
   }
 
   aiPlayback.markComplete();

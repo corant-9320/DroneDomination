@@ -24,6 +24,16 @@ import type {
   WireCity,
   CompactSave as WireCompactSave,
 } from '../shared/wireTypes.js';
+import type {
+  LogisticsState,
+  OilWell,
+  Refinery,
+  LogisticsRoute,
+  Transport,
+  DistributionHub,
+  HomeStock,
+  EngineerTask,
+} from '../shared/logisticsTypes.js';
 
 // ─── Public type aliases (preserve the existing names callers use) ────────────
 
@@ -35,6 +45,22 @@ import type {
 export interface TileData extends WireTile {
   /** Runtime flag: a player engineer has built a bridge on this river hex. */
   bridge?: boolean;
+  /**
+   * Runtime flag: this tile's forest has been cleared by a logistics engineer
+   * task (Req 9.4). NOT part of the wire format — applied by the client from
+   * `logistics.clearedForests` after loading, exactly as `bridge` is applied
+   * from `save.bridges`. Lets the renderer draw the hex as cleared.
+   */
+  clearedForest?: boolean;
+  /**
+   * Oil deposit marker. `"oil"` marks an Oil_Deposit (Req 1.3), which the
+   * logistics renderer draws pre-drill. Mirrors the authoritative
+   * `Tile.resourceType` (`src/world/types.ts`) and is carried on the wire under
+   * the identical field name (`WireTile.resourceType`), so it arrives with no
+   * remap via `src/world/compact.ts::toCompactTile` and the `/api/world-tiles`
+   * regeneration path. The renderer reads `tile.resourceType === 'oil'`.
+   */
+  resourceType?: string;
 }
 
 /** A unit in the client's working copy. Identical to the wire shape. */
@@ -68,6 +94,24 @@ export type CityData = WireCity;
 // Re-export CompactSave with the same name callers expect
 export type CompactSave = WireCompactSave;
 
+// ─── Logistics mirror aliases ─────────────────────────────────────────────────
+//
+// The Oil Logistics System's wire shapes ARE its authoritative shapes (a straight
+// field copy, exactly like WireUnit/WireBuilding), so the client mirrors them by
+// re-exporting the shared types directly rather than re-declaring them here. The
+// renderer (task 15.2) reads these off `WorldData.logistics`. `Transport` carries
+// its `tier` ('van' | 'truck' | 'juggernaut') for model selection (Req 14).
+export type {
+  LogisticsState,
+  OilWell,
+  Refinery,
+  LogisticsRoute,
+  Transport,
+  DistributionHub,
+  HomeStock,
+  EngineerTask,
+};
+
 export interface WorldData {
   seed: number;
   tileCount: number;
@@ -92,6 +136,16 @@ export interface WorldData {
    * Used by battle scenarios to focus on the gap between armies.
    */
   battleCentreTile?: number;
+  /**
+   * Oil Logistics System state overlay (wells, refineries, routes, transports,
+   * hubs, home stocks, tasks, and cleared-forest/bridge index overlays). Copied
+   * straight through from `CompactSave.logistics` on load — wire shapes ===
+   * authoritative shapes, so no field remapping is needed. Optional so saves
+   * without logistics still load. The logistics renderer (task 15.2) reads its
+   * entities from here; the `logistics.bridges`/`logistics.clearedForests` index
+   * overlays are additionally applied onto tiles below (see `expandCompactSave`).
+   */
+  logistics?: LogisticsState;
 }
 
 /**
@@ -173,6 +227,22 @@ async function expandCompactSave(data: CompactSave): Promise<WorldData> {
     }
   }
 
+  // Re-apply logistics index overlays onto the regenerated tiles, exactly as the
+  // player-bridge overlay above is re-applied. Completed logistics bridges reuse
+  // the same `bridge` render flag; cleared forests set the `clearedForest` flag
+  // (Req 9.4, 10.3). The full logistics payload is copied straight through onto
+  // WorldData.logistics below (shapes are identical, so no remapping).
+  if (data.logistics) {
+    for (const idx of data.logistics.bridges ?? []) {
+      const tile = regen.tiles[idx];
+      if (tile) tile.bridge = true;
+    }
+    for (const idx of data.logistics.clearedForests ?? []) {
+      const tile = regen.tiles[idx];
+      if (tile) tile.clearedForest = true;
+    }
+  }
+
   const world: WorldData = {
     seed: data.seed,
     tileCount: regen.tileCount,
@@ -185,6 +255,10 @@ async function expandCompactSave(data: CompactSave): Promise<WorldData> {
     buildings: data.buildings ?? [],
     playerColor: data.playerColor,
     battleCentreTile: data.battleCentreTile,
+    // Straight copy — CompactSave.logistics and WorldData.logistics are both
+    // `LogisticsState`, so no field remapping is required (deferred here from
+    // task 12.2's client-expand note).
+    logistics: data.logistics,
   };
 
   // Mark city-owned hexes on the regenerated tiles, then ensure every city has

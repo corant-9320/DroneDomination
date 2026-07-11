@@ -247,6 +247,44 @@ describe('combatApi — end-to-end wiring', () => {
     expect(res.reactions.length).toBeGreaterThanOrEqual(1);
   });
 
+  it('triggers Anti-Air reaction fire from an enemy building with antiAir when a drone overflies (§16)', () => {
+    const res = handleCombat({
+      action: 'move',
+      unitId: 'drone',
+      activeFaction: 'p1',
+      path: [0, 1],
+      units: [
+        wu('drone', 'p1', 0, baseAttrs({ flightMovement: 5, size: 3 }), 30),
+      ],
+      tiles: adjacentTiles(),
+      buildings: [
+        { id: 'tower', ownerId: 'p2', tileIndex: 1, segment: 0, attributes: { size: 3, antiAir: 4, kinetic: 0, splashAttack: 0, rangeAttack: 0, armour: 0, defence: 0, wheeledMovement: 0, limbMovement: 0, flightMovement: 0, repair: 0 } },
+      ],
+    });
+    expect(res.success).toBe(true);
+    expect(res.reactions.length).toBeGreaterThanOrEqual(1);
+    expect(res.reactions[0].attackerId).toBe('tower');
+    expect(res.reactions[0].directDamage).toBeGreaterThan(0);
+  });
+
+  it('building AA reaction fire does not trigger for a friendly drone', () => {
+    const res = handleCombat({
+      action: 'move',
+      unitId: 'drone',
+      activeFaction: 'p1',
+      path: [0, 1],
+      units: [
+        wu('drone', 'p1', 0, baseAttrs({ flightMovement: 5, size: 3 }), 30),
+      ],
+      tiles: adjacentTiles(),
+      buildings: [
+        { id: 'tower', ownerId: 'p1', tileIndex: 1, segment: 0, attributes: { size: 3, antiAir: 4, kinetic: 0, splashAttack: 0, rangeAttack: 0, armour: 0, defence: 0, wheeledMovement: 0, limbMovement: 0, flightMovement: 0, repair: 0 } },
+      ],
+    });
+    expect(res.success).toBe(true);
+    expect(res.reactions.length).toBe(0);
+  });
+
   it('heals a damaged friendly unit, capped at max health', () => {
     const res = handleCombat({
       action: 'repair',

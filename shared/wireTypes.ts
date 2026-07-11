@@ -19,9 +19,10 @@
  *     boundary [{x,y,z}] → b  [[x,y,z]]
  *     terrainType      → terrain
  *     height           → h
- *     forested         → f        (omitted when false)
- *     riverTo          → rv       (omitted when absent)
- *     cityId           → city     (omitted when absent)
+ *     forested         → f            (omitted when false)
+ *     riverTo          → rv           (omitted when absent)
+ *     cityId           → city         (omitted when absent)
+ *     resourceType     → resourceType (identical name; omitted when absent)
  *
  *   Unit (src/world/units.ts)       → WireUnit (here)
  *     (all field names are identical to the authoritative model)
@@ -41,6 +42,7 @@
  */
 
 import type { UnitAttributes } from './unitTypes.js';
+import type { LogisticsState } from './logisticsTypes.js';
 
 // ─── Tile ─────────────────────────────────────────────────────────────────────
 
@@ -61,6 +63,13 @@ export interface WireTile {
   rv?: number;
   /** City id for tiles that are the capital of a city. Omitted when absent. */
   city?: string;
+  /**
+   * Resource marker for the authoritative `Tile.resourceType`. `"oil"` marks an
+   * Oil_Deposit (Req 1.3), which the logistics renderer draws pre-drill. Field
+   * name matches the authoritative model (like WireUnit/WireBuilding), so the
+   * client reads it with no remap. Omitted when absent.
+   */
+  resourceType?: string;
   /**
    * Per-segment steepness in radians (segSteep). One entry per side. Values are
    * rounded to 4 decimals on the wire. Omitted only for tiles that have no
@@ -130,6 +139,13 @@ export interface WireWorld {
   units: WireUnit[];
   buildings: WireBuilding[];
   tiles: WireTile[];
+  /**
+   * Oil Logistics System state overlay. Wire shapes === authoritative shapes
+   * (straight field copy), so the payload is `LogisticsState` directly. Optional
+   * so existing wire consumers and world.json without logistics still parse.
+   * Mirrors the `bridges` overlay pattern in `CompactSave`.
+   */
+  logistics?: LogisticsState;
 }
 
 // ─── Compact save format ──────────────────────────────────────────────────────
@@ -154,4 +170,12 @@ export interface CompactSave {
   battleCentreTile?: number;
   /** Tile indices where the player has built bridges (re-applied after tile regen). */
   bridges?: number[];
+  /**
+   * Oil Logistics System state overlay (wells, refineries, routes, transports,
+   * hubs, home stocks, tasks, and cleared-forest/bridge overlays). Wire shapes
+   * === authoritative shapes, so the payload is `LogisticsState` directly.
+   * Optional — mirrors the `bridges` overlay pattern — so existing saves without
+   * logistics still load.
+   */
+  logistics?: LogisticsState;
 }

@@ -7,6 +7,7 @@ import { validateWorld, printValidation } from './world/validate.js';
 import { spawnInitialUnits } from './world/spawn.js';
 import { foundCities } from './world/buildings.js';
 import { toCompactWorld } from './world/compact.js';
+import { DEFAULT_SEED } from '../shared/logisticsConstants.js';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -14,7 +15,10 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SEED = Math.floor(Math.random() * 1_000_000);
+// The postbuild generator builds the committed default world artifact, so it uses
+// DEFAULT_SEED — this is the Default_Test_World and ships with the seeded example
+// logistics network (Oil Logistics System — Req 13.1, 13.10).
+const SEED = DEFAULT_SEED;
 const OUTPUT_DIR = join(__dirname, '..', '..', 'data');
 
 // Generate
@@ -45,6 +49,7 @@ const compact = toCompactWorld(
   world.cities,
   units,
   world.buildings,
+  world.logistics,
 );
 
 const outPath = join(OUTPUT_DIR, 'world.json');

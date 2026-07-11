@@ -532,6 +532,9 @@ export class GlobeView {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
+    // Draw the logistics network first so unit discs sit on top of it.
+    this.drawLogisticsMarkers(w, h);
+
     const units = this.world.units;
     if (!units || units.length === 0) return;
 
@@ -613,6 +616,107 @@ export class GlobeView {
     ctx.textBaseline = 'top';
     ctx.fillText(`Zoom: ${zoom.toFixed(1)}×`, w - 8, 8);
     ctx.restore();
+  }
+
+  /**
+   * Project a tile's centre to 2D overlay screen coordinates, culling tiles on
+   * the far hemisphere. Returns null when the tile is missing or facing away.
+   * Shared by the logistics markers below and mirrors `drawUnitDiscs`'s maths.
+   */
+  private projectTile(tileIndex: number, w: number, h: number): { sx: number; sy: number } | null {
+    const tile = this.world.tiles[tileIndex];
+    if (!tile) return null;
+    const push = 1.04;
+    const vec = new THREE.Vector3(tile.pos[0] * push, tile.pos[1] * push, tile.pos[2] * push);
+    vec.project(this.camera);
+    const camDir = this.camera.position.clone().normalize();
+    const tileNormal = new THREE.Vector3(tile.pos[0], tile.pos[1], tile.pos[2]).normalize();
+    if (tileNormal.dot(camDir) < 0.1) return null; // far hemisphere / limb
+    const sx = (vec.x * 0.5 + 0.5) * w;
+    const sy = (-vec.y * 0.5 + 0.5) * h;
+    if (sx < -20 || sx > w + 20 || sy < -20 || sy > h + 20) return null;
+    return { sx, sy };
+  }
+
+  /**
+   * Draw the Oil Logistics network onto the 2D overlay so the player can SPOT it
+   * on the globe (detailed 3D models appear in the zoomed-in first-person view).
+   * Renders oil-deposit dots, faction-tinted structure badges (⛏ well, 🏭
+   * refinery, ⬡ hub), and route polylines (roads thin, highways thicker/brighter).
+   * Runs every frame after `drawUnitDiscs` so it tracks camera movement.
+   */
+  private drawLogisticsMarkers(w: number, h: number): void {
+    const ctx = this.overlayCtx;
+    const logistics = this.world.logistics;
+
+    // ── Oil deposits (visible pre-drill) — small amber dots on 'oil' tiles ──
+    ctx.save();
+    ctx.fillStyle = '#f4d03f';
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 1;
+    for (const tile of this.world.tiles) {
+      if (tile.resourceType !== 'oil') continue;
+      const p = this.projectTile(tile.idx, w, h);
+      if (!p) continue;
+      ctx.beginPath();
+      ctx.arc(p.sx, p.sy, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    if (!logistics) return;
+
+    // ── Route polylines (draw under the structure badges) ──
+    const drawRoute = (segments: number[], color: string, width: number): void => {
+      const pts: Array<{ sx: number; sy: number }> = [];
+      for (const idx of segments) {
+        const p = this.projectTile(idx, w, h);
+        // A route wrapping the limb will have gaps; that's acceptable at globe scale.
+        if (p) pts.push(p);
+      }
+      if (pts.length < 2) return;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(pts[0].sx, pts[0].sy);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].sx, pts[i].sy);
+      ctx.stroke();
+      ctx.restore();
+    };
+    for (const route of logistics.routes ?? []) {
+      if (route.tier === 'highway') drawRoute(route.segments, '#ffd24a', 3);
+      else drawRoute(route.segments, '#c8a24a', 1.5);
+    }
+
+    // ── Structure badges (well / refinery / hub) ──
+    const drawBadge = (tileIndex: number, ownerId: string, glyph: string): void => {
+      const p = this.projectTile(tileIndex, w, h);
+      if (!p) return;
+      const color = factionColor(this.world, ownerId);
+      const r = 7;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(p.sx, p.sy, r, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.92;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.stroke();
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(glyph, p.sx, p.sy);
+      ctx.restore();
+    };
+    for (const well of logistics.wells ?? []) drawBadge(well.tileIndex, well.ownerId, '⛏');
+    for (const refinery of logistics.refineries ?? []) drawBadge(refinery.tileIndex, refinery.ownerId, 'R');
+    for (const hub of logistics.hubs ?? []) drawBadge(hub.tileIndex, hub.ownerId, 'H');
   }
 
   /** Pause the render loop (e.g. while a blocking modal is open). */

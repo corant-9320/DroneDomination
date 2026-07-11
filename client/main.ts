@@ -29,7 +29,6 @@ import { advanceTurn } from './turnController.js';
 import {
   handlePlayerAttack,
   handlePlayerBuildingAttack,
-  handlePlayerBuildingAttackUnit,
   handlePlayerRepair,
   handlePlayerMove,
   handlePlayerSleep,
@@ -216,9 +215,6 @@ async function main() {
       if (!building) return;
       const syntheticAttacker = buildingAsAttackerUnit(building);
       combatPanel.showBuildingPreview(syntheticAttacker, target);
-    });
-    localMap.setOnBuildingAttackUnit((buildingId, targetId) => {
-      void handlePlayerBuildingAttackUnit(ctx, buildingId, targetId);
     });
     localMap.setOnRepair((repairerId, targetId) => {
       void handlePlayerRepair(ctx, repairerId, targetId);

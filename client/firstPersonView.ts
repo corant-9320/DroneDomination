@@ -60,6 +60,9 @@ import type { TurnManager } from './turnManager.js';
 import { buildUnitModel } from './unitModel.js';
 import { unitDataToModelAttrs } from './unitRenderer.js';
 import { buildBuildingModel, BUILDING_BASE_FOOTPRINT } from './buildingModel.js';
+import { buildLogisticsModel } from './logisticsModel.js';
+import { buildTransportModel } from './logisticsModelTransport.js';
+import { buildRoadMesh, buildHighwayMesh } from './logisticsModelRoad.js';
 import { buildingDataToModelAttrs } from './buildingRenderer.js';
 import { tileColorRGB, factionColor } from './colors.js';
 import { TerrainTextures } from './terrainTextures.js';
@@ -100,7 +103,7 @@ export interface FpCommandContext {
  * The 20v20 battle spans ~8 BFS layers seed-to-seed, so this is sized to keep
  * both armies in view from either end of the field.
  */
-const VIEW_RADIUS = 12;
+const VIEW_RADIUS = 17;
 
 /** Target on-screen radius (world units) for a hex — drives the projection scale. */
 const HEX_WORLD_RADIUS = 6;
@@ -265,6 +268,12 @@ export class FirstPersonView {
    *  singletons), buildBuildingModel mints fresh materials per call, so these
    *  must be disposed on rebuild/close too. */
   private buildingMats: THREE.Material[] = [];
+  /** Group holding all Oil Logistics models (wells/refineries/hubs/transports/roads/deposits). */
+  private logisticsGroup: THREE.Group | null = null;
+  /** Geometries owned by the logistics group (disposed on rebuild/close). */
+  private logisticsGeoms: THREE.BufferGeometry[] = [];
+  /** Materials owned by the logistics group (fresh per build — disposed on rebuild/close). */
+  private logisticsMats: THREE.Material[] = [];
   /** Movement-range fill overlay (rebuilt on selection change). */
   private rangeGroup: THREE.Group | null = null;
   /** Hover route line overlay (rebuilt on hover). */
@@ -369,6 +378,7 @@ export class FirstPersonView {
   refresh(): void {
     if (!this.active) return;
     this.rebuildBuildings();
+    this.rebuildLogistics();
     this.rebuildUnits();
     this.rebuildRangeOverlay();
     this.clearRouteOverlay();
@@ -764,8 +774,10 @@ export class FirstPersonView {
     this.rangeGroup = new THREE.Group();
     this.routeGroup = new THREE.Group();
     this.buildingsGroup = new THREE.Group();
-    this.scene!.add(this.unitsGroup, this.rangeGroup, this.routeGroup, this.buildingsGroup);
+    this.logisticsGroup = new THREE.Group();
+    this.scene!.add(this.unitsGroup, this.rangeGroup, this.routeGroup, this.buildingsGroup, this.logisticsGroup);
     this.rebuildBuildings();
+    this.rebuildLogistics();
     this.rebuildUnits();
 
     // Scatter static forest scenery across forested hexes (built once per open).
@@ -848,12 +860,22 @@ export class FirstPersonView {
       try { m.dispose(); } catch { /* best-effort */ }
     }
     this.buildingMats = [];
+    // Logistics models own both geometries AND materials (fresh per build).
+    for (const g of this.logisticsGeoms) {
+      try { g.dispose(); } catch { /* best-effort */ }
+    }
+    this.logisticsGeoms = [];
+    for (const m of this.logisticsMats) {
+      try { m.dispose(); } catch { /* best-effort */ }
+    }
+    this.logisticsMats = [];
     this.clearGroup(this.rangeGroup);
     this.clearGroup(this.routeGroup);
     this.unitsGroup = null;
     this.rangeGroup = null;
     this.routeGroup = null;
     this.buildingsGroup = null;
+    this.logisticsGroup = null;
     this.pickMeshes = [];
     this.flatTiles = [];
     this.tileById.clear();
@@ -1007,12 +1029,17 @@ export class FirstPersonView {
       const factionRingGeo = new THREE.RingGeometry(FACTION_RING_RADIUS * 0.75, FACTION_RING_RADIUS, 32);
       const factionRingMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(fc), transparent: true, opacity: 0.85, side: THREE.DoubleSide });
       const factionRing = new THREE.Mesh(factionRingGeo, factionRingMat);
+      // Disable frustum culling — a flat ring's bounding sphere is near-zero
+      // height, causing it to be culled as soon as the camera moves away even
+      // though the ring is still visible in the distance. The whole point of
+      // the ring is to identify units when they're small and far away.
+      factionRing.frustumCulled = false;
       // RingGeometry faces +Z; rotate that onto the surface normal so the ring
       // lies on the slope instead of a flat horizontal plane.
       factionRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), ringUp);
       factionRing.position.set(
         wx + ringUp.x * 0.02,
-        groundY + ringUp.y * 0.02,
+        groundY + ringUp.y * 0.02 + cityLift,
         wz + ringUp.z * 0.02,
       );
       group.add(factionRing);
@@ -1026,6 +1053,7 @@ export class FirstPersonView {
         const ringGeo = new THREE.RingGeometry(SELECT_RING_RADIUS * 0.8, SELECT_RING_RADIUS, 32);
         const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
         const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.frustumCulled = false; // same reason as faction ring above
         ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), ringUp);
         ring.position.set(
           wx + ringUp.x * 0.03,
@@ -1043,7 +1071,53 @@ export class FirstPersonView {
         if (mesh.geometry) this.unitGeoms.push(mesh.geometry);
       });
 
-      // Floating unit number label — matches the format used in 2D (#N suffix).
+      // ── Floating health bar — always visible above every unit ──
+      {
+        const HP_PER_POINT = 10;
+        const maxHp = (unit.attributes.size ?? 1) * HP_PER_POINT;
+        const ratio = Math.max(0, Math.min(1, unit.currentHealth / maxHp));
+
+        const barW = 128;
+        const barH = 20;
+        const barCvs = document.createElement('canvas');
+        barCvs.width = barW; barCvs.height = barH;
+        const bc = barCvs.getContext('2d')!;
+
+        // Background
+        bc.fillStyle = 'rgba(0,0,0,0.7)';
+        bc.beginPath();
+        bc.roundRect(0, 0, barW, barH, 4);
+        bc.fill();
+
+        // Filled portion (green → yellow → red)
+        const fillW = Math.round((barW - 4) * ratio);
+        if (fillW > 0) {
+          if (ratio >= 0.66) {
+            bc.fillStyle = '#44dd44';
+          } else if (ratio >= 0.33) {
+            bc.fillStyle = '#dddd22';
+          } else {
+            bc.fillStyle = '#ee3322';
+          }
+          bc.beginPath();
+          bc.roundRect(2, 2, fillW, barH - 4, 3);
+          bc.fill();
+        }
+
+        const barTex = new THREE.CanvasTexture(barCvs);
+        const barMat = new THREE.SpriteMaterial({ map: barTex, depthTest: false, transparent: true });
+        const barSprite = new THREE.Sprite(barMat);
+        const barScale = HEX_WORLD_RADIUS * 0.35 * 0.25;
+        // Position just above the model top; drones offset by their air height.
+        const modelTop = groundY + groundLift + (drone ? DRONE_AIR_HEIGHT : 0);
+        barSprite.scale.set(barScale, barScale * (barH / barW), 1);
+        barSprite.position.set(wx, modelTop + barScale * 0.18, wz);
+        group.add(barSprite);
+        this.unitMats.push(barMat);
+      }
+
+      // Unit number label — no background, white text with drop-shadow, below the model
+      // (matches the 2D local-map style: white text underneath the unit icon, no box).
       if (getShowEntityNumbers()) {
         const idSuffix = unit.id.replace(/^unit_/, '');
         const labelText = `#${idSuffix}`;
@@ -1051,20 +1125,21 @@ export class FirstPersonView {
         cvs.width = 128; cvs.height = 64;
         const ctx2d = cvs.getContext('2d')!;
         ctx2d.clearRect(0, 0, 128, 64);
-        ctx2d.fillStyle = 'rgba(0,0,0,0.65)';
-        ctx2d.beginPath();
-        ctx2d.roundRect(4, 4, 120, 56, 8);
-        ctx2d.fill();
-        ctx2d.fillStyle = '#dddddd';
-        ctx2d.font = 'bold 36px monospace';
+        // Drop-shadow pass (1 px offset, semi-transparent black)
+        ctx2d.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx2d.font = 'bold 36px sans-serif';
         ctx2d.textAlign = 'center';
         ctx2d.textBaseline = 'middle';
+        ctx2d.fillText(labelText, 65, 33);
+        // White text
+        ctx2d.fillStyle = 'rgba(220,220,220,0.85)';
         ctx2d.fillText(labelText, 64, 32);
         const labelTex = new THREE.CanvasTexture(cvs);
         const labelMat = new THREE.SpriteMaterial({ map: labelTex, depthTest: false, transparent: true });
         const sprite = new THREE.Sprite(labelMat);
         const labelScale = HEX_WORLD_RADIUS * 0.35 * 0.25;
-        const labelY = groundY + groundLift + (drone ? DRONE_AIR_HEIGHT : 0) + labelScale * 0.9;
+        // Position below the model base (groundY), not above the top.
+        const labelY = groundY - labelScale * 0.3;
         sprite.scale.set(labelScale, labelScale * 0.5, 1);
         sprite.position.set(wx, labelY, wz);
         group.add(sprite);
@@ -1159,7 +1234,8 @@ export class FirstPersonView {
         else if (mat) this.buildingMats.push(mat as THREE.Material);
       });
 
-      // Floating building number label — same id-suffix format as units (#N).
+      // Building number label — no background, white text with drop-shadow, below the base
+      // (matches the 2D local-map style: white text underneath, no box).
       if (!ghost && getShowEntityNumbers()) {
         const bIdSuffix = b.id.replace(/^building_/, '');
         const labelText = `#${bIdSuffix}`;
@@ -1167,21 +1243,22 @@ export class FirstPersonView {
         cvs.width = 128; cvs.height = 64;
         const ctx2d = cvs.getContext('2d')!;
         ctx2d.clearRect(0, 0, 128, 64);
-        ctx2d.fillStyle = 'rgba(0,0,0,0.65)';
-        ctx2d.beginPath();
-        ctx2d.roundRect(4, 4, 120, 56, 8);
-        ctx2d.fill();
-        ctx2d.fillStyle = '#ffff44';
-        ctx2d.font = 'bold 36px monospace';
+        // Drop-shadow pass
+        ctx2d.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx2d.font = 'bold 36px sans-serif';
         ctx2d.textAlign = 'center';
         ctx2d.textBaseline = 'middle';
+        ctx2d.fillText(labelText, 65, 33);
+        // White text
+        ctx2d.fillStyle = 'rgba(220,220,220,0.85)';
         ctx2d.fillText(labelText, 64, 32);
         const labelTex = new THREE.CanvasTexture(cvs);
         const labelMat = new THREE.SpriteMaterial({ map: labelTex, depthTest: false, transparent: true });
         const sprite = new THREE.Sprite(labelMat);
         const labelScale = HEX_WORLD_RADIUS * 0.55 * 0.25;
+        // Position below the building base (groundY), not above the top.
         sprite.scale.set(labelScale, labelScale * 0.5, 1);
-        sprite.position.set(wx, groundY + groundLift + labelScale * 0.85, wz);
+        sprite.position.set(wx, groundY - labelScale * 0.3, wz);
         group.add(sprite);
         this.buildingGeoms.push(); // no geometry to track for the sprite
         this.buildingMats.push(labelMat); // labelTex is owned by labelMat and released with it
@@ -1190,6 +1267,188 @@ export class FirstPersonView {
 
     for (const b of this.world.buildings) place(b, false);
     for (const b of this.world.plannedBuildings ?? []) place(b, true);
+  }
+
+  /**
+   * (Re)build the full-detail 3D Oil Logistics network for every entity in view,
+   * into the logistics group. This is where the high-fidelity procedural models
+   * (pump-jack wells, distillation-tower refineries, silo hubs, tiered transports)
+   * and the road/highway ribbons actually render at unit-model quality — the
+   * globe and 2D local map only draw flat markers at their zoom levels.
+   *
+   * Placement mirrors `rebuildBuildings`: each model is scaled to a hex fraction,
+   * seated flush on the sampled terrain surface at its segment/tile centroid, and
+   * oriented to face outward. Only entities whose tile is within the current flat
+   * view are built (others are clipped). Roads/highways are world-space ribbons
+   * threaded through their route's tile-centre path.
+   */
+  private rebuildLogistics(): void {
+    const scene = this.scene;
+    const group = this.logisticsGroup;
+    if (!scene || !group) return;
+
+    // Tear down previous models (dispose geometries AND materials — fresh per build).
+    for (const child of [...group.children]) group.remove(child);
+    for (const g of this.logisticsGeoms) {
+      try { g.dispose(); } catch { /* best-effort */ }
+    }
+    this.logisticsGeoms = [];
+    for (const m of this.logisticsMats) {
+      try { m.dispose(); } catch { /* best-effort */ }
+    }
+    this.logisticsMats = [];
+
+    const toWorld = this.toWorld;
+    const heightOf = this.heightOf;
+    const tileById = this.tileById;
+    const up = new THREE.Vector3(0, 1, 0);
+
+    /** Track a model's geometries/materials for disposal on the next rebuild/close. */
+    const track = (model: THREE.Object3D): void => {
+      model.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (mesh.geometry) this.logisticsGeoms.push(mesh.geometry);
+        const mat = (mesh as THREE.Mesh).material;
+        if (Array.isArray(mat)) this.logisticsMats.push(...mat);
+        else if (mat) this.logisticsMats.push(mat as THREE.Material);
+      });
+    };
+
+    /** Ground height (clamped to the tile plateau) at a tile-local point. */
+    const groundAt = (tileIndex: number, ft: FlatTile, x: number, y: number): number => {
+      const fallbackTop = elevationWorldHeight(this.world.tiles[tileIndex], ELEV_WORLD_SCALE);
+      return Math.max(sampleSurface(ft, x, y, toWorld, heightOf, fallbackTop).height, fallbackTop);
+    };
+
+    /**
+     * Scale a freshly-built model so its horizontal footprint fills `fraction`
+     * of a hex, seat it on the terrain at (localX, localY) of `ft`, and orient it
+     * to `dir`. Returns the placed model (already added to the group + tracked).
+     */
+    const placeModel = (
+      model: THREE.Group,
+      tileIndex: number,
+      ft: FlatTile,
+      localX: number,
+      localY: number,
+      dir: { x: number; z: number },
+      fraction: number,
+    ): void => {
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+      const footprint = Math.max(size.x, size.z) || 1;
+      model.scale.setScalar((HEX_WORLD_RADIUS * fraction) / footprint);
+
+      const box2 = new THREE.Box3().setFromObject(model);
+      const groundLift = -box2.min.y;
+      const [wx, , wz] = toWorld(localX, localY);
+      const groundY = groundAt(tileIndex, ft, localX, localY);
+      orientToSurface(model, up, dir);
+      model.position.set(wx, groundY + groundLift, wz);
+      group.add(model);
+      track(model);
+    };
+
+    const logistics = this.world.logistics;
+
+    // ── Oil-deposit markers (visible pre-drill) on 'oil' tiles in view ──
+    for (const ft of this.flatTiles) {
+      const tile = this.world.tiles[ft.tileIndex] as TileData | undefined;
+      if (!tile || tile.resourceType !== 'oil') continue;
+      // Skip if a well already sits on this tile (the derrick supersedes the marker).
+      if (logistics?.wells?.some((w) => w.tileIndex === ft.tileIndex)) continue;
+      const r = HEX_WORLD_RADIUS * 0.28;
+      const geo = new THREE.CylinderGeometry(r, r * 1.1, r * 0.12, 20);
+      const mat = new THREE.MeshStandardMaterial({ color: 0x0e0b08, roughness: 0.35, metalness: 0.5, emissive: 0x120d06 });
+      const disc = new THREE.Mesh(geo, mat);
+      const [wx, , wz] = toWorld(ft.cx, ft.cy);
+      disc.position.set(wx, groundAt(ft.tileIndex, ft, ft.cx, ft.cy) + r * 0.06, wz);
+      group.add(disc);
+      this.logisticsGeoms.push(geo);
+      this.logisticsMats.push(mat);
+    }
+
+    if (!logistics) return;
+
+    // ── Routes: road / highway ribbons threaded through tile centres ──
+    for (const route of logistics.routes ?? []) {
+      const pts: THREE.Vector3[] = [];
+      for (const idx of route.segments) {
+        const ft = tileById.get(idx);
+        if (!ft) continue; // tile outside the flat view — clip
+        const [wx, , wz] = toWorld(ft.cx, ft.cy);
+        pts.push(new THREE.Vector3(wx, groundAt(idx, ft, ft.cx, ft.cy), wz));
+      }
+      if (pts.length < 2) continue;
+      const width = HEX_WORLD_RADIUS * 0.32;
+      const lift = roadSurfaceLift(HEX_WORLD_RADIUS);
+      const ribbon =
+        route.tier === 'highway'
+          ? buildHighwayMesh(pts, { width, lift })
+          : buildRoadMesh(pts, { width, lift });
+      if (route.operable === false) {
+        ribbon.traverse((obj) => {
+          const mat = (obj as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+          if (mat && 'opacity' in mat) { mat.transparent = true; mat.opacity = 0.4; }
+        });
+      }
+      group.add(ribbon);
+      track(ribbon);
+    }
+
+    // ── Static structures (wells / refineries / hubs) ──
+    for (const refinery of logistics.refineries ?? []) {
+      const ft = tileById.get(refinery.tileIndex);
+      if (!ft) continue;
+      const model = buildLogisticsModel('refinery', factionColor(this.world, refinery.ownerId), {
+        segmentCount: Math.max(1, refinery.segments?.length ?? 1),
+      });
+      placeModel(model, refinery.tileIndex, ft, ft.cx, ft.cy, facingDirection(ft, 0), 1.4);
+    }
+    for (const hub of logistics.hubs ?? []) {
+      const ft = tileById.get(hub.tileIndex);
+      if (!ft) continue;
+      const cen = segmentCentroid(ft, hub.segment);
+      const model = buildLogisticsModel('hub', factionColor(this.world, hub.ownerId));
+      placeModel(model, hub.tileIndex, ft, cen.x, cen.y, facingDirection(ft, hub.segment), 0.9);
+    }
+    for (const well of logistics.wells ?? []) {
+      const ft = tileById.get(well.tileIndex);
+      if (!ft) continue;
+      const cen = segmentCentroid(ft, well.segment);
+      const model = buildLogisticsModel('well', factionColor(this.world, well.ownerId));
+      placeModel(model, well.tileIndex, ft, cen.x, cen.y, facingDirection(ft, well.segment), 0.8);
+    }
+
+    // ── Transports: placed at their current point along the assigned route ──
+    const routeById = new Map(logistics.routes?.map((r) => [r.id, r]) ?? []);
+    for (const transport of logistics.transports ?? []) {
+      const route = routeById.get(transport.routeId);
+      if (!route) continue;
+      // World-space route path (in-view tiles only).
+      const path: Array<{ tileIndex: number; ft: FlatTile; x: number; y: number }> = [];
+      for (const idx of route.segments) {
+        const ft = tileById.get(idx);
+        if (ft) path.push({ tileIndex: idx, ft, x: ft.cx, y: ft.cy });
+      }
+      if (path.length === 0) continue;
+      // Progress 0..1 from the turn countdown (0 at source when idle/just dispatched).
+      const travel = Math.max(1, route.travelTime || 1);
+      const progress = transport.inTransit
+        ? Math.max(0, Math.min(1, (travel - transport.turnsRemaining) / travel))
+        : 0;
+      const fpos = progress * (path.length - 1);
+      const i0 = Math.floor(fpos);
+      const i1 = Math.min(path.length - 1, i0 + 1);
+      const t = fpos - i0;
+      const a = path[i0];
+      const b = path[i1];
+      const lx = a.x + (b.x - a.x) * t;
+      const ly = a.y + (b.y - a.y) * t;
+      const dir = i0 === i1 ? facingDirection(a.ft, 0) : { x: b.x - a.x, z: -(b.y - a.y) };
+      const model = buildTransportModel(transport.tier, factionColor(this.world, transport.ownerId));
+      placeModel(model, a.tileIndex, a.ft, lx, ly, dir, 0.55);
+    }
   }
 
   /**

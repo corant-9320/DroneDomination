@@ -131,59 +131,6 @@ export async function handlePlayerBuildingAttack(
   detailPanel.showTile(localMap.selectedTile, localMap.selectedSegment >= 0 ? localMap.selectedSegment : undefined);
 }
 
-/**
- * Handle a building firing offensively at an enemy unit.
- * The building is treated as a stationary attacker using its weapon attributes.
- */
-export async function handlePlayerBuildingAttackUnit(
-  ctx: GameContext,
-  buildingId: string,
-  targetId: string,
-): Promise<void> {
-  const { world, localMap, firstPerson, combatPanel, detailPanel, turnManager, matchClient, switchRpTab, isPlayerTurn } = ctx;
-
-  if (!isPlayerTurn()) {
-    dbg.input.log('Building attack (unit target) blocked — not player turn');
-    return;
-  }
-  dbg.input.log('Building → unit attack initiated:', buildingId, '→', targetId);
-  emitDebugEvent('attack', { attackerId: buildingId, targetId }, turnManager.turnNumber);
-
-  const resp = await matchClient.submit({ kind: 'buildingAttackUnit', buildingId, targetId });
-  if (!resp || !resp.success) {
-    if (resp?.error) dbg.input.log('Building → unit attack rejected by server:', resp.error);
-    return;
-  }
-
-  switchRpTab('history');
-
-  const combat = resp.combats?.[0];
-  const building = world.buildings.find((b) => b.id === buildingId);
-  const attackerColor = building ? factionColor(world, building.ownerId) : '#ffffff';
-  const damage = combat?.directDamage ?? 0;
-  const targetDestroyed = combat?.targetDestroyed ?? false;
-  const splashVictims = (combat?.splash ?? [])
-    .filter((s) => s.victimId !== targetId)
-    .map((s) => ({ unitId: s.victimId, damage: s.damage, destroyed: s.victimDestroyed }));
-
-  // Reuse the unit attack animation (missile from building segment to target)
-  const attackAnims: Array<Promise<void>> = [
-    localMap.playAttackAnimation(buildingId, targetId, attackerColor, damage, targetDestroyed, splashVictims),
-  ];
-  if (firstPerson.isActive) {
-    attackAnims.push(firstPerson.playAttackAnimation(buildingId, targetId, attackerColor, damage, targetDestroyed, splashVictims));
-  }
-  await Promise.all(attackAnims);
-
-  matchClient.reconcile(resp, world, turnManager);
-  combatPanel.recordHistory(resp.combats ?? [], resp.reactions ?? []);
-
-  localMap.computeMovementRange();
-  localMap.render();
-  if (firstPerson.isActive) firstPerson.refresh();
-  detailPanel.showTile(localMap.selectedTile, localMap.selectedSegment >= 0 ? localMap.selectedSegment : undefined);
-}
-
 export async function handlePlayerRepair(
   ctx: GameContext,
   repairerId: string,

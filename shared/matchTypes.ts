@@ -17,6 +17,7 @@
 import type { WireUnit, WireBuilding } from './wireTypes.js';
 import type { ExplainedCombat, ExplainedRepair } from './combatTypes.js';
 import type { BuildingComponent } from './buildingComponents.js';
+import type { LogisticsState, LogisticsEvent } from './logisticsTypes.js';
 
 /** Per-unit, per-turn budget the server enforces authoritatively. */
 export interface UnitTurnState {
@@ -44,6 +45,8 @@ export interface MatchState {
   units: WireUnit[];
   /** All buildings. */
   buildings: WireBuilding[];
+  /** Authoritative oil-logistics state (wells, refineries, routes, transports, hubs, stock). */
+  logistics: LogisticsState;
   /** Per-unit turn budget keyed by unit id. */
   unitTurn: Record<string, UnitTurnState>;
   /** Optimistic-concurrency version. Incremented on every successful write. */
@@ -57,6 +60,16 @@ export type Intent =
   | { kind: 'attackBuilding'; attackerId: string; buildingId: string; weaponMode?: 'splash' | 'direct'; component?: BuildingComponent }
   | { kind: 'buildingAttackUnit'; buildingId: string; targetId: string }
   | { kind: 'repair'; repairerId: string; targetId: string }
+  | { kind: 'buildOilWell'; unitId: string }
+  | { kind: 'buildRefinery'; tileIndex: number }
+  | { kind: 'addRefinerySegment'; refineryId: string; segment: number }
+  | { kind: 'buildRoute'; fromStructureId: string; toStructureId: string; path: number[] }
+  | { kind: 'upgradeRoute'; routeId: string }
+  | { kind: 'buildDistributionHub'; tileIndex: number; segment: number; routeIds: string[] }
+  | { kind: 'buildBridge'; unitId: string; tileIndex: number }
+  | { kind: 'clearForest'; unitId: string }
+  | { kind: 'purchaseTransport'; routeId: string }
+  | { kind: 'upgradeTransport'; transportId: string; stat: 'cargo' | 'speed' | 'defence' }
   | { kind: 'endTurn' };
 
 /** Request to create a new authoritative match from a loaded scenario/save. */
@@ -100,4 +113,8 @@ export interface MatchIntentResponse {
   reactions?: ExplainedCombat[];
   /** Repair explanation produced by a repair intent. */
   repair?: ExplainedRepair;
+  /** Updated authoritative logistics state (present on success). */
+  logistics?: LogisticsState;
+  /** Per-turn logistics events surfaced by the turn hook (endTurn only). */
+  events?: LogisticsEvent[];
 }

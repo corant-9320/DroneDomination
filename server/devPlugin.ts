@@ -132,6 +132,35 @@ export function apiPlugin(): Plugin {
         res.end(JSON.stringify(result));
       });
 
+      // Auto-fire a faction's buildings (all factions, including the player's).
+      // Buildings are fully automated: they pick the nearest enemy in range and
+      // fire once per turn. Returns an event log the client replays like AI moves.
+      server.middlewares.use('/api/building-turn', async (req, res) => {
+        if (req.method !== 'POST') {
+          console.warn('[DD][api] Rejected %s /api/building-turn (405)', req.method);
+          res.statusCode = 405;
+          res.end(JSON.stringify({ error: 'Method not allowed' }));
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) {
+          chunks.push(chunk as Buffer);
+        }
+        const body = JSON.parse(Buffer.concat(chunks).toString()) as { factionId?: unknown };
+        console.log('[DD][api] POST /api/building-turn — faction:', body.factionId);
+
+        const mod = await server.ssrLoadModule('/server/aiTurnApi.ts') as {
+          handleBuildingTurn: HandleAiTurn;
+        };
+        const result = mod.handleBuildingTurn(body);
+
+        res.setHeader('Content-Type', 'application/json');
+        res.statusCode = result.success ? 200 : 400;
+        console.log('[DD][api] building-turn response success:', result.success);
+        res.end(JSON.stringify(result));
+      });
+
       // ── Authoritative match sessions (server-authority Phase 3) ──────────
       // Create a match: server takes ownership of MP/turn state.
       server.middlewares.use('/api/match/create', async (req, res) => {

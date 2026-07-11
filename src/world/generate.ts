@@ -24,6 +24,9 @@ import { World, Tile, City, Vec3, TerrainType } from './types.js';
 import * as v from './vec3.js';
 import { graphDistance, tilesWithinRadius } from './pathfinding.js';
 import { computeSegmentSteepness } from './segmentSteepness.js';
+import { placeOilDeposits } from './logisticsGen.js';
+import { seedDefaultLogisticsNetwork, createEmptyLogisticsState } from './logisticsSeed.js';
+import { DEFAULT_SEED } from '../../shared/logisticsConstants.js';
 
 // Re-export PRNG and geometry from their focused modules
 export { mulberry32 } from './rng.js';
@@ -1740,6 +1743,15 @@ export function generateWorld(seed: number): World {
     console.log(`  ${k}: ${v}`);
   });
 
+  // Step 4.7: Scatter Oil_Deposits across land tiles. Runs after all terrain and
+  // river passes so ocean classification is final (deposits only land on non-ocean
+  // tiles), and before city placement. Deterministic in `seed`; mutates each placed
+  // tile's `resourceType` to 'oil'. (Oil Logistics System — Req 1.1, 1.3, 1.5)
+  console.time('oilDeposits');
+  const oilDeposits = placeOilDeposits(tiles, seed);
+  console.log(`  Oil deposits placed: ${oilDeposits.length}`);
+  console.timeEnd('oilDeposits');
+
   // Step 5: Place cities
   console.time('cities');
   const cities = placeCities(tiles, seed);
@@ -1839,6 +1851,27 @@ export function generateWorld(seed: number): World {
   computeSegmentSteepness(tiles);
   console.timeEnd('steepness');
 
+  // Step 7: Logistics state. Every world carries a LogisticsState so `World.logistics`
+  // is always present; the complete example network is seeded ONLY for the
+  // Default_Test_World (seed === DEFAULT_SEED). For every other seed the state stays
+  // empty and the only logistics content is the standard oil-deposit placement above
+  // (Oil Logistics System — Req 13.1, 13.9, 13.10). Seeding runs last, after every
+  // terrain mutation and segment-steepness computation, so the network's placement
+  // and route validators see the final tiles. The Home_City is cities[0] (the
+  // convention used by the generate API and default-scenario scripts).
+  const logistics = createEmptyLogisticsState();
+  if (seed === DEFAULT_SEED && cities.length > 0) {
+    const homeFactionId = cities[0].ownerId ?? cities[0].id;
+    console.time('logisticsSeed');
+    seedDefaultLogisticsNetwork(logistics, tiles, homeFactionId);
+    console.log(
+      `  Seeded logistics network: ${logistics.wells.length} well(s), ` +
+        `${logistics.refineries.length} refinery(ies), ${logistics.routes.length} route(s), ` +
+        `${logistics.hubs.length} hub(s), ${logistics.transports.length} transport(s)`,
+    );
+    console.timeEnd('logisticsSeed');
+  }
+
   return {
     tiles,
     cities,
@@ -1846,5 +1879,6 @@ export function generateWorld(seed: number): World {
     buildings: [],
     seed,
     pentagonIndices,
+    logistics,
   };
 }

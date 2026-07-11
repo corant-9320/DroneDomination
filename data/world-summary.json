@@ -1,5 +1,5 @@
 {
-  "seed": 743035,
+  "seed": 4242,
   "tileCount": 100002,
   "pentagonCount": 12,
   "hexCount": 99990,
@@ -8,93 +8,93 @@
     {
       "id": "city_0",
       "label": "C01",
-      "tileIndex": 24931,
+      "tileIndex": 24728,
       "neighbourCount": 6,
       "terrain": "grassland"
     },
     {
       "id": "city_1",
       "label": "C02",
-      "tileIndex": 35166,
-      "neighbourCount": 5,
+      "tileIndex": 59980,
+      "neighbourCount": 4,
       "terrain": "grassland"
     },
     {
       "id": "city_2",
       "label": "C03",
-      "tileIndex": 45182,
+      "tileIndex": 45080,
       "neighbourCount": 4,
       "terrain": "grassland"
     },
     {
       "id": "city_3",
       "label": "C04",
-      "tileIndex": 54913,
-      "neighbourCount": 5,
+      "tileIndex": 29381,
+      "neighbourCount": 6,
       "terrain": "grassland"
     },
     {
       "id": "city_4",
       "label": "C05",
-      "tileIndex": 38949,
+      "tileIndex": 38893,
       "neighbourCount": 5,
-      "terrain": "grassland"
+      "terrain": "plains"
     },
     {
       "id": "city_5",
       "label": "C06",
       "tileIndex": 48199,
-      "neighbourCount": 6,
+      "neighbourCount": 7,
       "terrain": "grassland"
     },
     {
       "id": "city_6",
       "label": "C07",
-      "tileIndex": 32002,
+      "tileIndex": 32001,
       "neighbourCount": 6,
       "terrain": "grassland"
     },
     {
       "id": "city_7",
       "label": "C08",
-      "tileIndex": 40765,
-      "neighbourCount": 6,
+      "tileIndex": 41146,
+      "neighbourCount": 5,
       "terrain": "grassland"
     },
     {
       "id": "city_8",
       "label": "C09",
-      "tileIndex": 97649,
+      "tileIndex": 71582,
       "neighbourCount": 6,
       "terrain": "grassland"
     },
     {
       "id": "city_9",
       "label": "C10",
-      "tileIndex": 57316,
+      "tileIndex": 56370,
       "neighbourCount": 7,
       "terrain": "grassland"
     },
     {
       "id": "city_10",
       "label": "C11",
-      "tileIndex": 93496,
+      "tileIndex": 65594,
       "neighbourCount": 8,
       "terrain": "grassland"
     },
     {
       "id": "city_11",
       "label": "C12",
-      "tileIndex": 78910,
+      "tileIndex": 78574,
       "neighbourCount": 8,
-      "terrain": "grassland"
+      "terrain": "plains"
     }
   ],
   "terrainDistribution": {
-    "ocean": 39705,
-    "grassland": 39300,
-    "plains": 11749,
-    "tundra": 7521,
-    "desert": 1727
+    "ocean": 40126,
+    "grassland": 39146,
+    "plains": 13960,
+    "tundra": 3755,
+    "desert": 3015
   }
 }

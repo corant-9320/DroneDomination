@@ -13,12 +13,19 @@ import { graphDistance } from '../src/world/pathfinding.js';
 import { spawnInitialUnits } from '../src/world/spawn.js';
 import { foundCities } from '../src/world/buildings.js';
 import { CITY_COUNT } from '../src/world/generate.js';
+import { DEFAULT_SEED } from '../shared/logisticsConstants.js';
 
 export interface GenerateConfig {
   /** Number of enemy cities (1 to MAX_CITIES - 1). */
   enemies: number;
   /** Minimum graph-distance between player city and nearest enemy. Only applies when enemies < MAX_CITIES - 1. */
   spacing: number;
+  /**
+   * Optional explicit world seed. When a player chooses a seed it flows through
+   * unchanged; when omitted the default match world uses DEFAULT_SEED so it ships
+   * with the seeded example logistics network (Oil Logistics System — Req 13.1, 13.10).
+   */
+  seed?: number;
 }
 
 export interface GenerateResult {
@@ -51,8 +58,11 @@ export function handleGenerate(config: GenerateConfig): GenerateResult {
 
   console.log('[DD][api] Clamped params: enemies=%d spacing=%d', totalEnemies, spacing);
 
-  // Generate world with a fresh random seed
-  const seed = Date.now() ^ (Math.random() * 0xffffffff);
+  // Use the player-chosen seed when supplied; otherwise the default match world
+  // uses DEFAULT_SEED so it ships with the seeded example logistics network
+  // (Oil Logistics System — Req 13.1, 13.10). An explicit player seed flows through
+  // unchanged and does NOT get the seeded network unless it equals DEFAULT_SEED.
+  const seed = Number.isFinite(config.seed) ? (config.seed as number) : DEFAULT_SEED;
   console.log('[DD][api] Generating world with seed:', seed);
   const genStart = Date.now();
   const world = generateWorld(seed);
@@ -131,6 +141,9 @@ export function handleGenerate(config: GenerateConfig): GenerateResult {
     cities: compactCities,
     units: compactUnits,
     buildings: compactBuildings,
+    // Carry the seeded example logistics network (Oil Logistics System — Req 13).
+    // Present only for the DEFAULT_SEED world; empty for arbitrary player seeds.
+    logistics: world.logistics,
   };
 
   console.log('[DD][api] handleGenerate complete in %dms — cities: %d, units: %d, buildings: %d',

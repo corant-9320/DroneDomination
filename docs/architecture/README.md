@@ -21,10 +21,11 @@ Split into focused pages so a session loads only what it needs.
 | [data-flow-and-api.md](data-flow-and-api.md) | Client↔server data flow and the `/api/generate` contract (`server/**`) |
 | [configuration.md](configuration.md) | `vite.config.ts`, `tsconfig*.json`, build/output settings |
 | [debugging.md](debugging.md) | Headless snapshots, `window.__DD_STATE__`, `window.gameDebug` DOM instrumentation |
-| [known-issues.md](known-issues.md) | Architectural drift and fixed-issue history (points to `DECISIONS.md`) |
+| [known-issues.md](known-issues.md) | **Live** open issues + enduring gotchas/sync requirements |
 
 ## Related Authoritative Docs
 
 - [COMBAT_RULES.md](../../COMBAT_RULES.md) — combat formulas, validation, constants
-- [DECISIONS.md](../../DECISIONS.md) — design decisions, gotchas, known issues
+- [known-issues.md](known-issues.md) — live open issues + enduring gotchas
+- [DECISIONS.md](../../DECISIONS.md) — frozen archive of past decisions (pre-2026-07-04)
 - [README.md](../../README.md) — player setup, controls, dev workflows

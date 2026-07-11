@@ -12,7 +12,10 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const DATA_DIR = join(__dirname, '..', 'data');
+// validate.js compiles to dist/src/, so reach the repo-root data/ dir with two
+// `..` — matching where generateCli.ts writes world.json (../../data). A single
+// `..` pointed at the non-existent dist/data and made `npm run validate` ENOENT.
+const DATA_DIR = join(__dirname, '..', '..', 'data');
 const worldPath = join(DATA_DIR, 'world.json');
 
 console.log(`Loading world from ${worldPath}...`);
@@ -31,6 +34,8 @@ const tiles: Tile[] = raw.tiles.map((t: WireTile) => ({
   forested: t.f ?? false,
   riverTo: t.rv,
   cityId: t.city,
+  segSteep: t.ss,
+  resourceType: t.resourceType,
 }));
 
 const cities: City[] = raw.cities as unknown as City[];

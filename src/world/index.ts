@@ -16,3 +16,6 @@ export * from './repair.js';
 export * from './movement.js';
 export * from './turnState.js';
 export * from './segmentGeometry.js';
+export * from './logistics.js';
+export * from './logisticsGen.js';
+export * from './logisticsSeed.js';

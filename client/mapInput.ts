@@ -66,7 +66,6 @@ export interface MapViewInterface {
   readonly onTurnEnd: (() => void) | null;
   readonly onAttack: ((attackerId: string, targetId: string) => void) | null;
   readonly onAttackBuilding: ((attackerId: string, buildingId: string, mode: 'splash' | 'direct', component?: string) => void) | null;
-  readonly onBuildingAttackUnit: ((buildingId: string, targetId: string) => void) | null;
   readonly onRepair: ((repairerId: string, targetId: string) => void) | null;
   readonly onHoverEnemy: ((attacker: UnitData | null, target: UnitData | null) => void) | null;
   readonly onBuildingHoverEnemy: ((buildingId: string, target: UnitData | null) => void) | null;
@@ -524,17 +523,8 @@ export class MapInputHandler {
         if (ft) seg = v.findSegmentAt(cx, cy, ft);
       }
 
-      // ─── Building offensive fire: selected building attacks enemy unit ───
-      const selBuilding = this.tm.selectedBuilding;
-      if (selBuilding && seg >= 0 && v.onBuildingAttackUnit) {
-        const enemy = v.world.units.find(
-          (u) => u.tileIndex === capTile && u.segment === seg && u.ownerId !== selBuilding.ownerId,
-        );
-        if (enemy && v.isInAttackRange(enemy.tileIndex, enemy.segment)) {
-          v.onBuildingAttackUnit(selBuilding.id, enemy.id);
-          return;
-        }
-      }
+      // Buildings are fully automated (they fire at end of turn via the
+      // building-turn resolver) — no manual offensive fire from the UI.
 
       const homeCity = v.world.cities.find((c) => c.isPlayerHome);
       const playerFaction = homeCity ? (homeCity.ownerId ?? homeCity.id) : null;
@@ -718,7 +708,7 @@ export class MapInputHandler {
     // always travels precisely where the preview line shows.
     const units = v.world.units;
     const unit = units.find(
-      (u) => this.tm.selectedUnits.has(u.id) && (this.tm.movementPoints.get(u.id) ?? 0) > 0,
+      (u) => this.tm.selectedUnits.has(u.id) && u.ownerId === v.activeFaction && (this.tm.movementPoints.get(u.id) ?? 0) > 0,
     );
     if (!unit) return;
 

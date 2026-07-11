@@ -535,7 +535,9 @@ function populateCity(factionId, capIdx, radius, maxBuildings) {
   const ownedHexes = [];
   for (const layer of layers) {
     for (const idx of layer) {
-      if (isBuildable(idx)) ownedHexes.push(idx);
+      // Exclude tiles hosting a seeded well/refinery — those are map-only and
+      // must not become part of the city footprint (the "not in the city" rule).
+      if (isBuildable(idx) && !logisticsStructureTiles.has(idx)) ownedHexes.push(idx);
     }
   }
   if (!ownedHexes.includes(capIdx)) ownedHexes.unshift(capIdx);
@@ -679,6 +681,46 @@ for (const c of world.cities) cityCenter.set(c.id, c.tileIndex);
 
 const ownedByFaction = new Map(); // factionId → ownedHexes[]
 
+// ---------------------------------------------------------------------------
+// Reserve seeded-logistics segments before populating city buildings.
+//
+// The seeded network (carried in world.logistics) is placed by generateWorld
+// BEFORE this script runs. Its in-city Distribution_Hub sits on a segment of the
+// player-capital tile; the well/refinery sit on open-map tiles. Buildings and
+// garrison/army units must never share a segment with these structures (the
+// "a hub can't share a segment with an existing building" rule). Adding each
+// occupied segment to `buildingSet` makes every placement check (validatePlacement,
+// through-street, orphaned-pocket, firstFreeSegment) treat it as blocked, so the
+// founding building and every later building/unit avoid it.
+// ---------------------------------------------------------------------------
+// Tiles hosting a seeded Oil_Well or Refinery. These are map-only structures that
+// must NOT sit inside a city, so populateCity excludes them from a city footprint
+// (Distribution_Hubs are intentionally allowed in the city and are NOT excluded).
+const logisticsStructureTiles = new Set();
+function reserveLogisticsSegments() {
+  const L = world.logistics;
+  if (!L) return 0;
+  let reserved = 0;
+  const reserve = (tileIdx, segment) => {
+    if (tileIdx === undefined || segment === undefined) return;
+    if (!tileByIndex.has(tileIdx)) return;
+    const k = segKey(tileIdx, segment);
+    if (!buildingSet.has(k)) { buildingSet.add(k); reserved++; }
+  };
+  for (const w of L.wells ?? []) { reserve(w.tileIndex, w.segment); logisticsStructureTiles.add(w.tileIndex); }
+  for (const r of L.refineries ?? []) {
+    for (const s of r.segments ?? []) reserve(r.tileIndex, s);
+    logisticsStructureTiles.add(r.tileIndex);
+  }
+  for (const h of L.hubs ?? []) reserve(h.tileIndex, h.segment); // hubs may sit in the city
+  return reserved;
+}
+const reservedSegs = reserveLogisticsSegments();
+console.log(
+  `Reserved ${reservedSegs} seeded-logistics segment(s) from building placement; ` +
+    `${logisticsStructureTiles.size} well/refinery tile(s) excluded from city footprints.`,
+);
+
 // ── Region A: Player capital + DEFENCE (enemy besieges it) ─────────────────
 console.log('\nRegion A — player capital defence:');
 const playerCapIdx = cityCenter.get(PLAYER_CITY_ID);
@@ -761,6 +803,11 @@ const save = {
   buildings: allBuildings,
   playerColor: '#00e5ff',
   battleCentreTile: playerCapIdx, // open on the player capital + its siege
+  // Carry the seeded example logistics network from world.json (Oil Logistics
+  // System — Req 13). world.json is generated with DEFAULT_SEED and this save
+  // keeps the same seed + city_0 as the player home, so the network's tile /
+  // home-city anchors stay valid when the client regenerates tiles from the seed.
+  ...(world.logistics ? { logistics: world.logistics } : {}),
 };
 
 writeFileSync(outPath, JSON.stringify(save, null, 2));

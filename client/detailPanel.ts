@@ -11,7 +11,7 @@
  *   #combat-info-body  — combat preview steps (from server)
  */
 
-import { WorldData, TileData, UnitData } from './worldData.js';
+import { WorldData, TileData, UnitData, BuildingData } from './worldData.js';
 import { factionColor } from './colors.js';
 import { dbg } from './debug.js';
 import { readableUnitName } from './unitNames.js';
@@ -61,6 +61,14 @@ export class DetailPanel {
   private combatBody: HTMLElement;
   private world: WorldData;
   private turnManager: TurnManager | null = null;
+
+  /**
+   * Callbacks for building actions triggered from the building card.
+   * Wired by main.ts after construction.
+   */
+  onBuildingRefit: ((buildingId: string) => void) | null = null;
+  onBuildingAttack: ((buildingId: string) => void) | null = null;
+  onBuildingRepair: ((buildingId: string) => void) | null = null;
 
   constructor(world: WorldData) {
     this.world = world;
@@ -114,6 +122,20 @@ export class DetailPanel {
     this.renderHex(tile, city);
     this.renderUnit(focusedUnit);
     // Leave enemy + combat sections as-is (hover-driven)
+  }
+
+  /**
+   * Show a selected player-owned building in the Unit Info section.
+   * Replaces the unit card with a building card that lists its capabilities
+   * and available action buttons based on its attribute loadout.
+   * Pass null to clear back to "No unit selected".
+   */
+  showBuilding(building: BuildingData | null): void {
+    if (!building) {
+      this.unitBody.innerHTML = '<span class="empty-msg">No unit selected</span>';
+      return;
+    }
+    this.renderBuildingCard(this.unitBody, building);
   }
 
   /**
@@ -232,6 +254,88 @@ export class DetailPanel {
     }
 
     this.enemyHexBody.innerHTML = html;
+  }
+
+  /** Render a building card (capabilities + actions) into a target element. */
+  private renderBuildingCard(target: HTMLElement, building: BuildingData): void {
+    const color = factionColor(this.world, building.ownerId);
+    const attrs = building.attributes ?? {};
+    const idSuffix = building.id.replace(/^building_/, '');
+
+    const hasKinetic = (attrs.kinetic ?? 0) > 0;
+    const hasSplash  = (attrs.splashAttack ?? 0) > 0;
+    const hasAntiAir = (attrs.antiAir ?? 0) > 0;
+    const hasRepair  = (attrs.repair ?? 0) > 0;
+    const canAttack  = hasKinetic || hasSplash || hasAntiAir;
+
+    // Building attribute rows — the seven equipment attrs only
+    const BUILDING_ATTR_ROWS: Array<{ label: string; key: keyof typeof attrs }> = [
+      { label: 'Kinetic',   key: 'kinetic' },
+      { label: 'Range Att', key: 'rangeAttack' },
+      { label: 'Splash',    key: 'splashAttack' },
+      { label: 'Anti-Air',  key: 'antiAir' },
+      { label: 'Armour',    key: 'armour' },
+      { label: 'EW',        key: 'defence' },
+      { label: 'Repair',    key: 'repair' },
+    ];
+
+    let html = '';
+
+    // Name header
+    html += `<div class="dp-unit-name" style="color:${color};">🏛 Building <span style="color:#666;font-size:0.8em;">#${esc(idSuffix)}</span></div>`;
+
+    // Attribute table — only non-zero defined attributes
+    html += `<table class="dp-attr-table">`;
+    for (const row of BUILDING_ATTR_ROWS) {
+      const val = attrs[row.key];
+      if (!val || val === 0) continue;
+      html += `<tr><td class="dp-key">${row.label}</td><td class="dp-val">${val}</td></tr>`;
+    }
+    html += `</table>`;
+
+    // Actions section
+    html += `<div class="dp-building-actions" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">`;
+
+    if (canAttack) {
+      html += `<button class="dp-building-btn dp-building-btn--attack" data-building-id="${esc(building.id)}" title="Select a target to attack (right-click an enemy in range)" style="padding:4px 10px;background:#c0392b;border:none;color:#fff;border-radius:3px;cursor:pointer;font-size:12px;">⚔ Attack</button>`;
+    }
+
+    if (hasRepair) {
+      html += `<button class="dp-building-btn dp-building-btn--repair" data-building-id="${esc(building.id)}" title="Repair a friendly unit in the same hex" style="padding:4px 10px;background:#2a7d4f;border:none;color:#fff;border-radius:3px;cursor:pointer;font-size:12px;">🔧 Repair</button>`;
+    }
+
+    html += `<button class="dp-building-btn dp-building-btn--refit" data-building-id="${esc(building.id)}" title="Reconfigure this building's equipment" style="padding:4px 10px;background:#2a4d8f;border:none;color:#fff;border-radius:3px;cursor:pointer;font-size:12px;">⚙ Refit</button>`;
+
+    html += `</div>`;
+
+    if (!canAttack && !hasRepair) {
+      html += `<div style="margin-top:6px;font-size:11px;color:#555;">No combat loadout — use ⚙ Refit to equip weapons.</div>`;
+    }
+
+    target.innerHTML = html;
+
+    // Wire action buttons after DOM insertion
+    const refitBtn = target.querySelector('.dp-building-btn--refit') as HTMLButtonElement | null;
+    if (refitBtn) {
+      refitBtn.addEventListener('click', () => {
+        this.onBuildingRefit?.(building.id);
+      });
+    }
+    // Attack / Repair buttons are informational hints — the actual action is
+    // still triggered by right-clicking a target (same as units). The buttons
+    // show a tooltip so players know the building can act.
+    const attackBtn = target.querySelector('.dp-building-btn--attack') as HTMLButtonElement | null;
+    if (attackBtn) {
+      attackBtn.addEventListener('click', () => {
+        this.onBuildingAttack?.(building.id);
+      });
+    }
+    const repairBtn = target.querySelector('.dp-building-btn--repair') as HTMLButtonElement | null;
+    if (repairBtn) {
+      repairBtn.addEventListener('click', () => {
+        this.onBuildingRepair?.(building.id);
+      });
+    }
   }
 
   /** Render a full unit card (name + HP bar + attribute table) into a target element. */

@@ -68,7 +68,7 @@ Quick guide to "I want to change X — where do I go?"
 
 | I want to... | Edit these files |
 |---|---|
-| Tweak combat balance (damage, armour) | `COMBAT_RULES.md` (spec), then `src/world/combatFormula.ts` + `src/world/combat.ts` |
+| Tweak combat balance (damage, armour) | `src/world/combatFormula.ts` + `src/world/combat.ts` (reference: `COMBAT_RULES.md`) |
 | Add a new unit attribute | `shared/unitTypes.ts`, then update `src/world/units.ts`, `client/unitIcons.ts`, `client/unitDesigner.ts` |
 | Change terrain generation | `src/world/generate.ts` |
 | Adjust movement costs | `shared/movementConstants.ts` |

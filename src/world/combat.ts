@@ -1289,26 +1289,33 @@ export function chooseWeaponOption(options: WeaponOption[], target: Unit): Weapo
 // ---------------------------------------------------------------------------
 
 /**
- * Calculate Anti-Air Reaction Fire damage from a reacting unit against a drone.
+ * Calculate Anti-Air Reaction Fire damage from a reacting unit or building against a drone.
  *
  * Orientation bonus is 0 — snap shot against an airborne target.
  * No drone incoming damage modifier is applied (AA reaction is not penalised).
  *
  * AntiAirReactionAttackPower = antiAir × ChassisAttackModifier
+ *
+ * Buildings have no chassis movement attributes; they use chassis 'tank' (modifier 1.0),
+ * which is correct for a static ground emplacement.
  */
 export function calculateAntiAirReactionDamage(
-  reactingUnit: Unit,
+  reactor: Unit | Building,
   drone: Unit,
   ctx: CombatContext,
 ): number {
-  // Anti-air reaction: EW only applies if the reacting attacker is itself a drone.
-  const defPower = getDefencePower(drone, ctx, isDrone(reactingUnit));
+  // EW only applies if the reacting attacker is itself a drone. Buildings are never drones.
+  const reactorIsDrone = 'currentHealth' in reactor && isDrone(reactor as Unit);
+  const defPower = getDefencePower(drone, ctx, reactorIsDrone);
+  // Buildings have no movement attributes — treat as tank chassis (modifier 1.0).
+  const attackerChassis: ChassisType =
+    'currentHealth' in reactor ? getChassisType(reactor as Unit) : 'tank';
   // Terrain is 0 for airborne drones (formation bonus deprecated — see getDefencePower).
   // Reaction fire is a front snap shot — no orientation armour penalty (isReactionFire).
   const { finalDamage } = computeDamage({
     mode: 'antiAir',
-    attackerChassis: getChassisType(reactingUnit),
-    baseWeaponValue: reactingUnit.attributes.antiAir ?? 0,
+    attackerChassis,
+    baseWeaponValue: reactor.attributes?.antiAir ?? 0,
     orientationArmourPenalty: 0,
     distance: 1,
     armour: defPower.armour,
@@ -1320,11 +1327,11 @@ export function calculateAntiAirReactionDamage(
 }
 
 /**
- * Resolve Anti-Air Reaction Fire for all eligible enemy units in a single tile.
+ * Resolve Anti-Air Reaction Fire for all eligible enemy units AND buildings in a single tile.
  *
  * Eligible reactors must:
  * - Be an enemy of the drone
- * - Be alive (currentHealth > 0)
+ * - Be alive (currentHealth > 0 for units; buildings are indestructible)
  * - Have antiAir > 0
  * - Not have already reacted during this drone action
  *
@@ -1337,30 +1344,43 @@ export function resolveAntiAirReactionFireForTile(
   ctx: CombatContext,
   reactedThisAction: Set<string>,
 ): CombatResult[] {
-  const { units: allUnits } = ctx;
+  const { units: allUnits, buildings: allBuildings } = ctx;
   const results: CombatResult[] = [];
 
-  for (const unit of allUnits) {
-    if (unit.ownerId === drone.ownerId) continue;
-    if (unit.currentHealth <= 0) continue;
-    if ((unit.attributes.antiAir ?? 0) <= 0) continue;
-    if (unit.tileIndex !== tileIndex) continue;
-    if (reactedThisAction.has(unit.id)) continue;
+  // Reactors: enemy units (alive) + enemy buildings — both may have antiAir > 0.
+  const reactors: Array<Unit | Building> = [
+    ...allUnits.filter(
+      (u) => u.ownerId !== drone.ownerId &&
+             u.currentHealth > 0 &&
+             (u.attributes.antiAir ?? 0) > 0 &&
+             u.tileIndex === tileIndex &&
+             !reactedThisAction.has(u.id),
+    ),
+    ...allBuildings.filter(
+      (b) => b.ownerId !== drone.ownerId &&
+             (b.attributes?.antiAir ?? 0) > 0 &&
+             b.tileIndex === tileIndex &&
+             !reactedThisAction.has(b.id),
+    ),
+  ];
 
-    reactedThisAction.add(unit.id);
+  for (const reactor of reactors) {
+    if (reactedThisAction.has(reactor.id)) continue;
+    reactedThisAction.add(reactor.id);
 
-    const damage = calculateAntiAirReactionDamage(unit, drone, ctx);
+    const damage = calculateAntiAirReactionDamage(reactor, drone, ctx);
     drone.currentHealth = applyDamage(drone.currentHealth, damage);
     const destroyed = drone.currentHealth <= 0;
 
+    const reactorIsDrone = 'currentHealth' in reactor && isDrone(reactor as Unit);
     results.push({
-      attackerId: unit.id,
+      attackerId: reactor.id,
       targetId: drone.id,
       wasValid: true,
       attackArc: 'front', // snap shot — no arc
       facingModifier: 0,
       targetArmour: drone.attributes.armour ?? 0,
-      targetEffectiveDefense: getDefencePower(drone, ctx, isDrone(unit)).total,
+      targetEffectiveDefense: getDefencePower(drone, ctx, reactorIsDrone).total,
       directDamage: damage,
       antiAirDamage: damage,
       splashEvents: [],

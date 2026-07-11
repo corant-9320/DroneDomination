@@ -136,9 +136,11 @@ function pointToEdgeDist(
  * @param movementPoints Map of unit id → remaining MP
  * @param hiddenUnits    Set of unit ids to skip (e.g. mid-animation)
  * @param wts            worldToScreen bound to current view params
- * @param actedUnits     Units that have used their action/move this turn. Their
- *                       unit number is drawn in red (also used for enemy units
- *                       that have already moved during the AI turn).
+ * @param actedUnits     Units that have used their once-per-turn action (attack/
+ *                       repair/bridge) this turn. Their unit number is drawn in
+ *                       red. Also used for enemy units that have acted during
+ *                       the AI turn. Move exhaustion alone does NOT turn the
+ *                       number red — the health bar reflects remaining movement.
  * @param moveAnims      Optional map of unit id → in-flight glide state
  *                       (origin/destination tile+segment and eased progress).
  *                       When present for a unit, its sprite is drawn at the
@@ -219,7 +221,7 @@ export function drawUnits(
       const fontSize = Math.max(6, size * 0.75);
       const labelX = sx + size * 0.5;
       const labelY = sy + size * 0.9 + fontSize;
-      const showRed = (movementPoints.get(unit.id) ?? 0) === 0 || actedUnits.has(unit.id);
+      const showRed = actedUnits.has(unit.id);
       ctx.save();
       ctx.font = `${fontSize}px sans-serif`;
       ctx.textAlign = 'center';
@@ -310,6 +312,48 @@ export function drawUnitSelectionRings(
 // ─── Building drawing ─────────────────────────────────────────────────────────
 
 /**
+ * Draw a selection ring around a player-owned building that has been selected
+ * by left-click. Uses the same ring style as unit selection rings so the two
+ * feel consistent.
+ *
+ * @param selectedBuildingId  The id of the currently selected building, or null.
+ */
+export function drawBuildingSelectionRing(
+  ctx: CanvasRenderingContext2D,
+  world: WorldData,
+  flatTiles: FlatTile[],
+  selectedBuildingId: string | null,
+  wts: (wx: number, wy: number) => [number, number],
+): void {
+  if (!selectedBuildingId) return;
+
+  const building = world.buildings.find((b) => b.id === selectedBuildingId);
+  if (!building) return;
+
+  const ftByTile = new Map<number, FlatTile>();
+  for (const ft of flatTiles) ftByTile.set(ft.tileIndex, ft);
+
+  const ft = ftByTile.get(building.tileIndex);
+  if (!ft) return;
+  const tile = world.tiles[building.tileIndex];
+  if (tile.s !== 6) return;
+
+  const segPos = getSegmentCentroid(ft, building.segment);
+  if (!segPos) return;
+
+  const [sx, sy] = wts(segPos.x, segPos.y);
+  const size = getSegmentIconSize(ft, building.segment, wts);
+
+  // Outer selection ring — slightly larger than the unit ring (buildings are
+  // larger on-screen because they fill the whole segment).
+  ctx.beginPath();
+  ctx.arc(sx, sy, size * 2.2, 0, Math.PI * 2);
+  ctx.strokeStyle = '#ffe066';  // gold — distinct from the white unit ring
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+/**
  * Draw buildings in their segment triangles. A building is rendered from its
  * cached 3D model sprite (a faction-tinted block, optionally equipped). While
  * the sprite is still rendering we fall back to a simple "block with a roof"
@@ -388,6 +432,110 @@ export function drawBuildings(
       ctx.restore();
     }
   }
+}
+
+/**
+ * Draw the Oil Logistics network on the local (zoomed-in) map: oil-deposit
+ * markers, route polylines (roads thin, highways thicker/brighter with a centre
+ * dash), and faction-tinted structure badges (⛏ well, R refinery, H hub). This
+ * is the tactical-scale counterpart to the globe overlay markers — it reads the
+ * same `world.logistics` payload and the tiles' `resourceType`. Drawn beneath
+ * the mobile units (called between buildings and units in `LocalMapView.render`).
+ */
+export function drawLogistics(
+  ctx: CanvasRenderingContext2D,
+  world: WorldData,
+  flatTiles: FlatTile[],
+  wts: (wx: number, wy: number) => [number, number],
+): void {
+  const ftByTile = new Map<number, FlatTile>();
+  for (const ft of flatTiles) ftByTile.set(ft.tileIndex, ft);
+
+  // ── Oil deposits (visible pre-drill) — amber ring at the tile centre ──
+  for (const ft of flatTiles) {
+    const tile = world.tiles[ft.tileIndex] as TileData | undefined;
+    if (!tile || tile.resourceType !== 'oil') continue;
+    const [sx, sy] = wts(ft.cx, ft.cy);
+    const r = Math.max(3, getSegmentIconSize(ft, 0, wts) * 0.5);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(18,13,6,0.85)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#f4d03f';
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  const logistics = world.logistics;
+  if (!logistics) return;
+
+  // ── Route polylines through tile centres (drawn under structure badges) ──
+  const drawRoute = (segments: number[], color: string, width: number, dashed: boolean): void => {
+    const pts: Array<[number, number]> = [];
+    for (const idx of segments) {
+      const ft = ftByTile.get(idx);
+      if (ft) pts.push(wts(ft.cx, ft.cy)); // tiles outside the view are clipped
+    }
+    if (pts.length < 2) return;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    if (dashed) ctx.setLineDash([width * 2, width * 1.5]);
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.stroke();
+    ctx.restore();
+  };
+  for (const route of logistics.routes ?? []) {
+    const inoperable = route.operable === false;
+    if (route.tier === 'highway') {
+      drawRoute(route.segments, inoperable ? 'rgba(255,120,120,0.7)' : '#3a3a42', 8, false);
+      drawRoute(route.segments, inoperable ? 'rgba(255,120,120,0.9)' : '#ffd24a', 2, true); // centre line
+    } else {
+      drawRoute(route.segments, inoperable ? 'rgba(255,120,120,0.7)' : '#4a4a52', 5, false);
+    }
+  }
+
+  // ── Structure badges ──
+  const drawBadge = (
+    tileIndex: number,
+    segment: number | null,
+    ownerId: string,
+    glyph: string,
+  ): void => {
+    const ft = ftByTile.get(tileIndex);
+    if (!ft) return;
+    const pos = segment == null ? { x: ft.cx, y: ft.cy } : getSegmentCentroid(ft, segment);
+    if (!pos) return;
+    const [sx, sy] = wts(pos.x, pos.y);
+    const size = getSegmentIconSize(ft, segment ?? 0, wts);
+    const r = Math.max(6, size * 0.9);
+    const color = factionColor(world, ownerId);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.92;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.max(8, r * 1.1)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(glyph, sx, sy);
+    ctx.restore();
+  };
+  for (const refinery of logistics.refineries ?? []) drawBadge(refinery.tileIndex, null, refinery.ownerId, 'R');
+  for (const hub of logistics.hubs ?? []) drawBadge(hub.tileIndex, hub.segment, hub.ownerId, 'H');
+  for (const well of logistics.wells ?? []) drawBadge(well.tileIndex, well.segment, well.ownerId, '⛏');
 }
 
 /**

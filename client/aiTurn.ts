@@ -494,6 +494,33 @@ export async function fetchAiTurn(world: WorldData, factionId: string): Promise<
 }
 
 /**
+ * Auto-fire a faction's buildings server-side. Buildings are fully automated —
+ * they pick the nearest enemy in range and fire once per turn. Called for every
+ * faction (including the player's) during the AI phase. Returns an event log
+ * replayed through the same playback bar as AI unit turns.
+ */
+export async function fetchBuildingTurn(world: WorldData, factionId: string): Promise<AiTurnResponse<UnitData>> {
+  const payload = {
+    factionId,
+    units: world.units,
+    tiles: world.tiles.map(aiMinimalTile),
+    buildings: world.buildings,
+  };
+
+  try {
+    const resp = await fetch('/api/building-turn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return (await resp.json()) as AiTurnResponse<UnitData>;
+  } catch (err) {
+    dbg.input.error('fetchBuildingTurn error:', err);
+    return { success: false, error: String(err), events: [], finalUnits: world.units };
+  }
+}
+
+/**
  * Replay a precomputed AI turn event log through the playback bar. Reuses the
  * same callbacks + pacing (`waitForNext`/`recordSnapshot`/`isSkipping`) as the
  * old live driver, so play/step/rewind/skip behave identically — but no combat

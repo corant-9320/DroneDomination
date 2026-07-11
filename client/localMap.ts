@@ -44,6 +44,7 @@ import {
   drawUnits as _drawUnits,
   drawUnitSelectionRings as _drawUnitSelectionRings,
   drawBuildings as _drawBuildings,
+  drawLogistics as _drawLogistics,
   drawBuildingSelectionRing as _drawBuildingSelectionRing,
   drawPlannedBuildings as _drawPlannedBuildings,
   drawCombatHighlight as _drawCombatHighlight,
@@ -116,8 +117,6 @@ export class LocalMapView implements MapViewInterface {
   onAttack: ((attackerId: string, targetId: string) => void) | null = null;
   /** Attack an enemy building (building-damage feature). mode is 'splash'|'direct'; component required for direct. */
   onAttackBuilding: ((attackerId: string, buildingId: string, mode: 'splash' | 'direct', component?: string) => void) | null = null;
-  /** A player-owned building fires at an enemy unit (building offensive fire). */
-  onBuildingAttackUnit: ((buildingId: string, targetId: string) => void) | null = null;
   onRepair: ((repairerId: string, targetId: string) => void) | null = null;
   onSleepUnit: ((unitId: string) => void) | null = null;
   /**
@@ -372,7 +371,8 @@ export class LocalMapView implements MapViewInterface {
     targetDestroyed: boolean,
     splashVictims: Array<{ unitId: string; damage: number; destroyed: boolean }> = [],
   ): Promise<void> {
-    const from = this.getUnitScreenPos(attackerId);
+    // Attacker may be a unit or an automated building (building auto-fire).
+    const from = this.getUnitScreenPos(attackerId) ?? this.getBuildingScreenPos(attackerId);
     const to   = this.getUnitScreenPos(targetId);
     if (!from || !to) return;
 
@@ -592,6 +592,14 @@ export class LocalMapView implements MapViewInterface {
       (wx, wy) => this.worldToScreen(wx, wy),
     );
     _drawBuildings(
+      this.ctx,
+      this.world,
+      this.flatTiles,
+      (wx, wy) => this.worldToScreen(wx, wy),
+    );
+
+    // Draw the oil-logistics network (deposits, routes, structures) beneath units
+    _drawLogistics(
       this.ctx,
       this.world,
       this.flatTiles,
@@ -1018,10 +1026,6 @@ export class LocalMapView implements MapViewInterface {
 
   setOnAttackBuilding(cb: (attackerId: string, buildingId: string, mode: 'splash' | 'direct', component?: string) => void): void {
     this.onAttackBuilding = cb;
-  }
-
-  setOnBuildingAttackUnit(cb: (buildingId: string, targetId: string) => void): void {
-    this.onBuildingAttackUnit = cb;
   }
 
   setOnRepair(cb: (repairerId: string, targetId: string) => void): void {

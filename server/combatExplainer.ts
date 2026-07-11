@@ -11,6 +11,7 @@
  */
 
 import { Unit } from '../src/world/units.js';
+import type { Building } from '../src/world/types.js';
 import {
   previewAttack,
   type CombatContext,
@@ -290,10 +291,11 @@ export function explainSplash(
 /**
  * Build an ExplainedCombat for anti-air reaction fire.
  * Reaction fire uses a simplified format (no full breakdown table).
+ * Reactor may be a Unit or a Building (buildings have no `label` — falls back to `id`).
  */
 export function buildReactionExplanation(
   result: CombatResult,
-  reactor: Unit | undefined,
+  reactor: Unit | Building | undefined,
   drone: Unit | undefined,
 ): ExplainedCombat {
   if (!reactor || !drone) {
@@ -317,11 +319,13 @@ export function buildReactionExplanation(
   const healthBefore = healthAfter + result.directDamage;
   const destroyed = result.destroyedUnitIds.includes(drone.id);
   const maxHpDrone = (drone.attributes.size ?? 1) * HP_PER_POINT;
+  // Buildings have no `label` — fall back to id for display.
+  const reactorLabel = 'label' in reactor ? (reactor as Unit).label : reactor.id;
 
   const steps: ExplanationStep[] = [
     {
       title: '🚀 Anti-Air Reaction Fire',
-      description: `${reactor.label} fires at drone ${drone.label} as it enters the tile.`,
+      description: `${reactorLabel} fires at drone ${drone.label} as it enters the tile.`,
       result: `${result.directDamage} damage`,
       tone: 'neutral',
     },
@@ -335,7 +339,7 @@ export function buildReactionExplanation(
 
   return {
     attackerId: reactor.id,
-    attackerLabel: reactor.label,
+    attackerLabel: reactorLabel,
     targetId: drone.id,
     targetLabel: drone.label,
     wasValid: true,

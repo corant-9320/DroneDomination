@@ -18,6 +18,8 @@
 
 6. **Don't explain the obvious.** If the user asks to change a number, change it. Don't narrate the plan or summarize what a constant does.
 
+7. **Batch doc updates with code edits.** When a change requires documentation updates (`docs/architecture/known-issues.md`, memory graph, architecture docs), include them as parallel tool calls in the same turn as the code edit. Never do a separate "documentation pass" after the code is complete. Per-diff rationale goes in the git commit body (`Decision/Why/Impact`) — not a doc — so it costs no extra tool call.
+
 ## Expensive Tools — Ask First
 
-7. **Chrome DevTools and Playwright (e2e) tests cost a lot of tokens.** Do not invoke Chrome DevTools browser tools or run Playwright/e2e tests on your own. Consult with the user and get explicit approval before using them. Prefer cheaper alternatives first (unit tests, `npm run debug:snapshot`, reading existing `artifacts/sessions/**` output).
+8. **Chrome DevTools and Playwright (e2e) tests cost a lot of tokens.** Do not invoke Chrome DevTools browser tools or run Playwright/e2e tests on your own. Consult with the user and get explicit approval before using them. Prefer cheaper alternatives first (unit tests, `npm run debug:snapshot`, reading existing `artifacts/sessions/**` output).

@@ -116,4 +116,11 @@ export interface World {
   buildings: Building[];
   seed: number;
   pentagonIndices: number[];
+  /**
+   * Authoritative Oil Logistics System state (wells, refineries, routes,
+   * transports, hubs, home stocks, engineer tasks, and cleared-forest/bridge
+   * overlays). Optional so existing worlds and tests without logistics still
+   * typecheck; absent = logistics subsystem not initialised for this world.
+   */
+  logistics?: import('../../shared/logisticsTypes.js').LogisticsState;
 }

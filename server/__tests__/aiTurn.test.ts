@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { handleAiTurn, type AiTurnRequest } from '../aiTurnApi.js';
-import type { WireUnit, WireTile } from '../combatApi.js';
+import { handleAiTurn, handleBuildingTurn, type AiTurnRequest, type BuildingTurnRequest } from '../aiTurnApi.js';
+import type { WireUnit, WireTile, WireBuilding } from '../combatApi.js';
 import type { UnitAttributes } from '../../shared/unitTypes.js';
 
 /**
@@ -62,6 +62,77 @@ describe('handleAiTurn', () => {
       units: [gun('ai', 'e', 1)],
     };
     const res = handleAiTurn(req);
+    expect(res.success).toBe(true);
+    expect(res.events).toHaveLength(0);
+  });
+});
+
+function turret(id: string, owner: string, tile: number, a: Partial<UnitAttributes> = {}): WireBuilding {
+  return { id, ownerId: owner, tileIndex: tile, segment: 0, attributes: attrs({ kinetic: 4, rangeAttack: 5, ...a }) };
+}
+
+describe('handleBuildingTurn — automated building fire', () => {
+  it('fires an armed building at an enemy unit in range', () => {
+    const req: BuildingTurnRequest = {
+      factionId: 'p',
+      tiles: lineWireTiles(6),
+      units: [gun('enemy', 'e', 1)],
+      buildings: [turret('building_1', 'p', 0)],
+    };
+    const res = handleBuildingTurn(req);
+    expect(res.success).toBe(true);
+    expect(res.events.length).toBe(1);
+    expect(res.events[0].kind).toBe('attack');
+    expect(res.events[0].unitId).toBe('building_1');
+    expect(res.events[0].targetId).toBe('enemy');
+    expect(res.events[0].damage).toBeGreaterThan(0);
+  });
+
+  it('does not fire a building with no offensive attributes', () => {
+    const req: BuildingTurnRequest = {
+      factionId: 'p',
+      tiles: lineWireTiles(6),
+      units: [gun('enemy', 'e', 1)],
+      buildings: [{ id: 'building_2', ownerId: 'p', tileIndex: 0, segment: 0, attributes: attrs({ defence: 4 }) }],
+    };
+    const res = handleBuildingTurn(req);
+    expect(res.success).toBe(true);
+    expect(res.events).toHaveLength(0);
+  });
+
+  it('does not fire a building at a friendly unit', () => {
+    const req: BuildingTurnRequest = {
+      factionId: 'p',
+      tiles: lineWireTiles(6),
+      units: [gun('friendly', 'p', 1)],
+      buildings: [turret('building_3', 'p', 0)],
+    };
+    const res = handleBuildingTurn(req);
+    expect(res.success).toBe(true);
+    expect(res.events).toHaveLength(0);
+  });
+
+  it('does not fire when the only enemy is out of range', () => {
+    const req: BuildingTurnRequest = {
+      factionId: 'p',
+      tiles: lineWireTiles(6),
+      units: [gun('enemy', 'e', 5)],
+      // rangeAttack 0 + kinetic only → adjacent range; enemy is 5 hops away.
+      buildings: [turret('building_4', 'p', 0, { rangeAttack: 0 })],
+    };
+    const res = handleBuildingTurn(req);
+    expect(res.success).toBe(true);
+    expect(res.events).toHaveLength(0);
+  });
+
+  it('an antiAir-only building does not fire at a ground unit', () => {
+    const req: BuildingTurnRequest = {
+      factionId: 'p',
+      tiles: lineWireTiles(6),
+      units: [gun('groundEnemy', 'e', 1)],
+      buildings: [{ id: 'building_5', ownerId: 'p', tileIndex: 0, segment: 0, attributes: attrs({ antiAir: 5, kinetic: 0 }) }],
+    };
+    const res = handleBuildingTurn(req);
     expect(res.success).toBe(true);
     expect(res.events).toHaveLength(0);
   });

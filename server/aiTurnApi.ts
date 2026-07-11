@@ -65,6 +65,14 @@ export interface AiTurnRequest {
   buildings?: WireBuilding[];
 }
 
+/** Request for /api/building-turn: auto-fire all of one faction's buildings. */
+export interface BuildingTurnRequest {
+  factionId: string;
+  units: WireUnit[];
+  tiles: WireTile[];
+  buildings?: WireBuilding[];
+}
+
 // ---------------------------------------------------------------------------
 // Tile adapters (server Tile → shared minimal interfaces)
 // ---------------------------------------------------------------------------
@@ -245,7 +253,8 @@ function resolveMoveEvent(
   if (isDrone(mover)) {
     const reactionResults = resolveReactionFire(mover.id, path, ctx);
     for (const r of reactionResults) {
-      const reactor = ctx.units.find((u) => u.id === r.attackerId);
+      const reactor = ctx.units.find((u) => u.id === r.attackerId)
+        ?? ctx.buildings.find((b) => b.id === r.attackerId);
       const drone = ctx.units.find((u) => u.id === r.targetId);
       reactions.push(buildReactionExplanation(r, reactor, drone));
     }
@@ -397,4 +406,111 @@ export function handleAiTurn(req: AiTurnRequest): AiTurnResponse<WireUnit> {
     finalUnits: aliveWireUnits(ctx),
     finalBuildings: ctx.buildings.map(toWireBuilding),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Building auto-fire turn (all factions, including the player's)
+// ---------------------------------------------------------------------------
+
+/**
+ * Auto-fire all buildings belonging to `factionId` that have a weapon and a
+ * valid enemy target in range. Returns an ordered event log identical in shape
+ * to handleAiTurn events so the client can replay them through the same
+ * playback bar.
+ *
+ * Each building fires at most once per call (one shot per turn). Targeting:
+ * nearest enemy unit by BFS distance that is within the building's segment
+ * range threshold. If multiple enemies tie for nearest, the first one wins.
+ *
+ * Buildings are static — they never move. The synthetic attacker pattern
+ * mirrors matchApi.ts applyBuildingAttackUnitIntent.
+ */
+export function handleBuildingTurn(req: BuildingTurnRequest): AiTurnResponse<WireUnit> {
+  const { factionId } = req;
+  console.log('[DD][building-turn] resolving faction=%s', factionId);
+
+  const ctx: CombatContext = {
+    units: rebuildUnits(req.units),
+    tiles: rebuildTiles(req.tiles),
+    buildings: rebuildBuildings(req.buildings ?? []),
+  };
+
+  const rangeTiles = toRangeTiles(ctx.tiles);
+  const pathTiles = toPathTiles(ctx.tiles);
+
+  const events: AiActionEvent<WireUnit>[] = [];
+
+  // Only buildings belonging to this faction that have at least one offensive attribute.
+  const ownBuildings = ctx.buildings.filter(
+    (b) => b.ownerId === factionId && hasWeaponAttributes(b.attributes),
+  );
+
+  if (ownBuildings.length === 0) {
+    return { success: true, events: [], finalUnits: aliveWireUnits(ctx), finalBuildings: ctx.buildings.map(toWireBuilding) };
+  }
+
+  for (const building of ownBuildings) {
+    // Find all living enemy units.
+    const enemies = ctx.units.filter((u) => u.ownerId !== factionId && u.currentHealth > 0);
+    if (enemies.length === 0) break;
+
+    // Synthetic attacker mirroring applyBuildingAttackUnitIntent in matchApi.ts.
+    const attrs = building.attributes ?? {};
+    const syntheticAttacker: Unit = {
+      id: building.id,
+      label: `Building #${building.id.replace(/^building_/, '')}`,
+      ownerId: building.ownerId,
+      tileIndex: building.tileIndex,
+      segment: building.segment as HexSegment,
+      facing: building.segment as HexSegment,
+      attributes: { ...attrs, size: (attrs.size ?? 1) },
+      currentHealth: ((attrs.size ?? 1) as number) * 10,
+    };
+
+    const attackRange = weaponRangeFromAttributes(syntheticAttacker.attributes);
+
+    // Pick the nearest enemy in range.
+    let target: Unit | null = null;
+    let nearestDist = Infinity;
+    for (const enemy of enemies) {
+      const dist = bfsDistance(pathTiles, building.tileIndex, enemy.tileIndex);
+      if (dist < nearestDist && dist <= attackRange && isTargetInRange(
+        rangeTiles,
+        { tileIndex: building.tileIndex, segment: building.segment, rangeAttack: attrs.rangeAttack ?? 0, hasWeapon: true },
+        { tileIndex: enemy.tileIndex, segment: enemy.segment },
+      )) {
+        nearestDist = dist;
+        target = enemy;
+      }
+    }
+    if (!target) continue;
+
+    // Inject synthetic attacker so resolveAttack can find it.
+    ctx.units.push(syntheticAttacker);
+
+    // Skip invalid attacks (e.g. an antiAir-only building facing a ground unit).
+    const preview = explainAttack(syntheticAttacker, target, ctx);
+    if (!preview.wasValid) {
+      ctx.units.pop();
+      continue;
+    }
+
+    const event = resolveAttackEvent(syntheticAttacker, target, ctx);
+    ctx.units.pop();
+
+    events.push(event);
+  }
+
+  return {
+    success: true,
+    events,
+    finalUnits: aliveWireUnits(ctx),
+    finalBuildings: ctx.buildings.map(toWireBuilding),
+  };
+}
+
+/** Returns true if the building's attributes include at least one offensive stat. */
+function hasWeaponAttributes(attrs: import('../../shared/unitTypes.js').UnitAttributes | undefined): boolean {
+  if (!attrs) return false;
+  return (attrs.kinetic ?? 0) > 0 || (attrs.splashAttack ?? 0) > 0 || (attrs.antiAir ?? 0) > 0;
 }

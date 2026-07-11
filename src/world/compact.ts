@@ -17,6 +17,7 @@
 import { Tile, Building } from './types.js';
 import { Unit } from './units.js';
 import type { WireTile, WireUnit, WireBuilding, WireWorld } from '../../shared/wireTypes.js';
+import type { LogisticsState } from '../../shared/logisticsTypes.js';
 
 // Re-export wire types for callers that import from here
 export type {
@@ -47,6 +48,7 @@ export function toCompactTile(t: Tile): WireTile {
     f: t.forested || undefined,
     rv: t.riverTo,
     city: t.cityId || undefined,
+    resourceType: t.resourceType || undefined,
     ss: t.segSteep
       ? t.segSteep.map((v) => Math.round(v * 1e4) / 1e4)
       : undefined,
@@ -81,6 +83,11 @@ export function toCompactBuilding(b: Building): WireBuilding {
 /**
  * Serialize a full world into the compact wire format.
  * Cities are passed separately because the API may filter/transform them.
+ *
+ * `logistics` is optional and, when present, is copied straight onto the wire
+ * payload: the wire and authoritative LogisticsState shapes are identical
+ * (unlike tiles, no field-name mapping is needed). Omitted when not provided so
+ * existing consumers and world.json without logistics still parse.
  */
 export function toCompactWorld(
   seed: number,
@@ -89,6 +96,7 @@ export function toCompactWorld(
   cities: unknown[],
   units: Unit[],
   buildings: Building[] = [],
+  logistics?: LogisticsState,
 ): WireWorld {
   return {
     seed,
@@ -100,5 +108,6 @@ export function toCompactWorld(
     units: units.map(toCompactUnit),
     buildings: buildings.map(toCompactBuilding),
     tiles: tiles.map(toCompactTile),
+    logistics,
   };
 }
