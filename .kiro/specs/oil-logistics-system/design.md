@@ -4,7 +4,7 @@
 
 The Oil Logistics System adds a physical resource economy on top of the existing Drone
 Domination world. Players extract raw **Oil** from generated **Oil_Deposits**, refine it
-into **Refined_Product** at multi-segment **Refineries**, and move both commodities along
+into **Refined_Product** at city-like, multi-hex **Refineries**, and move both commodities along
 **Logistics_Routes** (physical roads/highways) via AI-driven **Transportation_Units**,
 buffering flow through **Distribution_Hubs**, until Refined_Product accrues at the
 **Home_City** where it is the sole currency for all construction and upgrades.
@@ -285,15 +285,15 @@ This module contains no I/O. Each function is independently testable.
 ```ts
 // ── Construction / upgrade validation (Req 2, 4, 5, 6, 8, 11, 12) ──
 export function validateWellPlacement(ctx, tile, segment, unit): LogisticsValidation;
-export function validateRefineryPlacement(ctx, tileIndex, faction): LogisticsValidation;
-export function validateRefinerySegment(refinery, segment): LogisticsValidation;
+export function validateRefinerySegment(ctx, tileIndex, segment, faction): LogisticsValidation; // create-new | join | bridging tie-break (Req 4.1–4.5)
+export function resolveRefineryForSegment(ctx, tileIndex, segment): string | null; // Refinery a new segment joins, or null to start a new Refinery (Req 4.3–4.5)
 export function validateRoutePath(ctx, path, endpoints): LogisticsValidation;
 export function canAfford(home: HomeStock, cost: number): boolean;      // Req 5.2/5.3
 export function chargeConstruction(home: HomeStock, cost: number): HomeStock; // debits, clamps
 ```
 
 **City placement rules.** Oil_Wells and Refineries are map-only: `validateWellPlacement`
-and `validateRefineryPlacement` reject any tile inside a city (a tile carrying a
+and `validateRefinerySegment` reject any tile inside a city (a tile carrying a
 `cityId`, which `placeCities`/`foundCity` stamp on the capital and every city-owned
 hex) with reason `in-city`. Distribution_Hubs are exempt — they may sit inside or
 outside a city — and the server hub applier additionally rejects a hub that would
@@ -302,6 +302,22 @@ default network therefore seats its Distribution_Hub **on the Home_City tile** (
 fuels the Home_City's upgrades), while its well/refinery sit on open-map tiles; the
 default-scenario builder reserves the seeded structures' segments and excludes the
 well/refinery tiles from the city footprint so no city building collides with them.
+
+**Through-street / reachability deprecation (base-game change).** Players may build
+anywhere eligible inside a City or Refinery, even sealing off segments, so the two
+placement invariants in `shared/buildings.ts` are retired as gates:
+`validateBuildingPlacement` no longer returns `breaks-through-street`
+(`hasThroughStreet`) or `orphans-street-network` (`findOrphanedPockets`) — the helpers
+may remain for tooling but stop gating placement — and the shared world-integrity check
+run by `npm run validate` must be updated in lockstep because it reuses the same rules.
+In compensation, movement enforces **Segment_Traversal**: `moveUnit` / `pathMovementCost`
+(`src/world/movement.ts`), the shared `segmentCost` path (`shared/movementConstants.ts`),
+`shared/pathfinding.ts`, and the client/AI movement paths reject a step onto a non-empty
+destination segment and permit steps only to one of the three segments adjacent to the
+unit's current segment, so a walled-off segment is unreachable rather than illegal to
+create. This reaches beyond the logistics feature and will break existing `buildings.ts`
+and movement tests that assert the old invariants; those tests must be updated with the
+change.
 
 ```ts
 
@@ -393,8 +409,7 @@ The `Intent` union is extended:
 export type Intent =
   | /* …existing… */
   | { kind: 'buildOilWell'; unitId: string }
-  | { kind: 'buildRefinery'; tileIndex: number }
-  | { kind: 'addRefinerySegment'; refineryId: string; segment: number }
+  | { kind: 'buildRefinerySegment'; tileIndex: number; segment: number } // applier creates a new Refinery, joins an existing one, or resolves the bridging tie-break (Req 4.1–4.5)
   | { kind: 'buildRoute'; fromStructureId: string; toStructureId: string; path: number[] }
   | { kind: 'upgradeRoute'; routeId: string }
   | { kind: 'buildDistributionHub'; tileIndex: number; segment: number; routeIds: string[] }
@@ -498,16 +513,30 @@ export interface OilWell {
   maxHitPoints: number;
 }
 
-/** Req 4, 12 — a refinery covering a whole hex, composed of 1..sides segments. */
+/**
+ * Req 4, 12 — a city-like Refinery: a connected Refinery_Cluster of one or more
+ * adjacent Refinery_Hexes, each holding 1..sides Refinery_Segments. Comes into
+ * existence during play (never at world-gen) and never merges with another
+ * Refinery (Req 4.6). Combat granularity across the multi-hex cluster
+ * (per-segment vs per-hex vs per-cluster Hit_Points, and the fate of held
+ * commodities on partial destruction) is unresolved — see Open Questions in
+ * requirements.md; the cluster-level `hitPoints` below is a placeholder pending
+ * that decision.
+ */
 export interface Refinery {
   id: string;
   ownerId: string;
-  tileIndex: number;
-  segments: number[];              // occupied segment indices; length = segment count (Req 4.2/4.3)
-  heldOil: Amount;                 // raw oil awaiting processing
-  refinedProductAvailable: Amount; // produced, awaiting transport (Req 4.6)
+  hexes: RefineryHex[];            // adjacent Refinery_Hexes forming the cluster (Req 4.1–4.6)
+  heldOil: Amount;                 // raw oil awaiting processing (cluster-wide)
+  refinedProductAvailable: Amount; // produced, awaiting transport (Req 4.11)
   hitPoints: number;
   maxHitPoints: number;
+}
+
+/** One hex of a Refinery_Cluster and the Refinery_Segments built on it (Req 4). */
+export interface RefineryHex {
+  tileIndex: number;
+  segments: number[];              // occupied segment indices on this hex (<= sides)
 }
 
 /** Req 6, 7, 12 — a physical road/highway along a contiguous tile path. */

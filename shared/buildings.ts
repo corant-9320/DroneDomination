@@ -5,19 +5,14 @@
  * exactly like a unit but immobile. Buildings belong to a faction and sit on
  * that faction's city hexes.
  *
- * This module is the SINGLE SOURCE OF TRUTH for the two traversability
- * invariants and lives in `shared/` so the client can validate placement
- * without importing any server-only module (Requirement 7.3):
- *
- *   - Per-tile through-street (Requirement 4): every city hex must keep a
- *     connected run of open (unbuilt) segments with at least two external
- *     faces opening onto ground-passable neighbours, so a ground unit can
- *     enter one face and leave another.
- *
- *   - Whole-city external reachability (Requirement 5): the city's entire
- *     open-segment network must connect to the outside world. No sealed
- *     courtyard pockets, even if every individual tile still has a
- *     through-street.
+ * Placement inside a buildable cluster (city or refinery) is otherwise
+ * unrestricted: a player may build on any eligible segment, even if it seals
+ * off or isolates other segments. Unit movement (shared/segmentGraph.ts) is a
+ * segment-to-segment occupancy model that simply can't enter an occupied
+ * segment — an unreachable pocket is the player's own mistake, not an illegal
+ * build (Segment-Based Movement spec). This module used to also enforce a
+ * per-tile through-street invariant and whole-city external reachability;
+ * both were removed — see that spec for the rationale.
  *
  * The module operates on a small abstract view of the world (see
  * `BuildSegTile` / `PlacementContext`) that both the authoritative server
@@ -99,9 +94,7 @@ export type PlacementRejectionReason =
   | 'segment-occupied-unit'
   | 'segment-occupied-building'
   | 'tile-full'
-  | 'not-adjacent-to-city'
-  | 'breaks-through-street'
-  | 'orphans-street-network';
+  | 'not-adjacent-to-city';
 
 export interface PlacementValidation {
   legal: boolean;
@@ -159,141 +152,6 @@ function unitSet(ctx: PlacementContext): Set<string> {
   const s = new Set<string>();
   for (const u of ctx.units) s.add(segKey(u.tileIndex, u.segment));
   return s;
-}
-
-/** Open segments of a tile (no building), given the post-placement building set. */
-function openSegments(tile: BuildSegTile, buildings: Set<string>): number[] {
-  const open: number[] = [];
-  for (let s = 0; s < tile.sides; s++) {
-    if (!buildings.has(segKey(tile.index, s))) open.push(s);
-  }
-  return open;
-}
-
-// ---------------------------------------------------------------------------
-// Invariant: per-tile through-street (Requirement 4)
-// ---------------------------------------------------------------------------
-
-/**
- * Does `tile` retain a valid through-street given the (post-placement) set of
- * occupied building segments? A valid through-street is a connected run of open
- * segments containing at least two segments whose external face opens onto a
- * ground-passable neighbour.
- */
-export function hasThroughStreet(
-  ctx: PlacementContext,
-  tile: BuildSegTile,
-  buildings: Set<string>,
-): boolean {
-  const open = openSegments(tile, buildings);
-  if (open.length === 0) return false;
-  const openSet = new Set(open);
-  const seen = new Set<number>();
-
-  for (const start of open) {
-    if (seen.has(start)) continue;
-    // Flood-fill this open-segment component within the hex.
-    const stack = [start];
-    seen.add(start);
-    let passableFaces = 0;
-    while (stack.length) {
-      const seg = stack.pop()!;
-      const neighbourTile = tile.neighbours[seg];
-      const nt = neighbourTile === undefined ? undefined : ctx.getTile(neighbourTile);
-      if (nt?.groundPassable) passableFaces++;
-      for (const adj of intraHexNeighbours(tile.sides, seg)) {
-        if (openSet.has(adj) && !seen.has(adj)) {
-          seen.add(adj);
-          stack.push(adj);
-        }
-      }
-    }
-    if (passableFaces >= 2) return true;
-  }
-  return false;
-}
-
-// ---------------------------------------------------------------------------
-// Invariant: whole-city external reachability (Requirement 5)
-// ---------------------------------------------------------------------------
-
-/**
- * Is the city's open-segment network free of sealed pockets? Every connected
- * component of open segments across all city hexes must contain at least one
- * "exit" — an open segment whose external face opens onto a ground-passable
- * tile OUTSIDE the city.
- *
- * Returns the set of city hexes belonging to any pocket that cannot reach the
- * outside (empty when the city is fully reachable).
- */
-export function findOrphanedPockets(
-  ctx: PlacementContext,
-  cityHexes: readonly number[],
-  buildings: Set<string>,
-): number[] {
-  const cityHexSet = new Set(cityHexes);
-  const seen = new Set<string>();
-  const orphanedHexes = new Set<number>();
-
-  for (const hexIndex of cityHexes) {
-    const tile = ctx.getTile(hexIndex);
-    if (!tile) continue;
-    for (const seg of openSegments(tile, buildings)) {
-      const startKey = segKey(hexIndex, seg);
-      if (seen.has(startKey)) continue;
-
-      // BFS over the open-segment graph for this component.
-      const component: string[] = [];
-      const stack = [{ tileIndex: hexIndex, segment: seg }];
-      seen.add(startKey);
-      let hasExit = false;
-
-      while (stack.length) {
-        const node = stack.pop()!;
-        const nodeKey = segKey(node.tileIndex, node.segment);
-        component.push(nodeKey);
-        const tileA = ctx.getTile(node.tileIndex)!;
-
-        // Intra-hex edges.
-        for (const adj of intraHexNeighbours(tileA.sides, node.segment)) {
-          const k = segKey(node.tileIndex, adj);
-          if (!buildings.has(k) && !seen.has(k)) {
-            seen.add(k);
-            stack.push({ tileIndex: node.tileIndex, segment: adj });
-          }
-        }
-
-        // External face: either a cross-hex edge (to another city hex) or an
-        // exit to the outside world.
-        const neighbourIndex = tileA.neighbours[node.segment];
-        const neighbour = neighbourIndex === undefined ? undefined : ctx.getTile(neighbourIndex);
-        if (!neighbour) continue;
-
-        if (cityHexSet.has(neighbourIndex)) {
-          // Shared face with another city hex — traverse if that segment open.
-          const facing = neighbour.neighbours.indexOf(node.tileIndex);
-          if (facing >= 0) {
-            const k = segKey(neighbourIndex, facing);
-            if (!buildings.has(k) && !seen.has(k)) {
-              seen.add(k);
-              stack.push({ tileIndex: neighbourIndex, segment: facing });
-            }
-          }
-        } else if (neighbour.groundPassable) {
-          // Open face onto a ground-passable tile outside the city = exit.
-          hasExit = true;
-        }
-      }
-
-      if (!hasExit) {
-        for (const key of component) {
-          orphanedHexes.add(Number(key.split(':')[0]));
-        }
-      }
-    }
-  }
-
-  return [...orphanedHexes];
 }
 
 // ---------------------------------------------------------------------------
@@ -378,36 +236,11 @@ export function validateBuildingPlacement(
     }
   }
 
-  // Simulate the placement.
-  const afterBuildings = new Set(buildings);
-  afterBuildings.add(segKey(placement.tileIndex, placement.segment));
-
-  // Per-tile through-street invariant (Requirement 4) — only the affected hex
-  // can lose a through-street; every other city hex is unchanged.
-  if (!hasThroughStreet(ctx, tile, afterBuildings)) {
-    return {
-      legal: false,
-      reason: 'breaks-through-street',
-      message: 'This would block the only through-street on the hex.',
-      offendingTiles: [tile.index],
-    };
-  }
-
-  // Whole-city external reachability (Requirement 5). The placement may newly
-  // own the target hex, so include it in the city set.
-  const cityHexes = ctx.cityHexes.includes(placement.tileIndex)
-    ? ctx.cityHexes
-    : [...ctx.cityHexes, placement.tileIndex];
-  const orphaned = findOrphanedPockets(ctx, cityHexes, afterBuildings);
-  if (orphaned.length > 0) {
-    return {
-      legal: false,
-      reason: 'orphans-street-network',
-      message: 'This would seal off part of the city from the outside world.',
-      offendingTiles: orphaned,
-    };
-  }
-
+  // No through-street or external-reachability gate: placement inside a
+  // buildable cluster is otherwise unrestricted (Segment-Based Movement spec,
+  // Requirement A1). A placement that isolates or seals off other segments is
+  // legal — unit movement (shared/segmentGraph.ts) simply cannot enter an
+  // occupied segment, so an unreachable pocket is the player's own mistake.
   return { legal: true };
 }
 
@@ -416,9 +249,10 @@ export function validateBuildingPlacement(
 // ---------------------------------------------------------------------------
 
 /**
- * Choose a segment on the capital hex for the free founding building such that
- * the hex retains a valid through-street. Returns the first legal segment, or
- * null if (degenerately) none exists.
+ * Choose a segment on the capital hex for the free founding building.
+ * Returns the first segment that passes the A2 placement rules (no
+ * through-street preference — Requirement A3), or null if (degenerately)
+ * none exists.
  */
 export function chooseFoundingSegment(
   ctx: PlacementContext,

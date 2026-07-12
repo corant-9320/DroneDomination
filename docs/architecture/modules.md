@@ -49,13 +49,18 @@ shared/           → Logic + types shared by client AND server (client-importab
   movementConstants.ts Movement constants + pure cost helpers
   rangeCheck.ts     Segment-distance range check + weaponRangeFromAttributes()
   unitNaming.ts     Shared naming tables + core name-building logic
-  buildings.ts      Pure building-placement rules: through-street + external
-                      reachability invariants, validateBuildingPlacement()
+  buildings.ts      Pure building-placement rules: occupancy/steepness/
+                      contiguity gates; through-street + external reachability
+                      invariants removed (Segment-Based Movement spec, A1–A5)
   wireTypes.ts      Single source of truth for compact wire types (WireTile,
                       WireUnit, WireBuilding, WireCity, WireWorld, CompactSave);
                       previously duplicated in compact.ts (server) and worldData.ts (client)
   pathfinding.ts    graphDistance(), tilesWithinRadius(), findPath() — pure BFS/A*;
                       previously duplicated between src/world/ and client/aiTurn.ts
+  segmentGraph.ts   segmentNeighbours(), segmentReachability(), findSegmentPath(),
+                      realizeTilePathOverSegments(), farthestAffordablePrefix() —
+                      shared occupancy-gated segment-step movement primitives
+                      (Segment-Based Movement spec, B1–B5)
 
 src/              → Server/CLI-only core logic (NOT client-importable)
   generateCli.ts    CLI: generate world → data/world.json
@@ -64,7 +69,8 @@ src/              → Server/CLI-only core logic (NOT client-importable)
     types.ts          Tile, City, World, Vec3, TerrainType
     units.ts          Unit, HexSegment, validation helpers
     buildings.ts      Server adapter over shared/buildings: foundCity(es),
-                        constructBuilding(), checkCityIntegrity()
+                        constructBuilding() — no integrity check, placement is
+                        otherwise unrestricted (Segment-Based Movement spec)
     rng.ts            mulberry32 seeded PRNG (extracted from generate.ts)
     geodesic.ts       Goldberg geometry: generateGeodesicSphere() + computeDual()
                         (extracted from generate.ts sections 1)

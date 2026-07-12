@@ -30,14 +30,14 @@ The frozen historical record of past decisions is [`DECISIONS.md`](../../DECISIO
   fast, but on Lambda the cost recurs per cold container. Fix: persist/cache
   tiles (warm layer or precomputed artifact) instead of regenerating per
   container.
-- **Server MP model doesn't cover intra-hex repositions.** A move intent needs a
+- **Server MP model doesn't cover intra-hex repositions.** ~~A move intent needs a
   2+ tile path, so same-hex repositions aren't sent to the session; their MP cost
   isn't tracked server-side and a later `reconcile` refunds it. Needs a
-  segment-move model server-side.
-- **Client/server MP-cost parity.** The server move cost (`computeMovePath`) and
+  segment-move model server-side.~~ → See Recently Fixed.
+- **Client/server MP-cost parity.** ~~The server move cost (`computeMovePath`) and
   the client route cost can differ in edge cases; since `reconcile` makes the
   server authoritative, MP can visibly snap after an action. Aligning the two
-  cost models is the follow-up.
+  cost models is the follow-up.~~ → See Recently Fixed.
 - **In-range highlight overlay ignores elevation.** The hover highlight uses base
   range (`isTargetInRange` default), while the authoritative server gate and the
   attack preview both account for the elevation range multiplier. The player sees
@@ -66,6 +66,25 @@ The frozen historical record of past decisions is [`DECISIONS.md`](../../DECISIO
 
 These are invariants not already covered by the Cross-File Dependencies table in
 [`conventions.md`](../../.kiro/steering/conventions.md). Check that table too.
+
+- **`shared/segmentGraph.ts` ↔ movement consumers (server + client + AI) must agree
+  on occupancy rules.** `buildSegmentOccupancy` / `farthestAffordablePrefix` /
+  `findSegmentPath` in `shared/segmentGraph.ts` are the single occupancy-gated
+  movement primitive — `server/combatApi.ts::computeMovePath`,
+  `server/matchApi.ts::applyMoveIntent`, `client/movementRange.ts::computeMovementRange`,
+  `client/movementRoute.ts::computeMovementCostRoute`, and `client/aiTurn.ts` /
+  `server/aiTurnApi.ts` (affordableSteps) all flow through them. If the occupancy
+  rules change (e.g. drones blocking ground units, faction-specific blocking), the
+  change must propagate to all five consumers, and the shared module is the single
+  update point. (Segment-Based Movement spec, Requirement B5.)
+
+- **Building placement (`shared/buildings.ts`) and segment movement/occupancy
+  (`shared/segmentGraph.ts`) must stay consistent.** `validateBuildingPlacement`
+  allows placing a building on any eligible segment, even if it seals off others;
+  `segmentReachability` / `findSegmentPath` make those sealed-off segments
+  unreachable by movement. This is intentional ("player's problem") — but if the
+  building placement rules ever add new A2-style blocks, the movement occupancy
+  predicates must be updated too so they continue to agree on what is impassable.
 
 - **`STEEP_VERTICAL_EXAGGERATION` ↔ world scale.** In `segmentSteepness.ts` it
   must stay in sync with `ELEV_WORLD_SCALE / HEX_WORLD_RADIUS` in
@@ -134,6 +153,18 @@ The logistics feature spans four wire/serialization seams that must move togethe
   must initialise the `logistics` field, or the appliers/serializers will fault.
 
 ## Recently Fixed
+
+- **Segment-Based Movement & Unrestricted In-Cluster Building** — FIXED 2026-07-12.
+  Two interlocked changes: (1) `shared/buildings.ts` no longer enforces per-tile
+  through-street or whole-city external reachability invariants — a player may
+  build on any eligible segment inside a city, even if it seals off others; sealed
+  pockets are the player's problem, not an illegal build. (2) Movement is now a
+  uniform segment-step model gated by `shared/segmentGraph.ts` — every unit move
+  (server `computeMovePath`, matchApi `applyMoveIntent`, client `computeMovementRange`
+  / `computeMovementCostRoute`, AI `affordableSteps`) validates occupancy on the
+  destination segment before stepping, so no unit or building can be walked through.
+  Server, client, and AI all use the same shared primitive (B5). `src/world/movement.ts`
+  `moveUnit`/`pivotUnit` now accept an optional `isOccupied` predicate.
 
 - **Seeded logistics network was client-render-only, not authoritative** — FIXED
   2026-07-12. `server/generateApi.ts` seeded the default Oil Logistics network

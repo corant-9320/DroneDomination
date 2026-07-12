@@ -26,7 +26,7 @@ import {
 } from '../shared/rangeCheck.js';
 import { facingFromTravel } from './facing.js';
 import {
-  buildEnemySegmentSet,
+  buildOccupiedSegmentSet,
   buildBuildingSegmentSet,
   getRangeTiles,
   MovementRangeResult,
@@ -187,7 +187,9 @@ export function computeMovementCostRoute(
 
   const mode = getMovementMode(unit.attributes);
   const tiles = world.tiles;
-  const enemySegments = buildEnemySegmentSet(world, unit.ownerId);
+  // A segment holds at most one occupant regardless of faction (B2) — block
+  // on ANY other unit's segment, not just enemies. Excludes the mover itself.
+  const occupiedByUnit = buildOccupiedSegmentSet(world, unit.id);
   // Ground units cannot pass through building-occupied segments.
   const buildingSegments = mode !== 'flight' ? buildBuildingSegmentSet(world) : null;
 
@@ -221,7 +223,7 @@ export function computeMovementCostRoute(
       for (let delta = -1; delta <= 1; delta += 2) {
         const adjSeg = ((currentSeg + delta) % 6 + 6) % 6;
         const adjKey = encode(currentTile, adjSeg);
-        if (enemySegments.has(adjKey)) continue;
+        if (occupiedByUnit.has(adjKey)) continue;
         if (buildingSegments?.has(adjKey)) continue;
         const newCost = currentCost + sharedSegmentCost(tile, adjSeg, mode);
         if (newCost > remainingMP) continue;
@@ -246,7 +248,7 @@ export function computeMovementCostRoute(
           const candidateSegs = [arrival, (arrival + 1) % 6, (arrival + 5) % 6];
           for (const cSeg of candidateSegs) {
             const nKey = encode(neighbour, cSeg);
-            if (enemySegments.has(nKey)) continue;
+            if (occupiedByUnit.has(nKey)) continue;
             if (buildingSegments?.has(nKey)) continue;
             const existing = dist.get(nKey);
             if (existing === undefined || newCost < existing) {

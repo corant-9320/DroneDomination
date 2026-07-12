@@ -42,6 +42,7 @@ import {
   resolveRepair,
 } from '../src/world/repair.js';
 import { getMovementMode, getMaxMovement, segmentCost } from '../shared/movementConstants.js';
+import { realizeTilePathOverSegments, buildSegmentOccupancy, type SegNode } from '../shared/segmentGraph.js';
 import type { CombatResponse } from '../shared/combatTypes.js';
 import {
   explainAttack,
@@ -406,67 +407,74 @@ function handlePreview(req: CombatRequest, ctx: CombatContext): CombatResponse<W
 // ---------------------------------------------------------------------------
 
 /**
- * Compute the segment-cost of a requested move path and validate its geometry
- * (server-authority Phase 2/3). Returns `{ cost }` when the path is legal
- * (contiguous, no impassable steps), or `{ error }` otherwise. Does NOT check
- * any movement budget — callers compare `cost` against the relevant budget
- * (max MP for the stateless endpoint, remaining MP for a match session).
+ * Compute the occupancy-gated segment-step cost of a requested move path
+ * (server-authority Phase 2/3, reworked for Segment-Based Movement). Returns
+ * `{ cost, segmentPath }` when the path is legal — contiguous, every step
+ * lands on an empty segment with finite terrain cost — or `{ error }`
+ * otherwise. Does NOT check any movement budget — callers compare `cost`
+ * against the relevant budget (max MP for the stateless endpoint, remaining
+ * MP for a match session).
+ *
+ * `occupants` are every OTHER unit/building segment on the board (the mover's
+ * own current segment must already be excluded by the caller, since a unit
+ * must be allowed to step off its own segment).
  */
+/**
+ * Build the occupant list a mover's segment-path must avoid: every other
+ * living unit's segment, plus every building's segment when the mover is a
+ * ground chassis (drones fly over buildings freely). Excludes the mover's own
+ * current segment so it may step off it.
+ */
+function movementOccupants(
+  units: ReadonlyArray<{ id: string; tileIndex: number; segment: number }>,
+  buildings: ReadonlyArray<{ tileIndex: number; segment: number }>,
+  moverId: string,
+  isDroneMover: boolean,
+): { tileIndex: number; segment: number }[] {
+  const occupants = units
+    .filter((u) => u.id !== moverId)
+    .map((u) => ({ tileIndex: u.tileIndex, segment: u.segment }));
+  if (!isDroneMover) occupants.push(...buildings.map((b) => ({ tileIndex: b.tileIndex, segment: b.segment })));
+  return occupants;
+}
+
 export function computeMovePath(
   mover: Unit,
   path: number[],
   tiles: Tile[],
-): { error: string } | { cost: number } {
+  occupants: ReadonlyArray<{ tileIndex: number; segment: number }> = [],
+  finalSegment?: number,
+): { error: string } | { cost: number; segmentPath: SegNode[] } {
   if (path[0] !== mover.tileIndex) {
     return { error: 'Move path does not start at the unit\'s current tile' };
   }
-  const mode = getMovementMode(mover.attributes);
-
-  let spent = 0;
-  let currentSegment = mover.segment as number;
-
   for (let i = 1; i < path.length; i++) {
-    const prevHex = path[i - 1];
-    const currentHex = path[i];
-    const prevTile = tiles[prevHex];
-    const destTile = tiles[currentHex];
-    if (!prevTile || !destTile) return { error: 'Move path references an unknown tile' };
-
-    // Contiguity: each step must cross to an actual neighbour.
-    const departureSeg = prevTile.neighbours.indexOf(currentHex);
-    if (departureSeg < 0) return { error: 'Move path is not contiguous' };
-
-    // Intra-hex pivot to the departure segment — each intermediate segment is
-    // now steepness-gated.
-    const diff = Math.abs(currentSegment - departureSeg);
-    const pivotSteps = Math.min(diff, 6 - diff);
-    // Step through each intermediate segment on the shortest arc
-    const direction = ((departureSeg - currentSegment + 9) % 6) < 3 ? 1 : -1;
-    let pivotSeg = currentSegment;
-    for (let p = 0; p < pivotSteps; p++) {
-      pivotSeg = ((pivotSeg + direction) % 6 + 6) % 6;
-      const pivotCost = segmentCost(prevTile, pivotSeg, mode);
-      if (!Number.isFinite(pivotCost)) return { error: 'Move path crosses impassable terrain' };
-      spent += pivotCost;
-    }
-
-    // Cross the border into the destination tile — gate on arrival segment.
-    const arrivalSeg = destTile.neighbours.indexOf(prevHex);
-    const crossCost = segmentCost(destTile, arrivalSeg >= 0 ? arrivalSeg : 0, mode);
-    if (!Number.isFinite(crossCost)) return { error: 'Move path crosses impassable terrain' };
-    spent += crossCost;
-
-    currentSegment = arrivalSeg >= 0 ? arrivalSeg : 0;
+    const prevTile = tiles[path[i - 1]];
+    if (!prevTile) return { error: 'Move path references an unknown tile' };
+    if (prevTile.neighbours.indexOf(path[i]) < 0) return { error: 'Move path is not contiguous' };
   }
+  if (!tiles[path[path.length - 1]]) return { error: 'Move path references an unknown tile' };
 
-  return { cost: spent };
+  const mode = getMovementMode(mover.attributes);
+  const isOccupied = buildSegmentOccupancy(occupants);
+  const r = realizeTilePathOverSegments(
+    tiles,
+    { tileIndex: mover.tileIndex, segment: mover.segment },
+    path,
+    (tile, segment) => segmentCost(tile, segment, mode),
+    isOccupied,
+    finalSegment,
+  );
+  if (!r) return { error: 'Move path crosses impassable or occupied terrain' };
+  return { cost: r.cost, segmentPath: r.path };
 }
 
 /**
  * Server-side legality check for a requested move path (server-authority
  * Phase 2). Validates everything derivable from the world snapshot + the
  * unit's attributes, so a client can no longer fabricate teleports, paths
- * through impassable terrain, or moves longer than the unit's movement budget.
+ * through impassable/occupied terrain, or moves longer than the unit's
+ * movement budget.
  *
  * NOTE: this enforces a SINGLE action's cost against the unit's *maximum*
  * movement. Cumulative per-turn MP and "already acted this turn" enforcement
@@ -475,8 +483,13 @@ export function computeMovePath(
  *
  * Returns null when the path is legal, or a human-readable reason when not.
  */
-export function validateMovePath(mover: Unit, path: number[], tiles: Tile[]): string | null {
-  const r = computeMovePath(mover, path, tiles);
+export function validateMovePath(
+  mover: Unit,
+  path: number[],
+  tiles: Tile[],
+  occupants: ReadonlyArray<{ tileIndex: number; segment: number }> = [],
+): string | null {
+  const r = computeMovePath(mover, path, tiles, occupants);
   if ('error' in r) return r.error;
   // Small epsilon for floating-point segment-cost accumulation.
   if (r.cost > getMaxMovement(mover.attributes) + 1e-9) {
@@ -502,15 +515,23 @@ function handleMove(req: CombatRequest, ctx: CombatContext): CombatResponse<Wire
     return { success: false, error: 'Not this faction\'s turn to move', combats: [], reactions: [], updatedUnits: [] };
   }
 
-  // Legality enforcement (Phase 2): reject teleports / impassable / overlong paths.
-  const moveError = validateMovePath(mover, path, tiles);
-  if (moveError) {
-    return { success: false, error: moveError, combats: [], reactions: [], updatedUnits: [] };
+  // Legality enforcement (Phase 2/B2-B4): reject teleports / impassable /
+  // occupied / overlong paths. Occupancy excludes the mover's own segment;
+  // buildings block ground chassis but not flight (drones pass over freely).
+  const isDroneMover = isDrone(mover);
+  const occupants = movementOccupants(units, ctx.buildings, mover.id, isDroneMover);
+
+  const moveResult = computeMovePath(mover, path, tiles, occupants);
+  if ('error' in moveResult) {
+    return { success: false, error: moveResult.error, combats: [], reactions: [], updatedUnits: [] };
+  }
+  if (moveResult.cost > getMaxMovement(mover.attributes) + 1e-9) {
+    return { success: false, error: 'Move exceeds the unit\'s movement budget', combats: [], reactions: [], updatedUnits: [] };
   }
 
   // Drones trigger Anti-Air Reaction Fire along their path (§16).
   // Ground units do not trigger reaction fire.
-  if (isDrone(mover)) {
+  if (isDroneMover) {
     const reactionResults = resolveReactionFire(unitId, path, ctx);
     const reactionExplained = reactionResults.map((r) => {
       const reactor = units.find((u) => u.id === r.attackerId)
@@ -518,6 +539,8 @@ function handleMove(req: CombatRequest, ctx: CombatContext): CombatResponse<Wire
       const drone = units.find((u) => u.id === r.targetId);
       return buildReactionExplanation(r, reactor, drone);
     });
+
+    applySegmentPath(mover, moveResult.segmentPath, tiles);
 
     // If drone was destroyed, remove it and return
     const survivingUnits = units.filter((u) => u.currentHealth > 0);
@@ -529,17 +552,9 @@ function handleMove(req: CombatRequest, ctx: CombatContext): CombatResponse<Wire
     };
   }
 
-  // Ground unit: walk the path — update position and facing, no reaction fire.
-  for (let i = 1; i < path.length; i++) {
-    const prevHex = path[i - 1];
-    const currentHex = path[i];
-
-    mover.tileIndex = currentHex;
-    const dir = tiles[prevHex].neighbours.indexOf(currentHex);
-    if (dir !== -1) {
-      mover.facing = dir as HexSegment;
-    }
-  }
+  // Ground unit: walk the resolved segment path — updates position, segment,
+  // and facing to match the occupancy-gated route actually taken.
+  applySegmentPath(mover, moveResult.segmentPath, tiles);
 
   return {
     success: true,
@@ -547,6 +562,27 @@ function handleMove(req: CombatRequest, ctx: CombatContext): CombatResponse<Wire
     reactions: [],
     updatedUnits: units.map(toWireUnit),
   };
+}
+
+/**
+ * Apply a resolved segment path to a unit: sets its final tileIndex/segment
+ * and derives facing from the last inter-hex crossing (matching the previous
+ * tile-path-walking behaviour). No-op beyond position/segment/facing.
+ */
+function applySegmentPath(mover: Unit, segmentPath: SegNode[], tiles: Tile[]): void {
+  if (segmentPath.length === 0) return;
+  let lastTile = mover.tileIndex;
+  for (let i = 1; i < segmentPath.length; i++) {
+    const node = segmentPath[i];
+    if (node.tileIndex !== lastTile) {
+      const dir = tiles[lastTile].neighbours.indexOf(node.tileIndex);
+      if (dir !== -1) mover.facing = dir as HexSegment;
+      lastTile = node.tileIndex;
+    }
+  }
+  const final = segmentPath[segmentPath.length - 1];
+  mover.tileIndex = final.tileIndex;
+  mover.segment = final.segment as HexSegment;
 }
 
 // ---------------------------------------------------------------------------

@@ -5,10 +5,8 @@ import {
   constructBuilding,
   foundCity,
   foundCities,
-  checkCityIntegrity,
 } from '../buildings.js';
 import { World, Tile, City } from '../types.js';
-import { segKey } from '../../../shared/buildings.js';
 
 // ---------------------------------------------------------------------------
 // Helpers — a central hex (tile 0) ringed by six ground-passable leaf hexes.
@@ -109,11 +107,13 @@ describe('foundCity', () => {
     expect(world.tiles[0].buildingIds).toContain(building!.id);
   });
 
-  it('returns null when no legal founding segment exists (capital sealed by ocean)', () => {
-    const world = makeWorld('ocean'); // every capital face is impassable
+  it('still founds a capital surrounded by ocean (no through-street requirement)', () => {
+    // Previously rejected (no ground-passable face for a through-street); now
+    // legal — placement inside a cluster is otherwise unrestricted.
+    const world = makeWorld('ocean'); // every neighbouring leaf tile is ocean
     const building = foundCity(world, world.cities[0]);
-    expect(building).toBeNull();
-    expect(world.buildings).toHaveLength(0);
+    expect(building).not.toBeNull();
+    expect(world.buildings).toHaveLength(1);
   });
 
   it('founds every city via foundCities', () => {
@@ -163,32 +163,21 @@ describe('constructBuilding', () => {
 });
 
 // ---------------------------------------------------------------------------
-// checkCityIntegrity
+// Unrestricted in-cluster building (Requirement A1) — sealing off a hex's
+// segments (previously a through-street violation) is now a legal build.
 // ---------------------------------------------------------------------------
 
-describe('checkCityIntegrity', () => {
-  it('reports no issues for a freshly founded city', () => {
-    const world = makeWorld();
-    foundCity(world, world.cities[0]);
-    expect(checkCityIntegrity(world)).toEqual([]);
-  });
-
-  it('flags a hex with no through-street once its segments are sealed', () => {
+describe('unrestricted in-cluster building', () => {
+  it('allows sealing every segment on a city hex but the last', () => {
     const world = makeWorld();
     world.cities[0].ownedHexes = [0];
-    // Seal segments 0..4, leaving only one open face (< 2 passable faces).
     for (let s = 0; s < 5; s++) {
       world.buildings.push({ id: `building_${s}`, ownerId: 'red', tileIndex: 0, segment: s });
     }
-    const issues = checkCityIntegrity(world);
-    const noStreet = issues.find((i) => i.kind === 'no-through-street');
-    expect(noStreet).toBeDefined();
-    expect(noStreet?.cityId).toBe('red');
-    expect(noStreet?.tiles).toContain(0);
-  });
-
-  it('builds the occupancy set keyed by tile:segment', () => {
-    // Sanity guard on the shared segKey helper the integrity check relies on.
-    expect(segKey(0, 3)).toBe('0:3');
+    // Segment 5 is the last free segment on tile 0 — previously this placement
+    // would have been rejected by the through-street check; now it's legal.
+    const result = constructBuilding(world, 'red', { tileIndex: 0, segment: 5 });
+    expect(result.success).toBe(true);
+    expect(world.buildings).toHaveLength(6);
   });
 });

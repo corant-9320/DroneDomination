@@ -20,6 +20,8 @@ import { rerenderBuildingSprite } from './buildingRenderer.js';
 import { dbg } from './debug.js';
 import { getMovementMode, segmentCost } from '../shared/movementConstants.js';
 import { graphDistance, findPath as sharedFindPath } from '../shared/pathfinding.js';
+import { farthestAffordablePrefix, buildSegmentOccupancy } from '../shared/segmentGraph.js';
+import type { SegGraphTile } from '../shared/segmentGraph.js';
 import type { AiActionEvent, AiTurnResponse } from '../shared/combatTypes.js';
 
 // ---------------------------------------------------------------------------
@@ -279,9 +281,9 @@ export async function executeAiTurn(
 
       if (path && path.length > 1) {
         // Calculate affordable steps considering terrain costs, reserving 1 MP for attack
-        const stepsWithAttack = affordableSteps(world.tiles, path, unit, true);
+        const stepsWithAttack = affordableSteps(world, path, unit, true);
         // Don't step onto the enemy's tile
-        const maxSteps = Math.min(path.length - 2, stepsWithAttack > 0 ? stepsWithAttack : affordableSteps(world.tiles, path, unit, false));
+        const maxSteps = Math.min(path.length - 2, stepsWithAttack > 0 ? stepsWithAttack : affordableSteps(world, path, unit, false));
         const movePath = path.slice(0, maxSteps + 1); // include start tile
 
         if (movePath.length >= 2) {
@@ -398,12 +400,25 @@ function getMovement(unit: UnitData): number {
 }
 
 /**
+ * Adapter: exposes the SegGraphTile shape (sides/neighbours) required by
+ * shared/segmentGraph.ts while keeping a reference back to the original
+ * TileData, so a segmentCost costFn can read its terrain/forested/height.
+ */
+interface SegGraphTileAdapter extends SegGraphTile { sides: number; neighbours: number[]; original: TileData }
+
+function toSegGraphTiles(tiles: TileData[]): SegGraphTileAdapter[] {
+  return tiles.map((t) => ({ sides: t.s, neighbours: t.n, original: t }));
+}
+
+/**
  * Compute how many steps along a path the unit can afford, reserving
- * 1 MP for attack if wantAttack is true.
- * Uses segment-based cost model.
+ * 1 MP for attack if wantAttack is true. Occupancy-gated (Segment-Based
+ * Movement spec, B5): a step is only affordable if the destination segment
+ * on that hex is unoccupied, exactly like the server and client range/preview
+ * pipeline.
  */
 function affordableSteps(
-  tiles: TileData[],
+  world: WorldData,
   path: number[],
   unit: UnitData,
   wantAttack: boolean,
@@ -411,39 +426,26 @@ function affordableSteps(
   const totalMP = getMovement(unit);
   const mode = getMovementMode(unit.attributes);
   const reserve = wantAttack ? 1 : 0;
-  let spent = 0;
-  let steps = 0;
-  let currentSegment = unit.segment;
+  const isDroneMover = mode === 'flight';
 
-  for (let i = 1; i < path.length; i++) {
-    // Intra-hex traversal to departure segment
-    const departureSeg = tiles[path[i - 1]].n.indexOf(path[i]);
-    const departure = departureSeg >= 0 ? departureSeg : 0;
-    const diff = Math.abs(currentSegment - departure);
-    const pivotSteps = Math.min(diff, 6 - diff);
-    // Cost each pivot step by its actual target segment (steepness-gated)
-    const direction = ((departure - currentSegment + 9) % 6) < 3 ? 1 : -1;
-    let pivotSeg = currentSegment;
-    for (let p = 0; p < pivotSteps; p++) {
-      pivotSeg = ((pivotSeg + direction) % 6 + 6) % 6;
-      const pivotCost = segmentCost(tiles[path[i - 1]], pivotSeg, mode);
-      if (pivotCost === Infinity) break;
-      spent += pivotCost;
-    }
-    if (spent + reserve > totalMP) break;
-
-    // Cross border — gate on arrival segment
-    const arrivalSeg = tiles[path[i]].n.indexOf(path[i - 1]);
-    const arrival = arrivalSeg >= 0 ? arrivalSeg : 0;
-    const crossCost = segmentCost(tiles[path[i]], arrival, mode);
-    if (crossCost === Infinity) break;
-    spent += crossCost;
-    if (spent + reserve > totalMP) break;
-
-    currentSegment = arrival as UnitData['segment'];
-    steps++;
+  const occupants = world.units
+    .filter((u) => u.id !== unit.id)
+    .map((u) => ({ tileIndex: u.tileIndex, segment: u.segment }));
+  if (!isDroneMover) {
+    occupants.push(...world.buildings.map((b) => ({ tileIndex: b.tileIndex, segment: b.segment })));
   }
-  return steps;
+  const isOccupied = buildSegmentOccupancy(occupants);
+  const segGraphTiles = toSegGraphTiles(world.tiles);
+
+  const r = farthestAffordablePrefix(
+    segGraphTiles,
+    { tileIndex: unit.tileIndex, segment: unit.segment },
+    path,
+    (tile, segment) => segmentCost(tile.original, segment, mode),
+    isOccupied,
+    totalMP - reserve,
+  );
+  return r.tileCount - 1;
 }
 
 /** 

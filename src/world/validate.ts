@@ -6,7 +6,6 @@
 import { World, Tile, City } from './types.js';
 import { graphDistance } from './pathfinding.js';
 import { CITY_COUNT } from './generate.js';
-import { checkCityIntegrity } from './buildings.js';
 
 export interface ValidationResult {
   passed: boolean;
@@ -282,34 +281,6 @@ export function validateWorld(world: World): ValidationResult {
     name: 'segSteep set on all tiles, length == sides, values in [0, π/2]',
     passed: segSteepOk,
     detail: segSteepOk ? 'OK' : segSteepDetail,
-  });
-
-  // --- City building / street invariants (Requirements 4 & 5) ---
-
-  const integrityIssues = checkCityIntegrity(world);
-  const noStreetIssues = integrityIssues.filter((i) => i.kind === 'no-through-street');
-  const orphanIssues = integrityIssues.filter((i) => i.kind === 'orphaned-pocket');
-
-  checks.push({
-    name: 'every city hex keeps a through-street',
-    passed: noStreetIssues.length === 0,
-    detail:
-      noStreetIssues.length === 0
-        ? 'OK'
-        : noStreetIssues
-            .map((i) => `${i.cityId}: hexes ${i.tiles.join(', ')}`)
-            .join('; '),
-  });
-
-  checks.push({
-    name: 'no city seals off an open-segment pocket',
-    passed: orphanIssues.length === 0,
-    detail:
-      orphanIssues.length === 0
-        ? 'OK'
-        : orphanIssues
-            .map((i) => `${i.cityId}: hexes ${i.tiles.join(', ')}`)
-            .join('; '),
   });
 
   // --- Summary ---

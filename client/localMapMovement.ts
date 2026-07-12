@@ -14,7 +14,7 @@ export {
   getRangeTiles,
   weaponRangeInTileHops,
   isInWeaponRange,
-  buildEnemySegmentSet,
+  buildOccupiedSegmentSet,
   computeMovementRange,
   type MovementRangeResult,
 } from './movementRange.js';

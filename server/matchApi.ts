@@ -249,12 +249,25 @@ function applyMoveIntent(
   const ts = state.unitTurn[mover.id];
   if (!ts) return { error: 'No turn state for unit' };
 
-  const r = computeMovePath(mover, intent.path, tiles);
+  // Occupancy-gated (B2-B4): every other unit's segment blocks the path;
+  // buildings additionally block ground chassis (drones fly over them).
+  const isDroneMover = isDrone(mover);
+  const occupants = ctx.units
+    .filter((u) => u.id !== mover.id)
+    .map((u) => ({ tileIndex: u.tileIndex, segment: u.segment }));
+  if (!isDroneMover) {
+    occupants.push(...ctx.buildings.map((b) => ({ tileIndex: b.tileIndex, segment: b.segment })));
+  }
+
+  const finalSegment = typeof intent.segment === 'number' && intent.segment >= 0 && intent.segment <= 5
+    ? intent.segment
+    : undefined;
+  const r = computeMovePath(mover, intent.path, tiles, occupants, finalSegment);
   if ('error' in r) return { error: r.error };
   if (r.cost > ts.mp + 1e-9) return { error: 'Insufficient movement points for this move' };
 
   let reactions: ExplainedCombat[] = [];
-  if (isDrone(mover)) {
+  if (isDroneMover) {
     const results = resolveReactionFire(mover.id, intent.path, ctx);
     reactions = results.map((res) =>
       buildReactionExplanation(
@@ -264,20 +277,24 @@ function applyMoveIntent(
         ctx.units.find((u) => u.id === res.targetId),
       ),
     );
-  } else {
-    for (let i = 1; i < intent.path.length; i++) {
-      const prevHex = intent.path[i - 1];
-      const currentHex = intent.path[i];
-      mover.tileIndex = currentHex;
-      const dir = tiles[prevHex].neighbours.indexOf(currentHex);
-      if (dir !== -1) mover.facing = dir as HexSegment;
-    }
   }
 
-  ts.mp -= r.cost;
-  if (typeof intent.segment === 'number' && intent.segment >= 0 && intent.segment <= 5) {
-    mover.segment = intent.segment as typeof mover.segment;
+  // Apply the resolved segment path — final position/segment, and facing
+  // derived from the last inter-hex crossing actually taken.
+  let lastTile = mover.tileIndex;
+  for (let i = 1; i < r.segmentPath.length; i++) {
+    const node = r.segmentPath[i];
+    if (node.tileIndex !== lastTile) {
+      const dir = tiles[lastTile].neighbours.indexOf(node.tileIndex);
+      if (dir !== -1) mover.facing = dir as HexSegment;
+      lastTile = node.tileIndex;
+    }
   }
+  const final = r.segmentPath[r.segmentPath.length - 1];
+  mover.tileIndex = final.tileIndex;
+  mover.segment = final.segment as HexSegment;
+
+  ts.mp -= r.cost;
   return { reactions };
 }
 

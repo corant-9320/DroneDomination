@@ -39,6 +39,9 @@ import {
   hexEntryCost as hexEntryCostShared,
   segmentCost as segmentCostShared,
 } from '../../shared/movementConstants.js';
+import { NO_OCCUPANCY, type SegOccupiedFn } from '../../shared/segmentGraph.js';
+
+export type { SegOccupiedFn };
 
 export type { MovementMode };
 
@@ -178,7 +181,13 @@ export function canAttackAfterMovement(unit: Unit, state: TurnState): boolean {
  *  - Inter-hex move cost is computed from segment-to-segment distance × terrain
  *    multiplier (when boundary data available), falling back to legacy hexEntryCost.
  *  - Records the move (locks pivot for the rest of the turn).
- * Returns false if the move was rejected by turn-state rules.
+ *
+ * `isOccupied` gates the landing segment (Segment-Based Movement spec,
+ * Requirement B2/B6): a unit may not step onto — or pivot onto — a segment
+ * already occupied by another unit or a building. Defaults to "nothing is
+ * occupied" so existing callers that don't pass one keep prior behaviour.
+ *
+ * Returns false if the move was rejected by turn-state rules or occupancy.
  */
 export function moveUnit(
   unit: Unit,
@@ -186,6 +195,7 @@ export function moveUnit(
   tiles: Tile[],
   segment?: HexSegment,
   turnState?: TurnState,
+  isOccupied: SegOccupiedFn = NO_OCCUPANCY,
 ): boolean {
   const fromIndex = unit.tileIndex;
   const isInterHex = fromIndex !== toTileIndex;
@@ -201,6 +211,9 @@ export function moveUnit(
       // toward the origin tile, so the steepness gate applies to the exact
       // segment the unit steps onto.
       const arrivalSeg = destTile.neighbours.indexOf(fromIndex);
+      const landingSeg = segment !== undefined ? segment : (arrivalSeg >= 0 ? arrivalSeg : 0);
+      if (isOccupied(toTileIndex, landingSeg)) return false;
+
       const cost = segmentCostShared(destTile, arrivalSeg >= 0 ? arrivalSeg : 0, mode);
 
       if (cost === Infinity) return false;
@@ -214,18 +227,26 @@ export function moveUnit(
       }
       unit.tileIndex = toTileIndex;
       recordMove(unit, turnState, cost);
-    } else if (segment !== undefined || segment === undefined) {
-      // Same-hex reposition is a pivot — check pivot rules
+    } else {
+      // Same-hex reposition is a pivot — check pivot rules + occupancy (B6).
       if (!canPivot(unit, turnState, segment)) return false;
+      if (segment !== undefined && isOccupied(unit.tileIndex, segment)) return false;
     }
   } else {
     // No turn state — legacy/test path
     if (isInterHex) {
+      const destTile = tiles[toTileIndex];
+      const arrivalSeg = destTile.neighbours.indexOf(fromIndex);
+      const landingSeg = segment !== undefined ? segment : (arrivalSeg >= 0 ? arrivalSeg : 0);
+      if (isOccupied(toTileIndex, landingSeg)) return false;
+
       const dir = getApproachDirection(tiles, fromIndex, toTileIndex);
       if (dir >= 0) {
         unit.facing = dir as HexSegment;
       }
       unit.tileIndex = toTileIndex;
+    } else if (segment !== undefined && isOccupied(unit.tileIndex, segment)) {
+      return false;
     }
   }
 
@@ -245,15 +266,23 @@ export function moveUnit(
  * Segment repositioning costs fractional MP based on distance. Facing-only
  * changes are free. Requires movement points remaining and no prior move.
  *
- * If no TurnState is provided, always succeeds (legacy/test usage).
- * Returns false if turn-state rules reject the pivot.
+ * `isOccupied` gates a segment reposition (Requirement B6): pivoting onto an
+ * already-occupied segment is rejected, exactly like an inter-hex move.
+ * Defaults to "nothing is occupied" so existing callers keep prior behaviour.
+ *
+ * If no TurnState is provided, succeeds unless the target segment is
+ * occupied (legacy/test usage).
+ * Returns false if turn-state rules or occupancy reject the pivot.
  */
 export function pivotUnit(
   unit: Unit,
   newFacing: HexSegment,
   newSegment?: HexSegment,
   turnState?: TurnState,
+  isOccupied: SegOccupiedFn = NO_OCCUPANCY,
 ): boolean {
+  if (newSegment !== undefined && isOccupied(unit.tileIndex, newSegment)) return false;
+
   if (turnState) {
     if (!canPivot(unit, turnState, newSegment, newFacing)) return false;
     recordPivot(unit, turnState, newFacing, newSegment);

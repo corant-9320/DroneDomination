@@ -8,6 +8,7 @@ import {
 } from '../movement.js';
 import { HexSegment } from '../units.js';
 import { createTurnState, recordMove } from '../turnState.js';
+import { buildSegmentOccupancy } from '../../../shared/segmentGraph.js';
 import type { Tile } from '../types.js';
 import { makeTile, linearGrid, hexGrid, makeUnit } from './movement.fixtures.js';
 
@@ -166,6 +167,40 @@ describe('movement (reach & mutation)', () => {
       // Cost = 0.25 per flat hex, unit has 1 MP → should succeed
       expect(result).toBe(true);
     });
+
+    // =========================================================================
+    // moveUnit — occupancy gating (Segment-Based Movement spec, B2/B4)
+    // =========================================================================
+
+    it('rejects a move onto an occupied landing segment (no turn state)', () => {
+      const unit = makeUnit({ id: 'u', tileIndex: 0, segment: 0 as HexSegment });
+      // Landing segment on tile 1 defaults to the arrival face (tile1.neighbours.indexOf(0)).
+      const arrivalSeg = tiles[1].neighbours.indexOf(0);
+      const isOccupied = buildSegmentOccupancy([{ tileIndex: 1, segment: arrivalSeg }]);
+      const result = moveUnit(unit, 1, tiles, undefined, undefined, isOccupied);
+      expect(result).toBe(false);
+      expect(unit.tileIndex).toBe(0); // unchanged
+    });
+
+    it('allows a move onto an explicit free segment even when the default arrival segment is occupied', () => {
+      const unit = makeUnit({ id: 'u', tileIndex: 0, segment: 0 as HexSegment });
+      const arrivalSeg = tiles[1].neighbours.indexOf(0);
+      const isOccupied = buildSegmentOccupancy([{ tileIndex: 1, segment: arrivalSeg }]);
+      const freeSeg = ((arrivalSeg + 1) % 6) as HexSegment;
+      const result = moveUnit(unit, 1, tiles, freeSeg, undefined, isOccupied);
+      expect(result).toBe(true);
+      expect(unit.segment).toBe(freeSeg);
+    });
+
+    it('with turn state: rejects a move onto an occupied segment even with MP available', () => {
+      const unit = makeUnit({ id: 'u', tileIndex: 0, attributes: { wheeledMovement: 5 } });
+      const state = createTurnState();
+      const arrivalSeg = tiles[1].neighbours.indexOf(0);
+      const isOccupied = buildSegmentOccupancy([{ tileIndex: 1, segment: arrivalSeg }]);
+      const result = moveUnit(unit, 1, tiles, undefined, state, isOccupied);
+      expect(result).toBe(false);
+      expect(unit.tileIndex).toBe(0);
+    });
   });
 
   // =========================================================================
@@ -210,6 +245,22 @@ describe('movement (reach & mutation)', () => {
       const state = createTurnState();
       recordMove(unit, state, 1); // spend all MP
       const result = pivotUnit(unit, 3 as HexSegment, undefined, state);
+      expect(result).toBe(false);
+    });
+
+    it('rejects a pivot onto an occupied segment (B6)', () => {
+      const unit = makeUnit({ id: 'u', facing: 0 as HexSegment, segment: 0 as HexSegment });
+      const isOccupied = buildSegmentOccupancy([{ tileIndex: unit.tileIndex, segment: 4 }]);
+      const result = pivotUnit(unit, 2 as HexSegment, 4 as HexSegment, undefined, isOccupied);
+      expect(result).toBe(false);
+      expect(unit.segment).toBe(0); // unchanged
+    });
+
+    it('with turn state: rejects a pivot onto an occupied segment even with MP available', () => {
+      const unit = makeUnit({ id: 'u', facing: 0 as HexSegment, segment: 0 as HexSegment, attributes: { wheeledMovement: 5 } });
+      const state = createTurnState();
+      const isOccupied = buildSegmentOccupancy([{ tileIndex: unit.tileIndex, segment: 4 }]);
+      const result = pivotUnit(unit, 2 as HexSegment, 4 as HexSegment, state, isOccupied);
       expect(result).toBe(false);
     });
   });

@@ -26,6 +26,15 @@ Pure helpers, available in both `shared/pathfinding.ts` and `src/world/pathfindi
 - `tilesWithinRadius(tiles, centre, radius)` — BFS flood fill → Map<index, distance>
 - `findPath(tiles, from, to, costFn?)` — A* with great-circle heuristic
 
+Segment-graph movement (occupancy-gated):
+
+- `shared/segmentGraph.ts` — `segmentNeighbours()`, `findSegmentPath()`,
+  `segmentReachability()`, `realizeTilePathOverSegments()`, `farthestAffordablePrefix()`
+
+Movement is a uniform segment-step model: a unit may step from its current segment
+onto an adjacent segment (2 intra-hex + 1 cross-hex) only when the destination
+segment is empty and `segmentCost` is finite (Segment-Based Movement spec, B1–B3).
+
 ## Constants
 
 `CITY_COUNT = 12` (`src/world/generate.ts`), `MIN_SPACING = 20`, `MAX_SPACING = 45`,

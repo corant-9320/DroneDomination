@@ -6,19 +6,19 @@
  *
  * Goal: a scenario that is immediately useful for testing every system, with:
  *   - Two big cities (player capital + an enemy capital) carrying DOZENS of
- *     buildings spread across many owned hexes. Every building is placed
- *     through the SAME street-navigation rules the engine enforces
- *     (shared/buildings.ts), so the cities keep legal through-streets and no
- *     sealed courtyards.
+ *     buildings spread across many owned hexes. Placement inside a city is
+ *     unrestricted (Segment-Based Movement spec) — the only rule enforced
+ *     here is that a segment must not already be occupied by a unit or
+ *     another building.
  *   - A city DEFENCE situation: an enemy assault army staged next to the
  *     player capital, facing in, with a player garrison inside.
  *   - A city ATTACK situation: a player assault army staged next to the enemy
  *     capital, facing in, with an enemy garrison inside.
  *   - Several open-field battles: player vs enemy armies across a gap.
  *
- * The street-validation functions below are a faithful JS port of
+ * The placement validation below is a faithful JS port of the A2 rules in
  * shared/buildings.ts (the single source of truth). Keep them in sync if the
- * invariants there change.
+ * rules there change.
  *
  * Usage:  node scripts/generate-default-scenario.js
  * Output: data/default-scenario.json
@@ -93,7 +93,7 @@ function isDroneFriendly(tileIdx) {
 }
 
 // ---------------------------------------------------------------------------
-// Street-navigation validation — faithful port of shared/buildings.ts
+// Placement validation — faithful port of the A2 rules in shared/buildings.ts.
 // `groundPassable` at tile granularity means "not ocean" (per buildings.ts).
 // ---------------------------------------------------------------------------
 function groundPassable(tileIdx) {
@@ -104,111 +104,12 @@ function segKey(tileIndex, segment) {
   return `${tileIndex}:${segment}`;
 }
 
-function intraHexNeighbours(sides, segment) {
-  return [(segment + 1) % sides, (segment - 1 + sides) % sides];
-}
-
 function sidesOf(tileIdx) {
   return tileByIndex.get(tileIdx)?.s ?? 6;
 }
 
 function neighboursOf(tileIdx) {
   return tileByIndex.get(tileIdx)?.n ?? [];
-}
-
-function openSegments(tileIdx, buildingSet) {
-  const open = [];
-  const sides = sidesOf(tileIdx);
-  for (let s = 0; s < sides; s++) {
-    if (!buildingSet.has(segKey(tileIdx, s))) open.push(s);
-  }
-  return open;
-}
-
-/** Per-tile through-street (Requirement 4). */
-function hasThroughStreet(tileIdx, buildingSet) {
-  const open = openSegments(tileIdx, buildingSet);
-  if (open.length === 0) return false;
-  const openSet = new Set(open);
-  const seen = new Set();
-  const sides = sidesOf(tileIdx);
-  const nbrs = neighboursOf(tileIdx);
-
-  for (const start of open) {
-    if (seen.has(start)) continue;
-    const stack = [start];
-    seen.add(start);
-    let passableFaces = 0;
-    while (stack.length) {
-      const seg = stack.pop();
-      const nbIdx = nbrs[seg];
-      if (nbIdx !== undefined && groundPassable(nbIdx)) passableFaces++;
-      for (const adj of intraHexNeighbours(sides, seg)) {
-        if (openSet.has(adj) && !seen.has(adj)) {
-          seen.add(adj);
-          stack.push(adj);
-        }
-      }
-    }
-    if (passableFaces >= 2) return true;
-  }
-  return false;
-}
-
-/** Whole-city external reachability (Requirement 5). */
-function findOrphanedPockets(cityHexes, buildingSet) {
-  const cityHexSet = new Set(cityHexes);
-  const seen = new Set();
-  const orphanedHexes = new Set();
-
-  for (const hexIndex of cityHexes) {
-    if (!tileByIndex.has(hexIndex)) continue;
-    for (const seg of openSegments(hexIndex, buildingSet)) {
-      const startKey = segKey(hexIndex, seg);
-      if (seen.has(startKey)) continue;
-
-      const component = [];
-      const stack = [{ tileIndex: hexIndex, segment: seg }];
-      seen.add(startKey);
-      let hasExit = false;
-
-      while (stack.length) {
-        const node = stack.pop();
-        component.push(segKey(node.tileIndex, node.segment));
-        const sidesA = sidesOf(node.tileIndex);
-        const nbrsA = neighboursOf(node.tileIndex);
-
-        for (const adj of intraHexNeighbours(sidesA, node.segment)) {
-          const k = segKey(node.tileIndex, adj);
-          if (!buildingSet.has(k) && !seen.has(k)) {
-            seen.add(k);
-            stack.push({ tileIndex: node.tileIndex, segment: adj });
-          }
-        }
-
-        const nbIdx = nbrsA[node.segment];
-        if (nbIdx === undefined || !tileByIndex.has(nbIdx)) continue;
-
-        if (cityHexSet.has(nbIdx)) {
-          const facing = neighboursOf(nbIdx).indexOf(node.tileIndex);
-          if (facing >= 0) {
-            const k = segKey(nbIdx, facing);
-            if (!buildingSet.has(k) && !seen.has(k)) {
-              seen.add(k);
-              stack.push({ tileIndex: nbIdx, segment: facing });
-            }
-          }
-        } else if (groundPassable(nbIdx)) {
-          hasExit = true;
-        }
-      }
-
-      if (!hasExit) {
-        for (const key of component) orphanedHexes.add(Number(key.split(':')[0]));
-      }
-    }
-  }
-  return [...orphanedHexes];
 }
 
 /** Per-segment steepness in radians (from wire field `ss`). Falls back to 0. */
@@ -251,17 +152,8 @@ function validatePlacement(state, tileIdx, segment, founding) {
     if (!adjacent) return false;
   }
 
-  // Simulate.
-  const after = new Set(state.buildingSet);
-  after.add(key);
-
-  if (!hasThroughStreet(tileIdx, after)) return false;
-
-  const cityHexes = state.cityHexes.includes(tileIdx)
-    ? state.cityHexes
-    : [...state.cityHexes, tileIdx];
-  if (findOrphanedPockets(cityHexes, after).length > 0) return false;
-
+  // No through-street or external-reachability gate — placement inside a
+  // buildable cluster is otherwise unrestricted (Segment-Based Movement spec).
   return true;
 }
 
@@ -528,7 +420,8 @@ const BUILDING_LOADOUTS = [
 /**
  * Populate a city: own a contiguous footprint of buildable hexes around the
  * capital and greedily fill segments with buildings, validating every single
- * placement through the street-navigation rules. Returns the owned hexes.
+ * placement through the A2 rules (occupancy/steepness/contiguity). Returns
+ * the owned hexes.
  */
 function populateCity(factionId, capIdx, radius, maxBuildings) {
   const layers = bfsLandLayers(capIdx, radius + 1);
@@ -689,9 +582,9 @@ const ownedByFaction = new Map(); // factionId → ownedHexes[]
 // player-capital tile; the well/refinery sit on open-map tiles. Buildings and
 // garrison/army units must never share a segment with these structures (the
 // "a hub can't share a segment with an existing building" rule). Adding each
-// occupied segment to `buildingSet` makes every placement check (validatePlacement,
-// through-street, orphaned-pocket, firstFreeSegment) treat it as blocked, so the
-// founding building and every later building/unit avoid it.
+// occupied segment to `buildingSet` makes every placement check
+// (validatePlacement, firstFreeSegment) treat it as blocked, so the founding
+// building and every later building/unit avoid it.
 // ---------------------------------------------------------------------------
 // Tiles hosting a seeded Oil_Well or Refinery. These are map-only structures that
 // must NOT sit inside a city, so populateCity excludes them from a city footprint

@@ -3,7 +3,8 @@
  *
  * Validates placements with the SAME pure rules the server uses
  * (`shared/buildings.ts`), so the client never disagrees with the
- * authoritative engine (Requirement 6 / 7.3). It also handles:
+ * authoritative engine (Requirement 6 / 7.3). Placement inside a city is
+ * otherwise unrestricted (Segment-Based Movement spec) — it also handles:
  *   - founding any city that loaded without a building (so old saves and
  *     bundled scenarios still get a starting building — Requirement 1);
  *   - committing a construction, mutating WorldData in place;
@@ -80,9 +81,9 @@ export function validatePlacement(
 /**
  * Build a context where the city's PLANNED buildings count as real ones. Used
  * by the City Design planner so planned placements honour the same rules
- * (contiguity, through-street, external reachability) as actual construction —
- * planned buildings can extend off other planned buildings, and the planned
- * hexes join the city footprint.
+ * (occupancy, contiguity) as actual construction — planned buildings can
+ * extend off other planned buildings, and the planned hexes join the city
+ * footprint.
  */
 export function makePlannedContext(
   world: WorldData,
@@ -104,7 +105,7 @@ export function makePlannedContext(
 
 /**
  * Validate a planned placement against the current plan + actual buildings.
- * Because buildings only ever shrink the open-segment set, if this single
+ * Because occupancy only ever shrinks the free-segment set, if this single
  * placement is legal against the existing (legal) union, the whole plan stays
  * legal — so callers can validate incrementally per add.
  */

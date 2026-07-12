@@ -121,9 +121,9 @@ export function clearCityPlan(seed: number, cityId: string): void {
  * Re-prune a city's plan so every planned building stays contiguous with the
  * actual city. Removing a planned building can orphan others that only extended
  * off it; those are dropped (cascading) until the plan is fully connected to an
- * actual faction building via hex adjacency. Through-street/reachability cannot
- * break on removal (fewer buildings = more open segments), so contiguity is the
- * only invariant a removal can violate.
+ * actual faction building via hex adjacency. Contiguity is the only invariant a
+ * removal can violate — placement is otherwise unrestricted (Segment-Based
+ * Movement spec), so there is no through-street/reachability rule to re-check.
  *
  * Returns the number of planned buildings pruned.
  */

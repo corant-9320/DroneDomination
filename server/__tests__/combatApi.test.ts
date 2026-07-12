@@ -74,8 +74,8 @@ function adjacentTiles(elev0 = 'lowlands', elev1 = 'lowlands'): WireTile[] {
   ];
 }
 
-function wu(id: string, ownerId: string, tileIndex: number, attributes: UnitAttributes, hp: number): WireUnit {
-  return { id, label: id.toUpperCase(), ownerId, tileIndex, segment: 0, facing: 0, attributes, currentHealth: hp };
+function wu(id: string, ownerId: string, tileIndex: number, attributes: UnitAttributes, hp: number, segment = 0): WireUnit {
+  return { id, label: id.toUpperCase(), ownerId, tileIndex, segment, facing: 0, attributes, currentHealth: hp };
 }
 
 function buildCtx(attackerAttrs: UnitAttributes, targetAttrs: UnitAttributes): CombatContext {
@@ -239,7 +239,12 @@ describe('combatApi — end-to-end wiring', () => {
       path: [0, 1],
       units: [
         wu('drone', 'p1', 0, baseAttrs({ flightMovement: 5 }), 50),
-        wu('aa', 'p2', 1, baseAttrs({ antiAir: 5, wheeledMovement: 1 }), 50),
+        // Segment 1 (not 0): tile1's only cross-hex entry from tile0 is segment
+        // 0 (adjacentTiles' fixture pads unused neighbour slots as self-loops),
+        // so occupying segment 0 would seal tile1 off entirely under B2-B4
+        // occupancy gating. Reaction fire is tile-based (not segment-based),
+        // so the AA unit still reacts once the drone lands anywhere on tile1.
+        wu('aa', 'p2', 1, baseAttrs({ antiAir: 5, wheeledMovement: 1 }), 50, 1),
       ],
       tiles: adjacentTiles(),
     });

@@ -77,15 +77,16 @@ export function isInWeaponRange(
 }
 
 /**
- * Build a set of segment keys occupied by enemy units.
+ * Build a set of segment keys occupied by ANY unit other than `excludeUnitId`
+ * (the mover). A segment holds at most one occupant total, so friendly units
+ * block movement exactly like enemy units (Segment-Based Movement spec, B2).
  * Key encoding: tileIndex * 6 + segment.
  */
-export function buildEnemySegmentSet(world: WorldData, ownerId: string): Set<number> {
+export function buildOccupiedSegmentSet(world: WorldData, excludeUnitId?: string): Set<number> {
   const set = new Set<number>();
   for (const u of world.units) {
-    if (u.ownerId !== ownerId) {
-      set.add(u.tileIndex * 6 + u.segment);
-    }
+    if (u.id === excludeUnitId) continue;
+    set.add(u.tileIndex * 6 + u.segment);
   }
   return set;
 }
@@ -166,7 +167,9 @@ export function computeMovementRange(
   const startSegment = unit.segment;
   const tiles     = world.tiles;
 
-  const enemySegments = buildEnemySegmentSet(world, unit.ownerId);
+  // A segment holds at most one occupant regardless of faction (B2) — block
+  // on ANY other unit's segment, not just enemies. Excludes the mover itself.
+  const occupiedByUnit = buildOccupiedSegmentSet(world, unit.id);
   // Ground units cannot pass through building-occupied segments (road-only
   // pathing within cities). Drones fly over buildings freely.
   const buildingSegments = mode !== 'flight' ? buildBuildingSegmentSet(world) : null;
@@ -197,7 +200,7 @@ export function computeMovementRange(
       for (let delta = -1; delta <= 1; delta += 2) {
         const adjSeg = ((currentSeg + delta) % 6 + 6) % 6;
         const adjKey = encode(currentTile, adjSeg);
-        if (enemySegments.has(adjKey)) continue;
+        if (occupiedByUnit.has(adjKey)) continue;
         if (buildingSegments?.has(adjKey)) continue;
         const newCost = currentCost + sharedSegmentCost(tile, adjSeg, mode);
         if (newCost > remainingMP) continue;
@@ -222,7 +225,7 @@ export function computeMovementRange(
           const candidateSegs = [arrival, (arrival + 1) % 6, (arrival + 5) % 6];
           for (const cSeg of candidateSegs) {
             const nKey = encode(neighbour, cSeg);
-            if (enemySegments.has(nKey)) continue;
+            if (occupiedByUnit.has(nKey)) continue;
             if (buildingSegments?.has(nKey)) continue;
             const existing = dist.get(nKey);
             if (existing === undefined || newCost < existing) {
@@ -290,7 +293,7 @@ export function computeMovementRange(
   // Reachable segments
   for (const [key, cost] of dist) {
     if (key === startKey) continue;
-    if (enemySegments.has(key)) continue;
+    if (occupiedByUnit.has(key)) continue;
     if (buildingSegments?.has(key)) continue;
     const zone: 'attackReady' | 'moveOnly' =
       remainingMP - cost >= 1 ? 'attackReady' : 'moveOnly';
@@ -342,7 +345,7 @@ export function computeMovementRange(
         for (const arTile of attackReadyTiles) {
           const arTileData = tiles[arTile];
           for (let arSeg = 0; arSeg < arTileData.s; arSeg++) {
-            if (enemySegments.has(arTile * 6 + arSeg)) continue;
+            if (occupiedByUnit.has(arTile * 6 + arSeg)) continue;
             const d = sharedSegmentDistance(rangeTiles, arTile, arSeg, candTile, seg);
             if (d <= threshold) {
               maxAttackSegments.add(segKey);

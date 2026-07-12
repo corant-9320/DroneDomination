@@ -547,9 +547,9 @@ console.log(`Generated ${units.length} units total (${units.length / 2} per side
 // Adds a small cluster of buildings on the player capital hex so the 3D /
 // first-person and 2D views show an actual city (the same layout the City
 // Design planner presents as ghost segments). The buildings form a contiguous
-// arc, leaving the remaining segments open as a through-street. Each gets a
-// different equipment loadout so the building model's add-ons (gun barrel,
-// EW dish, repair bay…) are visible.
+// arc, leaving the remaining segments open. Each gets a different equipment
+// loadout so the building model's add-ons (gun barrel, EW dish, repair bay…)
+// are visible.
 //
 // A spare player unit is parked on an open segment of the same hex so you can
 // jump straight into first-person there (Home → select it → press V) and see

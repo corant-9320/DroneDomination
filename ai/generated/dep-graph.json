@@ -147,6 +147,7 @@
         "client/terrainRelief.ts",
         "client/terrainWater.ts",
         "client/localMapUnits.ts",
+        "client/logisticsSpriteRenderer.ts",
         "client/unitIcons.ts",
         "client/unitRenderer.ts",
         "client/detailPanel.ts",
@@ -228,7 +229,6 @@
         "client/logisticsModelTransport.ts",
         "client/logisticsPanel.ts",
         "server/generateApi.ts",
-        "src/world/generate.ts",
         "src/world/logisticsGen.ts",
         "src/world/logistics.ts",
         "server/logisticsApi.ts",
@@ -495,6 +495,41 @@
         },
         {
           "dynamic": false,
+          "module": "../shared/segmentGraph.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "shared/segmentGraph.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "../shared/segmentGraph.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "type-only",
+            "import"
+          ],
+          "resolved": "shared/segmentGraph.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
           "module": "./aiPlayback.js",
           "moduleSystem": "es6",
           "exoticallyRequired": false,
@@ -719,6 +754,18 @@
       "valid": true
     },
     {
+      "source": "shared/segmentGraph.ts",
+      "dependencies": [],
+      "dependents": [
+        "client/aiTurn.ts",
+        "server/aiTurnApi.ts",
+        "src/world/movement.ts",
+        "server/combatApi.ts"
+      ],
+      "orphan": false,
+      "valid": true
+    },
+    {
       "source": "client/buildingRenderer.ts",
       "dependencies": [
         {
@@ -840,17 +887,18 @@
         "client/unitModelLimbed.ts",
         "client/unitModelWheeled.ts",
         "client/buildingRefitModal.ts",
-        "client/unitRenderer.ts",
-        "client/firstPersonTerrain.ts",
-        "client/firstPersonView.ts",
-        "client/globe.ts",
         "client/logisticsModel.ts",
         "client/logisticsModelBridge.ts",
         "client/logisticsModelHub.ts",
         "client/logisticsModelRefinery.ts",
         "client/logisticsModelWell.ts",
+        "client/logisticsSpriteRenderer.ts",
+        "client/unitRenderer.ts",
+        "client/firstPersonTerrain.ts",
+        "client/firstPersonView.ts",
         "client/logisticsModelRoad.ts",
         "client/logisticsModelTransport.ts",
+        "client/globe.ts",
         "client/logisticsRenderer.ts",
         "client/refitModal.ts",
         "client/unitDesigner.ts"
@@ -1799,6 +1847,7 @@
         "client/localMapTerrain.ts",
         "client/terrainContext.ts",
         "client/localMapUnits.ts",
+        "client/logisticsSpriteRenderer.ts",
         "client/unitRenderer.ts",
         "client/detailPanel.ts",
         "client/firstPersonTerrain.ts",
@@ -4720,6 +4769,41 @@
         },
         {
           "dynamic": false,
+          "module": "./logisticsModel.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "type-only",
+            "import"
+          ],
+          "resolved": "client/logisticsModel.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "./logisticsSpriteRenderer.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/logisticsSpriteRenderer.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
           "module": "./unitIcons.js",
           "moduleSystem": "es6",
           "exoticallyRequired": false,
@@ -4757,6 +4841,378 @@
         "client/localMap.ts",
         "client/firstPersonView.ts",
         "client/keyboardShortcuts.ts"
+      ],
+      "orphan": false,
+      "valid": true
+    },
+    {
+      "source": "client/logisticsModel.ts",
+      "dependencies": [
+        {
+          "dynamic": false,
+          "module": "./logisticsModelBridge.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/logisticsModelBridge.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "./logisticsModelHub.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/logisticsModelHub.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "./logisticsModelRefinery.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/logisticsModelRefinery.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "./logisticsModelWell.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/logisticsModelWell.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "three",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "npm",
+            "import"
+          ],
+          "resolved": "node_modules/three/build/three.module.js",
+          "coreModule": false,
+          "followable": false,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": true,
+          "circular": false,
+          "valid": true
+        }
+      ],
+      "dependents": [
+        "client/localMapUnits.ts",
+        "client/logisticsSpriteRenderer.ts",
+        "client/firstPersonView.ts",
+        "client/logisticsRenderer.ts"
+      ],
+      "orphan": false,
+      "valid": true
+    },
+    {
+      "source": "client/logisticsModelBridge.ts",
+      "dependencies": [
+        {
+          "dynamic": false,
+          "module": "./unitModelHelpers.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/unitModelHelpers.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "three",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "npm",
+            "import"
+          ],
+          "resolved": "node_modules/three/build/three.module.js",
+          "coreModule": false,
+          "followable": false,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": true,
+          "circular": false,
+          "valid": true
+        }
+      ],
+      "dependents": [
+        "client/logisticsModel.ts"
+      ],
+      "orphan": false,
+      "valid": true
+    },
+    {
+      "source": "client/logisticsModelHub.ts",
+      "dependencies": [
+        {
+          "dynamic": false,
+          "module": "./unitModelHelpers.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/unitModelHelpers.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "three",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "npm",
+            "import"
+          ],
+          "resolved": "node_modules/three/build/three.module.js",
+          "coreModule": false,
+          "followable": false,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": true,
+          "circular": false,
+          "valid": true
+        }
+      ],
+      "dependents": [
+        "client/logisticsModel.ts"
+      ],
+      "orphan": false,
+      "valid": true
+    },
+    {
+      "source": "client/logisticsModelRefinery.ts",
+      "dependencies": [
+        {
+          "dynamic": false,
+          "module": "./unitModelHelpers.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/unitModelHelpers.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "three",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "npm",
+            "import"
+          ],
+          "resolved": "node_modules/three/build/three.module.js",
+          "coreModule": false,
+          "followable": false,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": true,
+          "circular": false,
+          "valid": true
+        }
+      ],
+      "dependents": [
+        "client/logisticsModel.ts"
+      ],
+      "orphan": false,
+      "valid": true
+    },
+    {
+      "source": "client/logisticsModelWell.ts",
+      "dependencies": [
+        {
+          "dynamic": false,
+          "module": "./unitModelHelpers.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/unitModelHelpers.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "three",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "npm",
+            "import"
+          ],
+          "resolved": "node_modules/three/build/three.module.js",
+          "coreModule": false,
+          "followable": false,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": true,
+          "circular": false,
+          "valid": true
+        }
+      ],
+      "dependents": [
+        "client/logisticsModel.ts"
+      ],
+      "orphan": false,
+      "valid": true
+    },
+    {
+      "source": "client/logisticsSpriteRenderer.ts",
+      "dependencies": [
+        {
+          "dynamic": false,
+          "module": "./colors.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/colors.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "./logisticsModel.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/logisticsModel.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "./logisticsModel.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "type-only",
+            "import"
+          ],
+          "resolved": "client/logisticsModel.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "./worldData.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "type-only",
+            "import"
+          ],
+          "resolved": "client/worldData.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "three",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "npm",
+            "import"
+          ],
+          "resolved": "node_modules/three/build/three.module.js",
+          "coreModule": false,
+          "followable": false,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": true,
+          "circular": false,
+          "valid": true
+        }
+      ],
+      "dependents": [
+        "client/localMapUnits.ts",
+        "client/main.ts"
       ],
       "orphan": false,
       "valid": true
@@ -5655,6 +6111,57 @@
         },
         {
           "dynamic": false,
+          "module": "./logisticsModel.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/logisticsModel.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "./logisticsModelRoad.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/logisticsModelRoad.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "./logisticsModelTransport.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/logisticsModelTransport.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
           "module": "./terrainTextures.js",
           "moduleSystem": "es6",
           "exoticallyRequired": false,
@@ -5778,6 +6285,131 @@
       "dependents": [
         "client/gameContext.ts",
         "client/main.ts"
+      ],
+      "orphan": false,
+      "valid": true
+    },
+    {
+      "source": "client/logisticsModelRoad.ts",
+      "dependencies": [
+        {
+          "dynamic": false,
+          "module": "../artifacts/road.webp",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "artifacts/road.webp",
+          "coreModule": false,
+          "followable": false,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "./firstPersonTerrain.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/firstPersonTerrain.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "three",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "npm",
+            "import"
+          ],
+          "resolved": "node_modules/three/build/three.module.js",
+          "coreModule": false,
+          "followable": false,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": true,
+          "circular": false,
+          "valid": true
+        }
+      ],
+      "dependents": [
+        "client/firstPersonView.ts",
+        "client/logisticsRenderer.ts"
+      ],
+      "orphan": false,
+      "valid": true
+    },
+    {
+      "source": "client/logisticsModelTransport.ts",
+      "dependencies": [
+        {
+          "dynamic": false,
+          "module": "../shared/logisticsConstants.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "type-only",
+            "import"
+          ],
+          "resolved": "shared/logisticsConstants.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "./unitModelHelpers.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/unitModelHelpers.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "three",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "npm",
+            "import"
+          ],
+          "resolved": "node_modules/three/build/three.module.js",
+          "coreModule": false,
+          "followable": false,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": true,
+          "circular": false,
+          "valid": true
+        }
+      ],
+      "dependents": [
+        "client/firstPersonView.ts",
+        "client/logisticsRenderer.ts"
       ],
       "orphan": false,
       "valid": true
@@ -6692,400 +7324,6 @@
       "valid": true
     },
     {
-      "source": "client/logisticsModel.ts",
-      "dependencies": [
-        {
-          "dynamic": false,
-          "module": "./logisticsModelBridge.js",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "local",
-            "import"
-          ],
-          "resolved": "client/logisticsModelBridge.ts",
-          "coreModule": false,
-          "followable": true,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": false,
-          "circular": false,
-          "valid": true
-        },
-        {
-          "dynamic": false,
-          "module": "./logisticsModelHub.js",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "local",
-            "import"
-          ],
-          "resolved": "client/logisticsModelHub.ts",
-          "coreModule": false,
-          "followable": true,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": false,
-          "circular": false,
-          "valid": true
-        },
-        {
-          "dynamic": false,
-          "module": "./logisticsModelRefinery.js",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "local",
-            "import"
-          ],
-          "resolved": "client/logisticsModelRefinery.ts",
-          "coreModule": false,
-          "followable": true,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": false,
-          "circular": false,
-          "valid": true
-        },
-        {
-          "dynamic": false,
-          "module": "./logisticsModelWell.js",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "local",
-            "import"
-          ],
-          "resolved": "client/logisticsModelWell.ts",
-          "coreModule": false,
-          "followable": true,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": false,
-          "circular": false,
-          "valid": true
-        },
-        {
-          "dynamic": false,
-          "module": "three",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "npm",
-            "import"
-          ],
-          "resolved": "node_modules/three/build/three.module.js",
-          "coreModule": false,
-          "followable": false,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": true,
-          "circular": false,
-          "valid": true
-        }
-      ],
-      "dependents": [
-        "client/logisticsRenderer.ts"
-      ],
-      "orphan": false,
-      "valid": true
-    },
-    {
-      "source": "client/logisticsModelBridge.ts",
-      "dependencies": [
-        {
-          "dynamic": false,
-          "module": "./unitModelHelpers.js",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "local",
-            "import"
-          ],
-          "resolved": "client/unitModelHelpers.ts",
-          "coreModule": false,
-          "followable": true,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": false,
-          "circular": false,
-          "valid": true
-        },
-        {
-          "dynamic": false,
-          "module": "three",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "npm",
-            "import"
-          ],
-          "resolved": "node_modules/three/build/three.module.js",
-          "coreModule": false,
-          "followable": false,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": true,
-          "circular": false,
-          "valid": true
-        }
-      ],
-      "dependents": [
-        "client/logisticsModel.ts"
-      ],
-      "orphan": false,
-      "valid": true
-    },
-    {
-      "source": "client/logisticsModelHub.ts",
-      "dependencies": [
-        {
-          "dynamic": false,
-          "module": "./unitModelHelpers.js",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "local",
-            "import"
-          ],
-          "resolved": "client/unitModelHelpers.ts",
-          "coreModule": false,
-          "followable": true,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": false,
-          "circular": false,
-          "valid": true
-        },
-        {
-          "dynamic": false,
-          "module": "three",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "npm",
-            "import"
-          ],
-          "resolved": "node_modules/three/build/three.module.js",
-          "coreModule": false,
-          "followable": false,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": true,
-          "circular": false,
-          "valid": true
-        }
-      ],
-      "dependents": [
-        "client/logisticsModel.ts"
-      ],
-      "orphan": false,
-      "valid": true
-    },
-    {
-      "source": "client/logisticsModelRefinery.ts",
-      "dependencies": [
-        {
-          "dynamic": false,
-          "module": "./unitModelHelpers.js",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "local",
-            "import"
-          ],
-          "resolved": "client/unitModelHelpers.ts",
-          "coreModule": false,
-          "followable": true,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": false,
-          "circular": false,
-          "valid": true
-        },
-        {
-          "dynamic": false,
-          "module": "three",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "npm",
-            "import"
-          ],
-          "resolved": "node_modules/three/build/three.module.js",
-          "coreModule": false,
-          "followable": false,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": true,
-          "circular": false,
-          "valid": true
-        }
-      ],
-      "dependents": [
-        "client/logisticsModel.ts"
-      ],
-      "orphan": false,
-      "valid": true
-    },
-    {
-      "source": "client/logisticsModelWell.ts",
-      "dependencies": [
-        {
-          "dynamic": false,
-          "module": "./unitModelHelpers.js",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "local",
-            "import"
-          ],
-          "resolved": "client/unitModelHelpers.ts",
-          "coreModule": false,
-          "followable": true,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": false,
-          "circular": false,
-          "valid": true
-        },
-        {
-          "dynamic": false,
-          "module": "three",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "npm",
-            "import"
-          ],
-          "resolved": "node_modules/three/build/three.module.js",
-          "coreModule": false,
-          "followable": false,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": true,
-          "circular": false,
-          "valid": true
-        }
-      ],
-      "dependents": [
-        "client/logisticsModel.ts"
-      ],
-      "orphan": false,
-      "valid": true
-    },
-    {
-      "source": "client/logisticsModelRoad.ts",
-      "dependencies": [
-        {
-          "dynamic": false,
-          "module": "../artifacts/road.webp",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "local",
-            "import"
-          ],
-          "resolved": "artifacts/road.webp",
-          "coreModule": false,
-          "followable": false,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": false,
-          "circular": false,
-          "valid": true
-        },
-        {
-          "dynamic": false,
-          "module": "./firstPersonTerrain.js",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "local",
-            "import"
-          ],
-          "resolved": "client/firstPersonTerrain.ts",
-          "coreModule": false,
-          "followable": true,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": false,
-          "circular": false,
-          "valid": true
-        },
-        {
-          "dynamic": false,
-          "module": "three",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "npm",
-            "import"
-          ],
-          "resolved": "node_modules/three/build/three.module.js",
-          "coreModule": false,
-          "followable": false,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": true,
-          "circular": false,
-          "valid": true
-        }
-      ],
-      "dependents": [
-        "client/logisticsRenderer.ts"
-      ],
-      "orphan": false,
-      "valid": true
-    },
-    {
-      "source": "client/logisticsModelTransport.ts",
-      "dependencies": [
-        {
-          "dynamic": false,
-          "module": "../shared/logisticsConstants.js",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "local",
-            "type-only",
-            "import"
-          ],
-          "resolved": "shared/logisticsConstants.ts",
-          "coreModule": false,
-          "followable": true,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": false,
-          "circular": false,
-          "valid": true
-        },
-        {
-          "dynamic": false,
-          "module": "./unitModelHelpers.js",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "local",
-            "import"
-          ],
-          "resolved": "client/unitModelHelpers.ts",
-          "coreModule": false,
-          "followable": true,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": false,
-          "circular": false,
-          "valid": true
-        },
-        {
-          "dynamic": false,
-          "module": "three",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "npm",
-            "import"
-          ],
-          "resolved": "node_modules/three/build/three.module.js",
-          "coreModule": false,
-          "followable": false,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": true,
-          "circular": false,
-          "valid": true
-        }
-      ],
-      "dependents": [
-        "client/logisticsRenderer.ts"
-      ],
-      "orphan": false,
-      "valid": true
-    },
-    {
       "source": "client/logisticsPanel.ts",
       "dependencies": [
         {
@@ -7508,6 +7746,23 @@
             "import"
           ],
           "resolved": "client/localMap.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "./logisticsSpriteRenderer.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "client/logisticsSpriteRenderer.ts",
           "coreModule": false,
           "followable": true,
           "couldNotResolve": false,
@@ -8274,6 +8529,23 @@
         },
         {
           "dynamic": false,
+          "module": "../shared/segmentGraph.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "shared/segmentGraph.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
           "module": "../src/world/combat.js",
           "moduleSystem": "es6",
           "exoticallyRequired": false,
@@ -8996,6 +9268,23 @@
         },
         {
           "dynamic": false,
+          "module": "../../shared/segmentGraph.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "shared/segmentGraph.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
           "module": "./combat.js",
           "moduleSystem": "es6",
           "exoticallyRequired": false,
@@ -9179,6 +9468,23 @@
             "import"
           ],
           "resolved": "shared/movementConstants.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "../shared/segmentGraph.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "shared/segmentGraph.ts",
           "coreModule": false,
           "followable": true,
           "couldNotResolve": false,
@@ -9543,6 +9849,23 @@
         },
         {
           "dynamic": false,
+          "module": "../src/world/logisticsSeed.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "src/world/logisticsSeed.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
           "module": "../src/world/pathfinding.js",
           "moduleSystem": "es6",
           "exoticallyRequired": false,
@@ -9654,7 +9977,6 @@
       ],
       "dependents": [
         "server/generateApi.ts",
-        "src/world/validate.ts",
         "src/generateCli.ts",
         "src/world/index.ts"
       ],
@@ -9664,23 +9986,6 @@
     {
       "source": "src/world/generate.ts",
       "dependencies": [
-        {
-          "dynamic": false,
-          "module": "../../shared/logisticsConstants.js",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "local",
-            "import"
-          ],
-          "resolved": "shared/logisticsConstants.ts",
-          "coreModule": false,
-          "followable": true,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": false,
-          "circular": false,
-          "valid": true
-        },
         {
           "dynamic": false,
           "module": "./geodesic.js",
@@ -10055,7 +10360,9 @@
         }
       ],
       "dependents": [
+        "server/generateApi.ts",
         "src/world/generate.ts",
+        "server/matchApi.ts",
         "src/world/index.ts"
       ],
       "orphan": false,
@@ -10289,23 +10596,6 @@
     {
       "source": "src/world/validate.ts",
       "dependencies": [
-        {
-          "dynamic": false,
-          "module": "./buildings.js",
-          "moduleSystem": "es6",
-          "exoticallyRequired": false,
-          "dependencyTypes": [
-            "local",
-            "import"
-          ],
-          "resolved": "src/world/buildings.ts",
-          "coreModule": false,
-          "followable": true,
-          "couldNotResolve": false,
-          "matchesDoNotFollow": false,
-          "circular": false,
-          "valid": true
-        },
         {
           "dynamic": false,
           "module": "./generate.js",
@@ -10600,6 +10890,23 @@
             "import"
           ],
           "resolved": "src/world/logistics.ts",
+          "coreModule": false,
+          "followable": true,
+          "couldNotResolve": false,
+          "matchesDoNotFollow": false,
+          "circular": false,
+          "valid": true
+        },
+        {
+          "dynamic": false,
+          "module": "../src/world/logisticsSeed.js",
+          "moduleSystem": "es6",
+          "exoticallyRequired": false,
+          "dependencyTypes": [
+            "local",
+            "import"
+          ],
+          "resolved": "src/world/logisticsSeed.ts",
           "coreModule": false,
           "followable": true,
           "couldNotResolve": false,
@@ -11599,8 +11906,8 @@
     "warn": 0,
     "info": 0,
     "ignore": 0,
-    "totalCruised": 147,
-    "totalDependenciesCruised": 534,
+    "totalCruised": 149,
+    "totalDependenciesCruised": 550,
     "optionsUsed": {
       "baseDir": "C:\\Kiro\\DroneDomination",
       "combinedDependencies": false,

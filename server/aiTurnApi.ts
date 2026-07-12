@@ -49,6 +49,10 @@ import {
 } from '../shared/rangeCheck.js';
 import { graphDistance, findPath as sharedFindPath, type PathTile } from '../shared/pathfinding.js';
 import { getMovementMode, segmentCost } from '../shared/movementConstants.js';
+import {
+  farthestAffordablePrefix,
+  type SegGraphTile,
+} from '../shared/segmentGraph.js';
 
 // ---------------------------------------------------------------------------
 // Request type
@@ -136,38 +140,38 @@ function findPath(
 }
 
 /**
+ * Adapter: exposes SegGraphTile shape for the server Tile type so the shared
+ * segmentGraph primitives work without any type divergence.
+ */
+interface ServerSegGraphTile extends SegGraphTile {
+  original: Tile;
+}
+
+function toServerSegGraphTiles(tiles: Tile[]): ServerSegGraphTile[] {
+  return tiles.map((t) => ({ sides: t.sides, neighbours: t.neighbours, original: t }));
+}
+
+/**
  * How many steps along a path the unit can afford, reserving 1 MP for an
- * attack when wantAttack is true. Segment-based cost model — ported verbatim
- * from client/aiTurn.ts (operating on server Tile[] instead of TileData[]).
+ * attack when wantAttack is true. Segment-based, occupancy-gated (B5).
+ * Uses farthestAffordablePrefix from shared/segmentGraph.ts to mirror the
+ * client/aiTurn.ts logic on the same shared primitive.
  */
 function affordableSteps(tiles: Tile[], path: number[], unit: Unit, wantAttack: boolean): number {
   const totalMP = getMovement(unit);
   const mode = getMovementMode(unit.attributes);
   const reserve = wantAttack ? 1 : 0;
-  let spent = 0;
-  let steps = 0;
-  let currentSegment = unit.segment as number;
+  const segGraphTiles = toServerSegGraphTiles(tiles);
 
-  for (let i = 1; i < path.length; i++) {
-    const departureSeg = tiles[path[i - 1]].neighbours.indexOf(path[i]);
-    const departure = departureSeg >= 0 ? departureSeg : 0;
-    const diff = Math.abs(currentSegment - departure);
-    const pivotSteps = Math.min(diff, 6 - diff);
-    const pivotStepCost = segmentCost(tiles[path[i - 1]], mode);
-    if (pivotStepCost === Infinity) break;
-    spent += pivotSteps * pivotStepCost;
-    if (spent + reserve > totalMP) break;
-
-    const crossCost = segmentCost(tiles[path[i]], mode, tiles[path[i - 1]]);
-    if (crossCost === Infinity) break;
-    spent += crossCost;
-    if (spent + reserve > totalMP) break;
-
-    const arrivalSeg = tiles[path[i]].neighbours.indexOf(path[i - 1]);
-    currentSegment = arrivalSeg >= 0 ? arrivalSeg : 0;
-    steps++;
-  }
-  return steps;
+  const r = farthestAffordablePrefix(
+    segGraphTiles,
+    { tileIndex: unit.tileIndex, segment: unit.segment },
+    path,
+    (tile, segment) => segmentCost(tile.original, segment, mode),
+    (_t, _s) => false, // tile-level occupied set handles gross avoidance; segment-level here
+    totalMP - reserve,
+  );
+  return r.tileCount - 1;
 }
 
 // ---------------------------------------------------------------------------

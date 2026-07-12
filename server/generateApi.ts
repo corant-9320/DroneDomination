@@ -12,6 +12,7 @@ import { World, City } from '../src/world/types.js';
 import { graphDistance } from '../src/world/pathfinding.js';
 import { spawnInitialUnits } from '../src/world/spawn.js';
 import { foundCities } from '../src/world/buildings.js';
+import { seedDefaultLogisticsNetwork } from '../src/world/logisticsSeed.js';
 import { CITY_COUNT } from '../src/world/generate.js';
 import { DEFAULT_SEED } from '../shared/logisticsConstants.js';
 
@@ -99,10 +100,30 @@ export function handleGenerate(config: GenerateConfig): GenerateResult {
   console.log('[DD][api] Spawned %d units for %d cities', units.length, filteredCities.length);
 
   // Found each active city: marks the capital city-owned and places one free
-  // building on a through-street-preserving segment (Requirement 1).
+  // building on the first A2-legal segment (Requirement 1; placement is
+  // otherwise unrestricted inside a city — Segment-Based Movement spec).
   world.cities = filteredCities;
   foundCities(world, filteredCities);
   console.log('[DD][api] Founded %d cities with %d buildings', filteredCities.length, world.buildings.length);
+
+  // Seed the example logistics network LAST — after cities are founded (buildings
+  // placed) and units spawned — so it is built in the same sequence and subject to
+  // the same placement/route rules a real game is. It seats structures on segments
+  // free of buildings/units and routes around built-up tiles (DEFAULT_SEED only;
+  // Oil Logistics System — Req 13). The authoritative match starts with empty
+  // logistics regardless; this network ships in the compact world for rendering.
+  if (seed === DEFAULT_SEED && filteredCities.length > 0) {
+    const homeFactionId = playerCity.ownerId ?? playerCity.id;
+    const occupied = new Set<number>();
+    for (const b of world.buildings) occupied.add(b.tileIndex * 6 + b.segment);
+    for (const u of world.units) occupied.add(u.tileIndex * 6 + u.segment);
+    seedDefaultLogisticsNetwork(world.logistics!, world.tiles, homeFactionId, occupied);
+    const l = world.logistics!;
+    console.log(
+      '[DD][api] Seeded logistics after founding: %d well(s), %d refinery(ies), %d route(s), %d hub(s), %d transport(s)',
+      l.wells.length, l.refineries.length, l.routes.length, l.hubs.length, l.transports.length,
+    );
+  }
 
   // Mark player home + carry city ownership (owned hexes) over the wire.
   const compactCities = filteredCities.map((c) => ({

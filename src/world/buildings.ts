@@ -3,11 +3,10 @@
  *
  * Bridges the authoritative `World` to the pure rules in
  * `shared/buildings.ts`, and provides the stateful operations the rest of the
- * server needs: founding a city's free building, committing a construction,
- * and checking city integrity for `npm run validate`.
- *
- * All traversability rules (through-street, external reachability) live in
- * `shared/buildings.ts` and are NOT duplicated here.
+ * server needs: founding a city's free building and committing a
+ * construction. Placement inside a buildable cluster is otherwise
+ * unrestricted (Segment-Based Movement spec) — there is no through-street or
+ * external-reachability integrity check to run here.
  */
 
 import { World, Building, City } from './types.js';
@@ -17,9 +16,6 @@ import {
   ValidateOptions,
   validateBuildingPlacement,
   chooseFoundingSegment,
-  hasThroughStreet,
-  findOrphanedPockets,
-  segKey,
 } from '../../shared/buildings.js';
 
 /** A tile is ground-passable for street purposes when it is not ocean. */
@@ -130,8 +126,9 @@ export function constructBuilding(
 
 /**
  * Found a city: mark the capital hex city-owned and place one free building on
- * a segment that preserves a valid through-street (Requirement 1).
- * Returns the founding building, or null if no legal segment exists.
+ * the first A2-legal segment (Requirement 1, A3 — no through-street
+ * preference). Returns the founding building, or null if no legal segment
+ * exists.
  */
 export function foundCity(world: World, city: City): Building | null {
   const factionId = city.ownerId ?? city.id;
@@ -160,46 +157,4 @@ export function foundCity(world: World, city: City): Building | null {
 /** Found every city in the given list (Requirement 1.1). */
 export function foundCities(world: World, cities: City[] = world.cities): void {
   for (const city of cities) foundCity(world, city);
-}
-
-// ---------------------------------------------------------------------------
-// World-integrity checking (Requirement 6.3)
-// ---------------------------------------------------------------------------
-
-export interface CityIntegrityIssue {
-  cityId: string;
-  kind: 'no-through-street' | 'orphaned-pocket';
-  tiles: number[];
-}
-
-/**
- * Verify that no city violates the through-street (R4) or external
- * reachability (R5) invariants. Returns one issue per violation (empty when
- * every city is valid). Reused by `validateWorld`.
- */
-export function checkCityIntegrity(world: World): CityIntegrityIssue[] {
-  const issues: CityIntegrityIssue[] = [];
-  const allBuildings = new Set(world.buildings.map((b) => segKey(b.tileIndex, b.segment)));
-
-  for (const city of world.cities) {
-    const factionId = city.ownerId ?? city.id;
-    const ctx = makePlacementContext(world, factionId);
-    const hexes = city.ownedHexes ?? [city.tileIndex];
-
-    const noStreet: number[] = [];
-    for (const hex of hexes) {
-      const tile = ctx.getTile(hex);
-      if (tile && !hasThroughStreet(ctx, tile, allBuildings)) noStreet.push(hex);
-    }
-    if (noStreet.length > 0) {
-      issues.push({ cityId: city.id, kind: 'no-through-street', tiles: noStreet });
-    }
-
-    const orphaned = findOrphanedPockets(ctx, hexes, allBuildings);
-    if (orphaned.length > 0) {
-      issues.push({ cityId: city.id, kind: 'orphaned-pocket', tiles: orphaned });
-    }
-  }
-
-  return issues;
 }

@@ -5,8 +5,6 @@ import {
   OccupantPos,
   validateBuildingPlacement,
   chooseFoundingSegment,
-  findOrphanedPockets,
-  segKey,
 } from '../buildings.js';
 
 // ---------------------------------------------------------------------------
@@ -51,14 +49,14 @@ function loneCapital(extra: Record<number, TileSpec> = {}): Record<number, TileS
 }
 
 // ---------------------------------------------------------------------------
-// Founding (Requirement 1)
+// Founding (Requirement 1 / A3)
 // ---------------------------------------------------------------------------
 
 describe('founding', () => {
-  it('chooses a segment that keeps a through-street', () => {
+  it('chooses the first A2-legal segment (no through-street preference)', () => {
     const ctx = makeCtx({ tiles: loneCapital(), cityHexes: [0] });
     const seg = chooseFoundingSegment(ctx, 0);
-    expect(seg).not.toBeNull();
+    expect(seg).toBe(0);
     const result = validateBuildingPlacement(ctx, { tileIndex: 0, segment: seg! }, { founding: true });
     expect(result.legal).toBe(true);
   });
@@ -72,10 +70,10 @@ describe('founding', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Occupancy + legality (Requirement 3)
+// Occupancy + legality (Requirement 3 / A2)
 // ---------------------------------------------------------------------------
 
-describe('placement legality', () => {
+describe('placement legality (A2 rejections still fire)', () => {
   it('rejects a segment occupied by a unit', () => {
     const ctx = makeCtx({
       tiles: loneCapital(),
@@ -126,13 +124,15 @@ describe('placement legality', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Through-street invariant (Requirement 4)
+// Unrestricted in-cluster building (Requirement A1) — placements that used to
+// be rejected as breaks-through-street / orphans-street-network are now legal.
 // ---------------------------------------------------------------------------
 
-describe('through-street invariant', () => {
-  it('rejects a placement that fragments the open segments into singletons', () => {
+describe('unrestricted in-cluster building', () => {
+  it('allows a placement that fragments the open segments into singletons', () => {
     // Buildings on 0 and 2 already; adding 4 leaves open {1,3,5}, each an
-    // isolated single-segment run with only one external face.
+    // isolated single-segment run. Previously rejected as breaks-through-street;
+    // now legal — sealing off segments is the player's own call.
     const ctx = makeCtx({
       tiles: loneCapital(),
       buildings: [
@@ -141,51 +141,33 @@ describe('through-street invariant', () => {
       ],
       cityHexes: [0],
     });
-    expect(validateBuildingPlacement(ctx, { tileIndex: 0, segment: 4 }).reason).toBe('breaks-through-street');
+    expect(validateBuildingPlacement(ctx, { tileIndex: 0, segment: 4 }).legal).toBe(true);
   });
 
-  it('does not count a face onto an impassable neighbour as a street opening', () => {
-    // Only segment 0 faces land (tile 1); all other faces are ocean. A single
-    // building leaves an arc of open segments but only ONE passable face, so no
-    // through-street remains.
+  it('allows founding on a hex with only one passable face (no through-street)', () => {
+    // Only segment 0 faces land (tile 1); all other faces are ocean. Previously
+    // rejected as breaks-through-street; now legal.
     const tiles: Record<number, TileSpec> = {
       0: { neighbours: [1, 2, 3, 4, 5, 6] },
       1: { neighbours: [0] },
     };
     for (let n = 2; n <= 6; n++) tiles[n] = { neighbours: [0], groundPassable: false };
     const ctx = makeCtx({ tiles, cityHexes: [0] });
-    expect(validateBuildingPlacement(ctx, { tileIndex: 0, segment: 3 }, { founding: true }).reason).toBe('breaks-through-street');
+    expect(validateBuildingPlacement(ctx, { tileIndex: 0, segment: 3 }, { founding: true }).legal).toBe(true);
   });
-});
 
-// ---------------------------------------------------------------------------
-// External reachability / no-courtyard invariant (Requirement 5)
-// ---------------------------------------------------------------------------
-
-describe('external reachability', () => {
-  it('flags a two-hex city sealed from the outside as orphaned', () => {
+  it('allows sealing a two-hex city off from the outside world entirely', () => {
     // Tiles 0 and 1 are city hexes joined at segment 0↔0; every other face is
-    // off-map / ocean, so there is no exit to the outside world.
+    // off-map / ocean. Previously rejected as orphans-street-network; now legal
+    // — an unreachable pocket is the player's problem, not an illegal build.
     const ctx = makeCtx({
       tiles: {
         0: { neighbours: [1, 90, 91, 92, 93, 94] },
         1: { neighbours: [0, 95, 96, 97, 98, 99] },
       },
+      buildings: [{ tileIndex: 1, segment: 1, ownerId: 'f0' }],
       cityHexes: [0, 1],
     });
-    const orphaned = findOrphanedPockets(ctx, [0, 1], new Set());
-    expect(orphaned.sort()).toEqual([0, 1]);
-  });
-
-  it('reports no orphan when at least one open face exits to passable land', () => {
-    const ctx = makeCtx({
-      tiles: {
-        0: { neighbours: [1, 90, 91, 92, 93, 94] },
-        1: { neighbours: [0, 95, 96, 97, 98, 99] },
-        90: { neighbours: [0] }, // passable exterior land = exit
-      },
-      cityHexes: [0, 1],
-    });
-    expect(findOrphanedPockets(ctx, [0, 1], new Set())).toEqual([]);
+    expect(validateBuildingPlacement(ctx, { tileIndex: 1, segment: 2 }).legal).toBe(true);
   });
 });
