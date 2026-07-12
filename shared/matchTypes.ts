@@ -78,6 +78,14 @@ export interface CreateMatchRequest {
   factions: string[];
   units: WireUnit[];
   buildings?: WireBuilding[];
+  /**
+   * Optional pre-seeded logistics network (e.g. the compact-save's Oil Logistics
+   * System example network for `DEFAULT_SEED`). When omitted, the match starts
+   * with an empty `LogisticsState`. Carrying this through at creation is what
+   * makes the server the single source of truth for the economy — see
+   * `handleCreateMatch`.
+   */
+  logistics?: LogisticsState;
 }
 
 export interface CreateMatchResponse {

@@ -38,6 +38,7 @@ import {
 } from './combatApi.js';
 import { getMaxMovement } from '../shared/movementConstants.js';
 import { resolveLogisticsTurn } from '../src/world/logistics.js';
+import { createEmptyLogisticsState } from '../src/world/logisticsSeed.js';
 import { applyLogisticsIntent, isLogisticsIntent } from './logisticsApi.js';
 import { getSessionStore, VersionConflictError } from './sessionStore.js';
 import type {
@@ -104,7 +105,10 @@ export async function handleCreateMatch(req: CreateMatchRequest): Promise<Create
     turn: 1,
     units: req.units,
     buildings: req.buildings ?? [],
-    logistics: { wells: [], refineries: [], routes: [], transports: [], hubs: [], home: {}, tasks: [], clearedForests: [], bridges: [] },
+    // Adopt the caller-supplied network (e.g. the compact save's seeded Oil
+    // Logistics System example for DEFAULT_SEED) so the server is the single
+    // authoritative source; non-default seeds omit it and start empty.
+    logistics: req.logistics ?? createEmptyLogisticsState(),
     unitTurn,
     version: 0,
   };

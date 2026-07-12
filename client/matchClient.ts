@@ -45,6 +45,9 @@ export class MatchClient {
         factions,
         units: world.units,
         buildings: world.buildings,
+        // Carry the (possibly seeded) logistics network through so the server
+        // adopts it as authoritative state instead of starting empty.
+        logistics: world.logistics,
       };
       try {
         const resp = await fetch('/api/match/create', {

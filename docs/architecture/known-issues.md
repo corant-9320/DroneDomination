@@ -50,6 +50,17 @@ The frozen historical record of past decisions is [`DECISIONS.md`](../../DECISIO
   `LogisticsContext`, so a segment occupied by an ordinary building is not
   detected here. The server applier (spec task 13.2) must add any
   building-collision check it can see against authoritative match state.
+  *(Partially mitigated 2026-07-12: the default-world seed now runs after cities
+  are founded and is passed the occupied building/unit segments, so the seeded
+  network avoids them — see `server/generateApi.ts` + `seedDefaultLogisticsNetwork`.
+  Player-built structures still lack a building-collision check.)*
+- **Roads can visually cross building segments.** The seeded/player logistics
+  route is a tile-level path and buildings only block segments, so a route can
+  legally cross a city tile even though it looks like it crosses a building.
+  Fixing the visual requires a segment-level route representation in the
+  authoritative state (a wire-format change) plus route validation that
+  rejects/reroutes around building segments. Not attempted as part of the
+  2026-07-12 authoritative-logistics fix below.
 
 ## Enduring Gotchas & Sync Requirements
 
@@ -123,6 +134,19 @@ The logistics feature spans four wire/serialization seams that must move togethe
   must initialise the `logistics` field, or the appliers/serializers will fault.
 
 ## Recently Fixed
+
+- **Seeded logistics network was client-render-only, not authoritative** — FIXED
+  2026-07-12. `server/generateApi.ts` seeded the default Oil Logistics network
+  into the compact world, but `server/matchApi.ts::handleCreateMatch` hardcoded
+  `MatchState.logistics` to empty and never adopted it — a split source of truth.
+  Fix: added optional `logistics?: LogisticsState` to `CreateMatchRequest`;
+  `handleCreateMatch` now adopts `req.logistics ?? createEmptyLogisticsState()`;
+  `client/matchClient.ts::create()` passes `world.logistics` through. Seeding
+  itself still happens exactly once, in `generateApi.ts`; the client just carries
+  the already-seeded compact-save network into the create-match request rather
+  than the server re-deriving it. The per-turn economy (`advanceTurn` →
+  `resolveLogisticsTurn`) and the intent round-trip already operated on
+  `state.logistics`; only initial population was missing.
 
 - **Oil-deposit markers didn't reach the client (integration seam)** — FIXED
   2026-07-04. `tile.resourceType` is now carried by the compact wire tile under
