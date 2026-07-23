@@ -12,19 +12,18 @@ import { World, City } from '../src/world/types.js';
 import { graphDistance } from '../src/world/pathfinding.js';
 import { spawnInitialUnits } from '../src/world/spawn.js';
 import { foundCities } from '../src/world/buildings.js';
-import { seedDefaultLogisticsNetwork } from '../src/world/logisticsSeed.js';
 import { CITY_COUNT } from '../src/world/generate.js';
-import { DEFAULT_SEED } from '../shared/logisticsConstants.js';
 
 export interface GenerateConfig {
-  /** Number of enemy cities (1 to MAX_CITIES - 1). */
+  /** Number of enemy cities (0 to MAX_CITIES - 1); zero creates a sandbox world. */
   enemies: number;
-  /** Minimum graph-distance between player city and nearest enemy. Only applies when enemies < MAX_CITIES - 1. */
+  /** Minimum graph-distance between player city and nearest enemy. Only applies when 0 < enemies < MAX_CITIES - 1. */
   spacing: number;
   /**
    * Optional explicit world seed. When a player chooses a seed it flows through
-   * unchanged; when omitted the default match world uses DEFAULT_SEED so it ships
-   * with the seeded example logistics network (Oil Logistics System — Req 13.1, 13.10).
+   * unchanged; when omitted a random seed is generated so every new world gets
+   * fresh terrain (Oil_Deposit tiles are placed for every seed, but no world
+   * ever ships with pre-built oil infrastructure — see logistics domain notes).
    */
   seed?: number;
 }
@@ -49,21 +48,19 @@ export function handleGenerate(config: GenerateConfig): GenerateResult {
   console.log('[DD][api] handleGenerate called:', JSON.stringify(config));
 
   // Validate config
-  const totalEnemies = Math.max(1, Math.min(MAX_CITIES - 1, Math.round(config.enemies)));
+  const totalEnemies = Math.max(0, Math.min(MAX_CITIES - 1, Math.round(config.enemies)));
 
-  // When all cities are used, spacing is irrelevant
-  const spacingRelevant = totalEnemies < MAX_CITIES - 1;
+  // With no enemies or all cities active, spacing is irrelevant.
+  const spacingRelevant = totalEnemies > 0 && totalEnemies < MAX_CITIES - 1;
   const spacing = spacingRelevant
     ? Math.max(MIN_SPACING, Math.min(MAX_SPACING, Math.round(config.spacing)))
     : 0;
 
   console.log('[DD][api] Clamped params: enemies=%d spacing=%d', totalEnemies, spacing);
 
-  // Use the player-chosen seed when supplied; otherwise the default match world
-  // uses DEFAULT_SEED so it ships with the seeded example logistics network
-  // (Oil Logistics System — Req 13.1, 13.10). An explicit player seed flows through
-  // unchanged and does NOT get the seeded network unless it equals DEFAULT_SEED.
-  const seed = Number.isFinite(config.seed) ? (config.seed as number) : DEFAULT_SEED;
+  // Use the player-chosen seed when supplied; otherwise generate a random one so
+  // every "New World" request produces a genuinely new world.
+  const seed = Number.isFinite(config.seed) ? (config.seed as number) : Math.floor(Math.random() * 1_000_000_000);
   console.log('[DD][api] Generating world with seed:', seed);
   const genStart = Date.now();
   const world = generateWorld(seed);
@@ -106,25 +103,6 @@ export function handleGenerate(config: GenerateConfig): GenerateResult {
   foundCities(world, filteredCities);
   console.log('[DD][api] Founded %d cities with %d buildings', filteredCities.length, world.buildings.length);
 
-  // Seed the example logistics network LAST — after cities are founded (buildings
-  // placed) and units spawned — so it is built in the same sequence and subject to
-  // the same placement/route rules a real game is. It seats structures on segments
-  // free of buildings/units and routes around built-up tiles (DEFAULT_SEED only;
-  // Oil Logistics System — Req 13). The authoritative match starts with empty
-  // logistics regardless; this network ships in the compact world for rendering.
-  if (seed === DEFAULT_SEED && filteredCities.length > 0) {
-    const homeFactionId = playerCity.ownerId ?? playerCity.id;
-    const occupied = new Set<number>();
-    for (const b of world.buildings) occupied.add(b.tileIndex * 6 + b.segment);
-    for (const u of world.units) occupied.add(u.tileIndex * 6 + u.segment);
-    seedDefaultLogisticsNetwork(world.logistics!, world.tiles, homeFactionId, occupied);
-    const l = world.logistics!;
-    console.log(
-      '[DD][api] Seeded logistics after founding: %d well(s), %d refinery(ies), %d route(s), %d hub(s), %d transport(s)',
-      l.wells.length, l.refineries.length, l.routes.length, l.hubs.length, l.transports.length,
-    );
-  }
-
   // Mark player home + carry city ownership (owned hexes) over the wire.
   const compactCities = filteredCities.map((c) => ({
     id: c.id,
@@ -162,8 +140,8 @@ export function handleGenerate(config: GenerateConfig): GenerateResult {
     cities: compactCities,
     units: compactUnits,
     buildings: compactBuildings,
-    // Carry the seeded example logistics network (Oil Logistics System — Req 13).
-    // Present only for the DEFAULT_SEED world; empty for arbitrary player seeds.
+    // Oil_Deposit tiles are placed for every seed; no world ships with
+    // pre-built oil infrastructure, so this is always an empty LogisticsState.
     logistics: world.logistics,
   };
 

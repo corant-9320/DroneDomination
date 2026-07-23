@@ -225,6 +225,13 @@ Algorithm (reuses existing utilities):
 
 ### 2b. Seeded Default Network — `src/world/logisticsSeed.ts` (Req 13)
 
+> **Status: Superseded (2026-07-23).** This section describes `seedDefaultLogisticsNetwork`,
+> which has been removed. `src/world/logisticsSeed.ts` now exports only
+> `createEmptyLogisticsState`. No seed ships with pre-built oil infrastructure;
+> `DEFAULT_SEED` remains as the fixed seed for the committed default-world artifact,
+> but it no longer receives special network-seeding treatment. Kept below for
+> historical traceability only.
+
 The default/test world ships with a complete, working example network so the logistics chain
 is demonstrably operational from turn one. Because the codebase has **no** fixed default-seed
 constant today — `server/generateApi.ts` derives a fresh random seed
@@ -236,16 +243,16 @@ default match world; an arbitrary player-chosen seed continues to flow through u
 
 ```ts
 /**
- * Populate `state` (LogisticsState) with a complete, deterministic example network:
- * >=1 operational Oil_Well on an 'oil' tile, a Refinery with >=2 segments, a Road,
- * a Highway, a Distribution_Hub connecting >=2 routes, and one Transportation_Unit of
- * each Transport_Tier — all owned by `homeFactionId` and connected to the Home_City.
- * Pure and deterministic; mutates only `state`.  (Req 13.1–13.9)
+ * Populate `state` with the deterministic default network: exactly two operational
+ * Oil_Wells, one >=2-segment Refinery exactly five tile hops from an adjacent-to-city
+ * Distribution_Hub, two well roads, and a refinery-to-city Highway through that Hub.
+ * Pure and deterministic; mutates only `state`. (Req 13.1–13.12)
  */
 export function seedDefaultLogisticsNetwork(
   state: LogisticsState,
   tiles: Tile[],
   homeFactionId: string,
+  occupied?: ReadonlySet<number>,
 ): void;
 ```
 
@@ -257,26 +264,23 @@ Design constraints:
    purchase) so the seeded state obeys *exactly* the same field-level invariants as any
    player-built network (Req 13.1 "fully operational"). It never writes raw fields that would
    bypass a clamp or capacity bound.
-2. **Deterministic.** Given the default seed's tiles and `homeFactionId`, it produces a
-   deep-equal `LogisticsState` on every call — it picks anchor tiles deterministically
-   (nearest `resourceType==='oil'` tiles to the Home_City by `graphDistance`, lowest tile index
-   as the tie-break) and lays routes with `findPath`, so no randomness leaks in (Req 13.9).
-3. **Owned by the Home_Faction and connected to the Home_City.** Every seeded entity's
-   `ownerId === homeFactionId`; the network's endpoints chain Oil_Well → Refinery →
-   Distribution_Hub → Home_City so at least one route terminates at the `isPlayerHome` city
-   (Req 13.8).
+2. **Deterministic topology.** Given the default tiles, `homeFactionId`, and occupied
+   segments, the builder tries adjacent Hub tiles in tile-index order, chooses the first
+   eligible Refinery exactly five graph hops away, then chooses the two nearest valid oil
+   deposits. Lowest tile/segment index breaks ties (Req 13.9).
+3. **Segment-level and connected.** Every route stores `encodeSeg(tileIndex, segment)` nodes
+   produced by shared segment-graph pathfinding. Two Road routes connect the Wells to the
+   Refinery; a Highway runs from the Refinery through the adjacent Hub segment and into the
+   Home_City. All active renderers draw the same segment-centroid path (Req 13.4–13.8, 13.11).
 4. **One Transportation_Unit of each tier.** Three transports are created and their
    `upgrades` counts are set so `transportTier(upgrades)` yields `van`, `truck`, and
-   `juggernaut` respectively, each assigned to a route (respecting `MAX_TRANSPORTS_PER_ROUTE`;
-   spread across routes as needed) (Req 13.7).
-5. **Invoked only for `DEFAULT_SEED`.** `generateWorld` calls
-   `seedDefaultLogisticsNetwork(...)` **iff** `seed === DEFAULT_SEED`. For every other seed the
-   only logistics-related mutation is standard `placeOilDeposits` deposit placement; terrain,
-   rivers, cities, and units are byte-identical to generation without this step (Req 13.10).
+   `juggernaut` respectively, each assigned to a route (Req 13.7).
+5. **Default generators only.** Both `generateCli.ts` and `server/generateApi.ts` invoke
+   seeding after units spawn and cities are founded, passing occupied unit/building segments.
+   Other seeds retain only standard Oil_Deposit placement (Req 13.10, 13.12).
 
-The client renders the seeded network through the ordinary `client/logisticsRenderer.ts` path
-with **no special-casing** — a seeded well is drawn by the same `buildWellModel` as a
-player-built well.
+The local-map, globe, and first-person renderers decode every route node and project its
+triangular segment centroid; none reconstructs a centre-to-centre tile path.
 
 ### 3. Pure Resolution Engine — `src/world/logistics.ts`
 
@@ -295,13 +299,11 @@ export function chargeConstruction(home: HomeStock, cost: number): HomeStock; //
 **City placement rules.** Oil_Wells and Refineries are map-only: `validateWellPlacement`
 and `validateRefinerySegment` reject any tile inside a city (a tile carrying a
 `cityId`, which `placeCities`/`foundCity` stamp on the capital and every city-owned
-hex) with reason `in-city`. Distribution_Hubs are exempt — they may sit inside or
-outside a city — and the server hub applier additionally rejects a hub that would
-share a segment with an existing main-game building (`buildingOccupies`). The seeded
-default network therefore seats its Distribution_Hub **on the Home_City tile** (so it
-fuels the Home_City's upgrades), while its well/refinery sit on open-map tiles; the
-default-scenario builder reserves the seeded structures' segments and excludes the
-well/refinery tiles from the city footprint so no city building collides with them.
+hex) with reason `in-city`. Distribution_Hubs may sit inside or outside a city,
+but the seeded default network seats its Hub on a free segment of a tile **adjacent
+to the Home_City**. Its Refinery is exactly five graph hops farther out, and both
+Wells/Refinery remain on open-map tiles. Both default generators seed after units
+and buildings exist and pass their occupied segments to avoid collisions.
 
 **Through-street / reachability deprecation (base-game change).** Players may build
 anywhere eligible inside a City or Refinery, even sealing off segments, so the two

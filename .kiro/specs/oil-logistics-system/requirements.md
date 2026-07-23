@@ -271,20 +271,30 @@ tile `resourceType` field, and the existing unit combat model.
 
 ### Requirement 13: Pre-Seeded Example Logistics Network in the Default Test World
 
+> **Status: Superseded (2026-07-23).** The Seeded_Logistics_Network described
+> below has been removed. No world seed — including the default seed — ships
+> with pre-built oil infrastructure; every world starts with an empty
+> `LogisticsState` and players build the network themselves. Standard
+> Oil_Deposit tile placement (Requirement 1) is unaffected and still runs for
+> every seed. Kept here for historical traceability; do not re-implement
+> without a new explicit decision.
+
 **User Story:** As a developer or player, I want a complete example logistics network already in place when the default test world loads, so that I can see the logistics system working immediately without building it from scratch.
 
 #### Acceptance Criteria
 
 1. WHEN the Default_Test_World is generated, THE Logistics_System SHALL initialise a Seeded_Logistics_Network that is fully operational at the start of the first turn.
-2. WHEN the Default_Test_World is generated, THE Logistics_System SHALL include in the Seeded_Logistics_Network at least one operational Oil_Well placed on an Oil_Deposit.
-3. WHEN the Default_Test_World is generated, THE Logistics_System SHALL include in the Seeded_Logistics_Network at least one Refinery that contains two or more Refinery_Segments.
-4. WHEN the Default_Test_World is generated, THE Logistics_System SHALL include in the Seeded_Logistics_Network at least one Logistics_Route rendered as a Road.
-5. WHEN the Default_Test_World is generated, THE Logistics_System SHALL include in the Seeded_Logistics_Network at least one Logistics_Route rendered as a Highway.
-6. WHEN the Default_Test_World is generated, THE Logistics_System SHALL include in the Seeded_Logistics_Network at least one Distribution_Hub that connects two or more Logistics_Routes.
+2. WHEN the Default_Test_World is generated, THE Seeded_Logistics_Network SHALL contain exactly two operational Oil_Wells, each placed on a distinct Oil_Deposit.
+3. WHEN the Default_Test_World is generated, THE Seeded_Logistics_Network SHALL contain exactly one Refinery with two or more Refinery_Segments, and its tile SHALL be exactly five tile-graph hops from the Distribution_Hub.
+4. WHEN the Default_Test_World is generated, EACH seeded Oil_Well SHALL connect to the Refinery by its own Logistics_Route rendered as a Road.
+5. WHEN the Default_Test_World is generated, THE Refinery SHALL connect to the Home_City by a Logistics_Route rendered as a Highway that passes through the Distribution_Hub's occupied segment.
+6. WHEN the Default_Test_World is generated, THE Seeded_Logistics_Network SHALL contain exactly one Distribution_Hub on a tile adjacent to the Home_City, and that Hub SHALL reference every seeded Logistics_Route.
 7. WHEN the Default_Test_World is generated, THE Logistics_System SHALL include in the Seeded_Logistics_Network at least one Transportation_Unit of each Transport_Tier, with every such Transportation_Unit assigned to a Logistics_Route.
 8. WHEN the Default_Test_World is generated, THE Logistics_System SHALL assign every structure and Transportation_Unit of the Seeded_Logistics_Network to the Home_Faction and SHALL connect the Seeded_Logistics_Network through to the Home_City.
 9. WHEN the Default_Test_World is generated two or more times from the default seed, THE Logistics_System SHALL produce an identical Seeded_Logistics_Network on every generation.
 10. WHERE a world is generated from an arbitrary player-chosen seed other than the default seed, THE Logistics_System SHALL restrict that world's seeded logistics content to the standard Oil_Deposit placement and SHALL leave all other aspects of that world's generation unchanged.
+11. WHEN a seeded Logistics_Route is stored or rendered, EACH Route_Segment SHALL identify an encoded `(tileIndex, segment)` node, consecutive nodes SHALL be adjacent under the shared segment graph, and the road/highway SHALL be drawn through those segment centres rather than through hex centres.
+12. WHEN the committed default-world artifact is regenerated, THE CLI generation path SHALL seed the same post-founding Logistics_Network as the default generate API path.
 
 ### Requirement 14: High-Quality Tiered 3D Models with Visual Upgrade Differentiation
 

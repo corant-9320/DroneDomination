@@ -25,8 +25,7 @@ import * as v from './vec3.js';
 import { graphDistance, tilesWithinRadius } from './pathfinding.js';
 import { computeSegmentSteepness } from './segmentSteepness.js';
 import { placeOilDeposits } from './logisticsGen.js';
-import { seedDefaultLogisticsNetwork, createEmptyLogisticsState } from './logisticsSeed.js';
-import { DEFAULT_SEED } from '../../shared/logisticsConstants.js';
+import { createEmptyLogisticsState } from './logisticsSeed.js';
 
 // Re-export PRNG and geometry from their focused modules
 export { mulberry32 } from './rng.js';
@@ -1851,26 +1850,12 @@ export function generateWorld(seed: number): World {
   computeSegmentSteepness(tiles);
   console.timeEnd('steepness');
 
-  // Step 7: Logistics state. Every world carries a LogisticsState so `World.logistics`
-  // is always present; the complete example network is seeded ONLY for the
-  // Default_Test_World (seed === DEFAULT_SEED). For every other seed the state stays
-  // empty and the only logistics content is the standard oil-deposit placement above
-  // (Oil Logistics System — Req 13.1, 13.9, 13.10). Seeding runs last, after every
-  // terrain mutation and segment-steepness computation, so the network's placement
-  // and route validators see the final tiles. The Home_City is cities[0] (the
-  // convention used by the generate API and default-scenario scripts).
+  // Step 7: Logistics state. Every world carries an EMPTY LogisticsState so
+  // `World.logistics` is always present; only the standard oil-deposit placement
+  // above sets logistics-relevant tile data here. No world seed ships with
+  // pre-built oil infrastructure (wells, refineries, hubs, routes, transports) —
+  // players build the logistics network themselves from an empty starting state.
   const logistics = createEmptyLogisticsState();
-  if (seed === DEFAULT_SEED && cities.length > 0) {
-    const homeFactionId = cities[0].ownerId ?? cities[0].id;
-    console.time('logisticsSeed');
-    seedDefaultLogisticsNetwork(logistics, tiles, homeFactionId);
-    console.log(
-      `  Seeded logistics network: ${logistics.wells.length} well(s), ` +
-        `${logistics.refineries.length} refinery(ies), ${logistics.routes.length} route(s), ` +
-        `${logistics.hubs.length} hub(s), ${logistics.transports.length} transport(s)`,
-    );
-    console.timeEnd('logisticsSeed');
-  }
 
   return {
     tiles,

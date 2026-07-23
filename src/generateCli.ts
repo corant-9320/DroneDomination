@@ -16,8 +16,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // The postbuild generator builds the committed default world artifact, so it uses
-// DEFAULT_SEED — this is the Default_Test_World and ships with the seeded example
-// logistics network (Oil Logistics System — Req 13.1, 13.10).
+// the fixed DEFAULT_SEED for a reproducible Default_Test_World. Oil_Deposit tiles
+// are placed unconditionally by generateWorld; no oil infrastructure is seeded.
 const SEED = DEFAULT_SEED;
 const OUTPUT_DIR = join(__dirname, '..', '..', 'data');
 
@@ -29,7 +29,7 @@ const units = spawnInitialUnits(world.tiles, world.cities.map((c) => ({ id: c.id
 world.units = units;
 foundCities(world);
 
-// Validate (after founding, so the through-street/reachability checks run)
+// Validate after founding.
 const result = validateWorld(world);
 printValidation(result);
 

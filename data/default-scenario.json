@@ -27,6 +27,7 @@
         24662,
         24697,
         24661,
+        24694,
         24726,
         24758,
         24789,
@@ -259,8 +260,8 @@
       "id": "unit_0",
       "label": "Distance Raider Runner Tank (Mov 4, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 24728,
-      "segment": 4,
+      "tileIndex": 24697,
+      "segment": 1,
       "facing": 0,
       "attributes": {
         "wheeledMovement": 4,
@@ -278,8 +279,8 @@
       "id": "unit_1",
       "label": "Distance Harasser Plodder Spider (Mov 2, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 24696,
-      "segment": 4,
+      "tileIndex": 24661,
+      "segment": 0,
       "facing": 0,
       "attributes": {
         "limbMovement": 2,
@@ -297,9 +298,9 @@
       "id": "unit_2",
       "label": "Distance Raider Loitering Spider (Mov 1, Kin 2, Rng 5, Spl 2, AA 2, Arm 2, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 24695,
-      "segment": 3,
-      "facing": 0,
+      "tileIndex": 24694,
+      "segment": 0,
+      "facing": 1,
       "attributes": {
         "limbMovement": 1,
         "size": 2,
@@ -316,7 +317,7 @@
       "id": "unit_3",
       "label": "Distance Harasser Runner Spider (Mov 4, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 24727,
+      "tileIndex": 24726,
       "segment": 0,
       "facing": 1,
       "attributes": {
@@ -335,8 +336,8 @@
       "id": "unit_4",
       "label": "Distance Breaker Plodder Spider (Mov 2, Kin 4, Rng 5, Spl 2, AA 3, Arm 4, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 24759,
-      "segment": 1,
+      "tileIndex": 24758,
+      "segment": 0,
       "facing": 2,
       "attributes": {
         "limbMovement": 2,
@@ -354,9 +355,9 @@
       "id": "unit_5",
       "label": "Distance Striker Plodder Spider (Mov 2, Kin 3, Rng 5, Spl 3, AA 3, Arm 3, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_0",
-      "tileIndex": 24760,
-      "segment": 4,
-      "facing": 3,
+      "tileIndex": 24789,
+      "segment": 0,
+      "facing": 2,
       "attributes": {
         "limbMovement": 2,
         "size": 3,
@@ -739,8 +740,8 @@
       "id": "unit_26",
       "label": "Breaker Middleweight Loitering Tank (Mov 1, Kin 4, Rng 3, Spl 4, AA 4, Arm 4, EW 3, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 32001,
-      "segment": 4,
+      "tileIndex": 31835,
+      "segment": 1,
       "facing": 0,
       "attributes": {
         "wheeledMovement": 1,
@@ -758,8 +759,8 @@
       "id": "unit_27",
       "label": "Raider Scrambler Runner Drone (Mov 4, Kin 2, Rng 0, Spl 2, AA 2, Arm 0, EW 2, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 31918,
-      "segment": 4,
+      "tileIndex": 31999,
+      "segment": 0,
       "facing": 0,
       "attributes": {
         "flightMovement": 4,
@@ -775,9 +776,9 @@
       "id": "unit_28",
       "label": "Distance Harasser Runner Tank (Mov 4, Kin 1, Rng 5, Spl 1, AA 1, Arm 1, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 32000,
-      "segment": 3,
-      "facing": 0,
+      "tileIndex": 32081,
+      "segment": 0,
+      "facing": 1,
       "attributes": {
         "wheeledMovement": 4,
         "size": 1,
@@ -794,7 +795,7 @@
       "id": "unit_29",
       "label": "Harasser Listener Runner Drone (Mov 4, Kin 1, Rng 0, Spl 1, AA 1, Arm 0, EW 1, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 32082,
+      "tileIndex": 32162,
       "segment": 0,
       "facing": 1,
       "attributes": {
@@ -811,8 +812,8 @@
       "id": "unit_30",
       "label": "Breaker Disruptor Plodder Drone (Mov 2, Kin 4, Rng 0, Spl 4, AA 4, Arm 0, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 32083,
-      "segment": 1,
+      "tileIndex": 32163,
+      "segment": 0,
       "facing": 2,
       "attributes": {
         "flightMovement": 2,
@@ -828,9 +829,9 @@
       "id": "unit_31",
       "label": "Breaker Middleweight Runner Spider (Mov 4, Kin 4, Rng 4, Spl 2, AA 1, Arm 4, EW 4, Rep 0, Eng 0)",
       "ownerId": "city_6",
-      "tileIndex": 32002,
-      "segment": 4,
-      "facing": 3,
+      "tileIndex": 32164,
+      "segment": 0,
+      "facing": 2,
       "attributes": {
         "limbMovement": 4,
         "size": 4,
@@ -1946,7 +1947,7 @@
       "id": "building_0",
       "ownerId": "city_0",
       "tileIndex": 24728,
-      "segment": 1,
+      "segment": 0,
       "attributes": {
         "kinetic": 3,
         "rangeAttack": 2
@@ -1956,7 +1957,7 @@
       "id": "building_1",
       "ownerId": "city_0",
       "tileIndex": 24728,
-      "segment": 2,
+      "segment": 1,
       "attributes": {
         "defence": 4
       }
@@ -1965,7 +1966,7 @@
       "id": "building_2",
       "ownerId": "city_0",
       "tileIndex": 24728,
-      "segment": 3,
+      "segment": 2,
       "attributes": {
         "repair": 3
       }
@@ -1973,8 +1974,8 @@
     {
       "id": "building_3",
       "ownerId": "city_0",
-      "tileIndex": 24696,
-      "segment": 0,
+      "tileIndex": 24728,
+      "segment": 3,
       "attributes": {
         "antiAir": 4
       }
@@ -1982,8 +1983,8 @@
     {
       "id": "building_4",
       "ownerId": "city_0",
-      "tileIndex": 24696,
-      "segment": 1,
+      "tileIndex": 24728,
+      "segment": 4,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -1992,8 +1993,8 @@
     {
       "id": "building_5",
       "ownerId": "city_0",
-      "tileIndex": 24696,
-      "segment": 2,
+      "tileIndex": 24728,
+      "segment": 5,
       "attributes": {
         "splashAttack": 3,
         "kinetic": 1
@@ -2003,7 +2004,7 @@
       "id": "building_6",
       "ownerId": "city_0",
       "tileIndex": 24696,
-      "segment": 3,
+      "segment": 0,
       "attributes": {
         "rangeAttack": 4,
         "kinetic": 1
@@ -2012,8 +2013,8 @@
     {
       "id": "building_7",
       "ownerId": "city_0",
-      "tileIndex": 24695,
-      "segment": 0,
+      "tileIndex": 24696,
+      "segment": 1,
       "attributes": {
         "defence": 2,
         "repair": 2
@@ -2022,8 +2023,8 @@
     {
       "id": "building_8",
       "ownerId": "city_0",
-      "tileIndex": 24695,
-      "segment": 1,
+      "tileIndex": 24696,
+      "segment": 2,
       "attributes": {
         "kinetic": 3,
         "rangeAttack": 2
@@ -2032,8 +2033,8 @@
     {
       "id": "building_9",
       "ownerId": "city_0",
-      "tileIndex": 24695,
-      "segment": 2,
+      "tileIndex": 24696,
+      "segment": 3,
       "attributes": {
         "defence": 4
       }
@@ -2041,8 +2042,8 @@
     {
       "id": "building_10",
       "ownerId": "city_0",
-      "tileIndex": 24695,
-      "segment": 5,
+      "tileIndex": 24696,
+      "segment": 4,
       "attributes": {
         "repair": 3
       }
@@ -2050,8 +2051,8 @@
     {
       "id": "building_11",
       "ownerId": "city_0",
-      "tileIndex": 24727,
-      "segment": 1,
+      "tileIndex": 24696,
+      "segment": 5,
       "attributes": {
         "antiAir": 4
       }
@@ -2059,8 +2060,8 @@
     {
       "id": "building_12",
       "ownerId": "city_0",
-      "tileIndex": 24727,
-      "segment": 2,
+      "tileIndex": 24695,
+      "segment": 0,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -2069,8 +2070,8 @@
     {
       "id": "building_13",
       "ownerId": "city_0",
-      "tileIndex": 24727,
-      "segment": 3,
+      "tileIndex": 24695,
+      "segment": 1,
       "attributes": {
         "splashAttack": 3,
         "kinetic": 1
@@ -2079,8 +2080,8 @@
     {
       "id": "building_14",
       "ownerId": "city_0",
-      "tileIndex": 24759,
-      "segment": 0,
+      "tileIndex": 24695,
+      "segment": 2,
       "attributes": {
         "rangeAttack": 4,
         "kinetic": 1
@@ -2089,7 +2090,7 @@
     {
       "id": "building_15",
       "ownerId": "city_0",
-      "tileIndex": 24759,
+      "tileIndex": 24695,
       "segment": 3,
       "attributes": {
         "defence": 2,
@@ -2099,7 +2100,7 @@
     {
       "id": "building_16",
       "ownerId": "city_0",
-      "tileIndex": 24759,
+      "tileIndex": 24695,
       "segment": 4,
       "attributes": {
         "kinetic": 3,
@@ -2109,7 +2110,7 @@
     {
       "id": "building_17",
       "ownerId": "city_0",
-      "tileIndex": 24759,
+      "tileIndex": 24695,
       "segment": 5,
       "attributes": {
         "defence": 4
@@ -2118,7 +2119,7 @@
     {
       "id": "building_18",
       "ownerId": "city_0",
-      "tileIndex": 24760,
+      "tileIndex": 24727,
       "segment": 0,
       "attributes": {
         "repair": 3
@@ -2127,7 +2128,7 @@
     {
       "id": "building_19",
       "ownerId": "city_0",
-      "tileIndex": 24760,
+      "tileIndex": 24727,
       "segment": 1,
       "attributes": {
         "antiAir": 4
@@ -2136,7 +2137,7 @@
     {
       "id": "building_20",
       "ownerId": "city_0",
-      "tileIndex": 24760,
+      "tileIndex": 24727,
       "segment": 2,
       "attributes": {
         "armour": 3,
@@ -2146,7 +2147,7 @@
     {
       "id": "building_21",
       "ownerId": "city_0",
-      "tileIndex": 24760,
+      "tileIndex": 24727,
       "segment": 3,
       "attributes": {
         "splashAttack": 3,
@@ -2156,8 +2157,8 @@
     {
       "id": "building_22",
       "ownerId": "city_0",
-      "tileIndex": 24729,
-      "segment": 0,
+      "tileIndex": 24727,
+      "segment": 4,
       "attributes": {
         "rangeAttack": 4,
         "kinetic": 1
@@ -2166,8 +2167,8 @@
     {
       "id": "building_23",
       "ownerId": "city_0",
-      "tileIndex": 24729,
-      "segment": 1,
+      "tileIndex": 24727,
+      "segment": 5,
       "attributes": {
         "defence": 2,
         "repair": 2
@@ -2176,8 +2177,8 @@
     {
       "id": "building_24",
       "ownerId": "city_0",
-      "tileIndex": 24729,
-      "segment": 5,
+      "tileIndex": 24759,
+      "segment": 0,
       "attributes": {
         "kinetic": 3,
         "rangeAttack": 2
@@ -2186,8 +2187,8 @@
     {
       "id": "building_25",
       "ownerId": "city_0",
-      "tileIndex": 24663,
-      "segment": 0,
+      "tileIndex": 24759,
+      "segment": 1,
       "attributes": {
         "defence": 4
       }
@@ -2195,8 +2196,8 @@
     {
       "id": "building_26",
       "ownerId": "city_0",
-      "tileIndex": 24663,
-      "segment": 1,
+      "tileIndex": 24759,
+      "segment": 2,
       "attributes": {
         "repair": 3
       }
@@ -2204,8 +2205,8 @@
     {
       "id": "building_27",
       "ownerId": "city_0",
-      "tileIndex": 24663,
-      "segment": 2,
+      "tileIndex": 24759,
+      "segment": 3,
       "attributes": {
         "antiAir": 4
       }
@@ -2213,8 +2214,8 @@
     {
       "id": "building_28",
       "ownerId": "city_0",
-      "tileIndex": 24663,
-      "segment": 3,
+      "tileIndex": 24759,
+      "segment": 4,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -2223,8 +2224,8 @@
     {
       "id": "building_29",
       "ownerId": "city_0",
-      "tileIndex": 24662,
-      "segment": 0,
+      "tileIndex": 24759,
+      "segment": 5,
       "attributes": {
         "splashAttack": 3,
         "kinetic": 1
@@ -2233,8 +2234,8 @@
     {
       "id": "building_30",
       "ownerId": "city_0",
-      "tileIndex": 24662,
-      "segment": 1,
+      "tileIndex": 24760,
+      "segment": 0,
       "attributes": {
         "rangeAttack": 4,
         "kinetic": 1
@@ -2243,8 +2244,8 @@
     {
       "id": "building_31",
       "ownerId": "city_0",
-      "tileIndex": 24662,
-      "segment": 5,
+      "tileIndex": 24760,
+      "segment": 1,
       "attributes": {
         "defence": 2,
         "repair": 2
@@ -2253,8 +2254,8 @@
     {
       "id": "building_32",
       "ownerId": "city_0",
-      "tileIndex": 24697,
-      "segment": 0,
+      "tileIndex": 24760,
+      "segment": 2,
       "attributes": {
         "kinetic": 3,
         "rangeAttack": 2
@@ -2263,8 +2264,8 @@
     {
       "id": "building_33",
       "ownerId": "city_0",
-      "tileIndex": 24697,
-      "segment": 1,
+      "tileIndex": 24760,
+      "segment": 3,
       "attributes": {
         "defence": 4
       }
@@ -2272,8 +2273,8 @@
     {
       "id": "building_34",
       "ownerId": "city_0",
-      "tileIndex": 24697,
-      "segment": 5,
+      "tileIndex": 24760,
+      "segment": 4,
       "attributes": {
         "repair": 3
       }
@@ -2281,8 +2282,8 @@
     {
       "id": "building_35",
       "ownerId": "city_0",
-      "tileIndex": 24661,
-      "segment": 0,
+      "tileIndex": 24760,
+      "segment": 5,
       "attributes": {
         "antiAir": 4
       }
@@ -2290,8 +2291,8 @@
     {
       "id": "building_36",
       "ownerId": "city_0",
-      "tileIndex": 24661,
-      "segment": 1,
+      "tileIndex": 24729,
+      "segment": 0,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -2300,8 +2301,8 @@
     {
       "id": "building_37",
       "ownerId": "city_0",
-      "tileIndex": 24661,
-      "segment": 2,
+      "tileIndex": 24729,
+      "segment": 1,
       "attributes": {
         "splashAttack": 3,
         "kinetic": 1
@@ -2310,8 +2311,8 @@
     {
       "id": "building_38",
       "ownerId": "city_0",
-      "tileIndex": 24726,
-      "segment": 0,
+      "tileIndex": 24729,
+      "segment": 2,
       "attributes": {
         "rangeAttack": 4,
         "kinetic": 1
@@ -2320,8 +2321,8 @@
     {
       "id": "building_39",
       "ownerId": "city_0",
-      "tileIndex": 24726,
-      "segment": 1,
+      "tileIndex": 24729,
+      "segment": 3,
       "attributes": {
         "defence": 2,
         "repair": 2
@@ -2330,8 +2331,8 @@
     {
       "id": "building_40",
       "ownerId": "city_0",
-      "tileIndex": 24726,
-      "segment": 2,
+      "tileIndex": 24729,
+      "segment": 4,
       "attributes": {
         "kinetic": 3,
         "rangeAttack": 2
@@ -2340,8 +2341,8 @@
     {
       "id": "building_41",
       "ownerId": "city_0",
-      "tileIndex": 24726,
-      "segment": 3,
+      "tileIndex": 24729,
+      "segment": 5,
       "attributes": {
         "defence": 4
       }
@@ -2349,7 +2350,7 @@
     {
       "id": "building_42",
       "ownerId": "city_0",
-      "tileIndex": 24758,
+      "tileIndex": 24663,
       "segment": 0,
       "attributes": {
         "repair": 3
@@ -2358,8 +2359,8 @@
     {
       "id": "building_43",
       "ownerId": "city_0",
-      "tileIndex": 24758,
-      "segment": 3,
+      "tileIndex": 24663,
+      "segment": 1,
       "attributes": {
         "antiAir": 4
       }
@@ -2367,8 +2368,8 @@
     {
       "id": "building_44",
       "ownerId": "city_0",
-      "tileIndex": 24789,
-      "segment": 0,
+      "tileIndex": 24663,
+      "segment": 2,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -2377,7 +2378,7 @@
     {
       "id": "building_45",
       "ownerId": "city_0",
-      "tileIndex": 24789,
+      "tileIndex": 24663,
       "segment": 3,
       "attributes": {
         "splashAttack": 3,
@@ -2387,7 +2388,7 @@
     {
       "id": "building_46",
       "ownerId": "city_0",
-      "tileIndex": 24789,
+      "tileIndex": 24663,
       "segment": 4,
       "attributes": {
         "rangeAttack": 4,
@@ -2397,7 +2398,7 @@
     {
       "id": "building_47",
       "ownerId": "city_0",
-      "tileIndex": 24789,
+      "tileIndex": 24663,
       "segment": 5,
       "attributes": {
         "defence": 2,
@@ -2407,7 +2408,7 @@
     {
       "id": "building_48",
       "ownerId": "city_0",
-      "tileIndex": 24790,
+      "tileIndex": 24662,
       "segment": 0,
       "attributes": {
         "kinetic": 3,
@@ -2417,7 +2418,7 @@
     {
       "id": "building_49",
       "ownerId": "city_0",
-      "tileIndex": 24790,
+      "tileIndex": 24662,
       "segment": 1,
       "attributes": {
         "defence": 4
@@ -2426,7 +2427,7 @@
     {
       "id": "building_50",
       "ownerId": "city_0",
-      "tileIndex": 24790,
+      "tileIndex": 24662,
       "segment": 2,
       "attributes": {
         "repair": 3
@@ -2435,7 +2436,7 @@
     {
       "id": "building_51",
       "ownerId": "city_0",
-      "tileIndex": 24790,
+      "tileIndex": 24662,
       "segment": 3,
       "attributes": {
         "antiAir": 4
@@ -2444,8 +2445,8 @@
     {
       "id": "building_52",
       "ownerId": "city_0",
-      "tileIndex": 24791,
-      "segment": 0,
+      "tileIndex": 24662,
+      "segment": 4,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -2454,8 +2455,8 @@
     {
       "id": "building_53",
       "ownerId": "city_0",
-      "tileIndex": 24791,
-      "segment": 1,
+      "tileIndex": 24662,
+      "segment": 5,
       "attributes": {
         "splashAttack": 3,
         "kinetic": 1
@@ -2464,8 +2465,8 @@
     {
       "id": "building_54",
       "ownerId": "city_0",
-      "tileIndex": 24791,
-      "segment": 2,
+      "tileIndex": 24697,
+      "segment": 0,
       "attributes": {
         "rangeAttack": 4,
         "kinetic": 1
@@ -2511,8 +2512,8 @@
     {
       "id": "building_59",
       "ownerId": "city_6",
-      "tileIndex": 31918,
-      "segment": 0,
+      "tileIndex": 32001,
+      "segment": 4,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -2521,8 +2522,8 @@
     {
       "id": "building_60",
       "ownerId": "city_6",
-      "tileIndex": 31918,
-      "segment": 1,
+      "tileIndex": 32001,
+      "segment": 5,
       "attributes": {
         "splashAttack": 3,
         "kinetic": 1
@@ -2532,7 +2533,7 @@
       "id": "building_61",
       "ownerId": "city_6",
       "tileIndex": 31918,
-      "segment": 2,
+      "segment": 0,
       "attributes": {
         "rangeAttack": 4,
         "kinetic": 1
@@ -2542,7 +2543,7 @@
       "id": "building_62",
       "ownerId": "city_6",
       "tileIndex": 31918,
-      "segment": 3,
+      "segment": 1,
       "attributes": {
         "defence": 2,
         "repair": 2
@@ -2551,8 +2552,8 @@
     {
       "id": "building_63",
       "ownerId": "city_6",
-      "tileIndex": 32000,
-      "segment": 0,
+      "tileIndex": 31918,
+      "segment": 2,
       "attributes": {
         "kinetic": 3,
         "rangeAttack": 2
@@ -2561,8 +2562,8 @@
     {
       "id": "building_64",
       "ownerId": "city_6",
-      "tileIndex": 32000,
-      "segment": 1,
+      "tileIndex": 31918,
+      "segment": 3,
       "attributes": {
         "defence": 4
       }
@@ -2570,8 +2571,8 @@
     {
       "id": "building_65",
       "ownerId": "city_6",
-      "tileIndex": 32000,
-      "segment": 2,
+      "tileIndex": 31918,
+      "segment": 4,
       "attributes": {
         "repair": 3
       }
@@ -2579,7 +2580,7 @@
     {
       "id": "building_66",
       "ownerId": "city_6",
-      "tileIndex": 32000,
+      "tileIndex": 31918,
       "segment": 5,
       "attributes": {
         "antiAir": 4
@@ -2588,8 +2589,8 @@
     {
       "id": "building_67",
       "ownerId": "city_6",
-      "tileIndex": 32082,
-      "segment": 1,
+      "tileIndex": 32000,
+      "segment": 0,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -2598,8 +2599,8 @@
     {
       "id": "building_68",
       "ownerId": "city_6",
-      "tileIndex": 32082,
-      "segment": 2,
+      "tileIndex": 32000,
+      "segment": 1,
       "attributes": {
         "splashAttack": 3,
         "kinetic": 1
@@ -2608,8 +2609,8 @@
     {
       "id": "building_69",
       "ownerId": "city_6",
-      "tileIndex": 32082,
-      "segment": 3,
+      "tileIndex": 32000,
+      "segment": 2,
       "attributes": {
         "rangeAttack": 4,
         "kinetic": 1
@@ -2618,8 +2619,8 @@
     {
       "id": "building_70",
       "ownerId": "city_6",
-      "tileIndex": 32083,
-      "segment": 0,
+      "tileIndex": 32000,
+      "segment": 3,
       "attributes": {
         "defence": 2,
         "repair": 2
@@ -2628,8 +2629,8 @@
     {
       "id": "building_71",
       "ownerId": "city_6",
-      "tileIndex": 32083,
-      "segment": 3,
+      "tileIndex": 32000,
+      "segment": 4,
       "attributes": {
         "kinetic": 3,
         "rangeAttack": 2
@@ -2638,8 +2639,8 @@
     {
       "id": "building_72",
       "ownerId": "city_6",
-      "tileIndex": 32083,
-      "segment": 4,
+      "tileIndex": 32000,
+      "segment": 5,
       "attributes": {
         "defence": 4
       }
@@ -2647,8 +2648,8 @@
     {
       "id": "building_73",
       "ownerId": "city_6",
-      "tileIndex": 32083,
-      "segment": 5,
+      "tileIndex": 32082,
+      "segment": 0,
       "attributes": {
         "repair": 3
       }
@@ -2656,8 +2657,8 @@
     {
       "id": "building_74",
       "ownerId": "city_6",
-      "tileIndex": 32002,
-      "segment": 0,
+      "tileIndex": 32082,
+      "segment": 1,
       "attributes": {
         "antiAir": 4
       }
@@ -2665,8 +2666,8 @@
     {
       "id": "building_75",
       "ownerId": "city_6",
-      "tileIndex": 32002,
-      "segment": 1,
+      "tileIndex": 32082,
+      "segment": 2,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -2675,8 +2676,8 @@
     {
       "id": "building_76",
       "ownerId": "city_6",
-      "tileIndex": 32002,
-      "segment": 2,
+      "tileIndex": 32082,
+      "segment": 3,
       "attributes": {
         "splashAttack": 3,
         "kinetic": 1
@@ -2685,8 +2686,8 @@
     {
       "id": "building_77",
       "ownerId": "city_6",
-      "tileIndex": 32002,
-      "segment": 3,
+      "tileIndex": 32082,
+      "segment": 4,
       "attributes": {
         "rangeAttack": 4,
         "kinetic": 1
@@ -2695,8 +2696,8 @@
     {
       "id": "building_78",
       "ownerId": "city_6",
-      "tileIndex": 31919,
-      "segment": 0,
+      "tileIndex": 32082,
+      "segment": 5,
       "attributes": {
         "defence": 2,
         "repair": 2
@@ -2705,8 +2706,8 @@
     {
       "id": "building_79",
       "ownerId": "city_6",
-      "tileIndex": 31919,
-      "segment": 1,
+      "tileIndex": 32083,
+      "segment": 0,
       "attributes": {
         "kinetic": 3,
         "rangeAttack": 2
@@ -2715,8 +2716,8 @@
     {
       "id": "building_80",
       "ownerId": "city_6",
-      "tileIndex": 31919,
-      "segment": 5,
+      "tileIndex": 32083,
+      "segment": 1,
       "attributes": {
         "defence": 4
       }
@@ -2724,8 +2725,8 @@
     {
       "id": "building_81",
       "ownerId": "city_6",
-      "tileIndex": 31834,
-      "segment": 0,
+      "tileIndex": 32083,
+      "segment": 2,
       "attributes": {
         "repair": 3
       }
@@ -2733,8 +2734,8 @@
     {
       "id": "building_82",
       "ownerId": "city_6",
-      "tileIndex": 31834,
-      "segment": 1,
+      "tileIndex": 32083,
+      "segment": 3,
       "attributes": {
         "antiAir": 4
       }
@@ -2742,8 +2743,8 @@
     {
       "id": "building_83",
       "ownerId": "city_6",
-      "tileIndex": 31834,
-      "segment": 2,
+      "tileIndex": 32083,
+      "segment": 4,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -2752,8 +2753,8 @@
     {
       "id": "building_84",
       "ownerId": "city_6",
-      "tileIndex": 31834,
-      "segment": 3,
+      "tileIndex": 32083,
+      "segment": 5,
       "attributes": {
         "splashAttack": 3,
         "kinetic": 1
@@ -2762,7 +2763,7 @@
     {
       "id": "building_85",
       "ownerId": "city_6",
-      "tileIndex": 31917,
+      "tileIndex": 32002,
       "segment": 0,
       "attributes": {
         "rangeAttack": 4,
@@ -2772,7 +2773,7 @@
     {
       "id": "building_86",
       "ownerId": "city_6",
-      "tileIndex": 31917,
+      "tileIndex": 32002,
       "segment": 1,
       "attributes": {
         "defence": 2,
@@ -2782,8 +2783,8 @@
     {
       "id": "building_87",
       "ownerId": "city_6",
-      "tileIndex": 31917,
-      "segment": 5,
+      "tileIndex": 32002,
+      "segment": 2,
       "attributes": {
         "kinetic": 3,
         "rangeAttack": 2
@@ -2792,8 +2793,8 @@
     {
       "id": "building_88",
       "ownerId": "city_6",
-      "tileIndex": 31835,
-      "segment": 0,
+      "tileIndex": 32002,
+      "segment": 3,
       "attributes": {
         "defence": 4
       }
@@ -2801,8 +2802,8 @@
     {
       "id": "building_89",
       "ownerId": "city_6",
-      "tileIndex": 31835,
-      "segment": 1,
+      "tileIndex": 32002,
+      "segment": 4,
       "attributes": {
         "repair": 3
       }
@@ -2810,7 +2811,7 @@
     {
       "id": "building_90",
       "ownerId": "city_6",
-      "tileIndex": 31835,
+      "tileIndex": 32002,
       "segment": 5,
       "attributes": {
         "antiAir": 4
@@ -2819,7 +2820,7 @@
     {
       "id": "building_91",
       "ownerId": "city_6",
-      "tileIndex": 31999,
+      "tileIndex": 31919,
       "segment": 0,
       "attributes": {
         "armour": 3,
@@ -2829,7 +2830,7 @@
     {
       "id": "building_92",
       "ownerId": "city_6",
-      "tileIndex": 31999,
+      "tileIndex": 31919,
       "segment": 1,
       "attributes": {
         "splashAttack": 3,
@@ -2839,7 +2840,7 @@
     {
       "id": "building_93",
       "ownerId": "city_6",
-      "tileIndex": 31999,
+      "tileIndex": 31919,
       "segment": 2,
       "attributes": {
         "rangeAttack": 4,
@@ -2849,8 +2850,8 @@
     {
       "id": "building_94",
       "ownerId": "city_6",
-      "tileIndex": 32081,
-      "segment": 1,
+      "tileIndex": 31919,
+      "segment": 3,
       "attributes": {
         "defence": 2,
         "repair": 2
@@ -2859,8 +2860,8 @@
     {
       "id": "building_95",
       "ownerId": "city_6",
-      "tileIndex": 32081,
-      "segment": 2,
+      "tileIndex": 31919,
+      "segment": 4,
       "attributes": {
         "kinetic": 3,
         "rangeAttack": 2
@@ -2869,8 +2870,8 @@
     {
       "id": "building_96",
       "ownerId": "city_6",
-      "tileIndex": 32162,
-      "segment": 1,
+      "tileIndex": 31919,
+      "segment": 5,
       "attributes": {
         "defence": 4
       }
@@ -2878,8 +2879,8 @@
     {
       "id": "building_97",
       "ownerId": "city_6",
-      "tileIndex": 32162,
-      "segment": 2,
+      "tileIndex": 31834,
+      "segment": 0,
       "attributes": {
         "repair": 3
       }
@@ -2887,8 +2888,8 @@
     {
       "id": "building_98",
       "ownerId": "city_6",
-      "tileIndex": 32162,
-      "segment": 3,
+      "tileIndex": 31834,
+      "segment": 1,
       "attributes": {
         "antiAir": 4
       }
@@ -2896,8 +2897,8 @@
     {
       "id": "building_99",
       "ownerId": "city_6",
-      "tileIndex": 32163,
-      "segment": 0,
+      "tileIndex": 31834,
+      "segment": 2,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -2906,7 +2907,7 @@
     {
       "id": "building_100",
       "ownerId": "city_6",
-      "tileIndex": 32163,
+      "tileIndex": 31834,
       "segment": 3,
       "attributes": {
         "splashAttack": 3,
@@ -2916,8 +2917,8 @@
     {
       "id": "building_101",
       "ownerId": "city_6",
-      "tileIndex": 32164,
-      "segment": 0,
+      "tileIndex": 31834,
+      "segment": 4,
       "attributes": {
         "rangeAttack": 4,
         "kinetic": 1
@@ -2926,8 +2927,8 @@
     {
       "id": "building_102",
       "ownerId": "city_6",
-      "tileIndex": 32164,
-      "segment": 3,
+      "tileIndex": 31834,
+      "segment": 5,
       "attributes": {
         "defence": 2,
         "repair": 2
@@ -2936,8 +2937,8 @@
     {
       "id": "building_103",
       "ownerId": "city_6",
-      "tileIndex": 32164,
-      "segment": 4,
+      "tileIndex": 31917,
+      "segment": 0,
       "attributes": {
         "kinetic": 3,
         "rangeAttack": 2
@@ -2946,8 +2947,8 @@
     {
       "id": "building_104",
       "ownerId": "city_6",
-      "tileIndex": 32164,
-      "segment": 5,
+      "tileIndex": 31917,
+      "segment": 1,
       "attributes": {
         "defence": 4
       }
@@ -2955,8 +2956,8 @@
     {
       "id": "building_105",
       "ownerId": "city_6",
-      "tileIndex": 32084,
-      "segment": 0,
+      "tileIndex": 31917,
+      "segment": 2,
       "attributes": {
         "repair": 3
       }
@@ -2964,8 +2965,8 @@
     {
       "id": "building_106",
       "ownerId": "city_6",
-      "tileIndex": 32084,
-      "segment": 1,
+      "tileIndex": 31917,
+      "segment": 3,
       "attributes": {
         "antiAir": 4
       }
@@ -2973,8 +2974,8 @@
     {
       "id": "building_107",
       "ownerId": "city_6",
-      "tileIndex": 32084,
-      "segment": 2,
+      "tileIndex": 31917,
+      "segment": 4,
       "attributes": {
         "armour": 3,
         "kinetic": 1
@@ -2983,8 +2984,8 @@
     {
       "id": "building_108",
       "ownerId": "city_6",
-      "tileIndex": 32084,
-      "segment": 3,
+      "tileIndex": 31917,
+      "segment": 5,
       "attributes": {
         "splashAttack": 3,
         "kinetic": 1
@@ -2993,7 +2994,7 @@
     {
       "id": "building_109",
       "ownerId": "city_6",
-      "tileIndex": 32003,
+      "tileIndex": 31835,
       "segment": 0,
       "attributes": {
         "rangeAttack": 4,
@@ -3004,132 +3005,12 @@
   "playerColor": "#00e5ff",
   "battleCentreTile": 24728,
   "logistics": {
-    "wells": [
-      {
-        "id": "seed-well-0",
-        "ownerId": "city_0",
-        "tileIndex": 24660,
-        "segment": 1,
-        "storedOil": 0,
-        "hitPoints": 40,
-        "maxHitPoints": 40
-      }
-    ],
-    "refineries": [
-      {
-        "id": "seed-refinery-0",
-        "ownerId": "city_0",
-        "tileIndex": 24694,
-        "segments": [
-          0,
-          1
-        ],
-        "heldOil": 0,
-        "refinedProductAvailable": 0,
-        "hitPoints": 40,
-        "maxHitPoints": 40
-      }
-    ],
-    "routes": [
-      {
-        "id": "seed-route-road",
-        "ownerId": "city_0",
-        "fromStructureId": "seed-well-0",
-        "toStructureId": "seed-refinery-0",
-        "segments": [
-          24660,
-          24694
-        ],
-        "capacity": 100,
-        "tier": "road",
-        "travelTime": 3,
-        "operable": true
-      },
-      {
-        "id": "seed-route-highway",
-        "ownerId": "city_0",
-        "fromStructureId": "seed-refinery-0",
-        "toStructureId": "city_0",
-        "segments": [
-          24694,
-          24695,
-          24728
-        ],
-        "capacity": 200,
-        "tier": "highway",
-        "travelTime": 4,
-        "operable": true
-      }
-    ],
-    "transports": [
-      {
-        "id": "seed-transport-van",
-        "ownerId": "city_0",
-        "routeId": "seed-route-road",
-        "cargoType": null,
-        "cargo": 0,
-        "cargoCapacity": 100,
-        "speed": 1,
-        "defence": 1,
-        "upgrades": 0,
-        "tier": "van",
-        "inTransit": false,
-        "turnsRemaining": 0,
-        "unitId": "seed-transport-van-unit"
-      },
-      {
-        "id": "seed-transport-truck",
-        "ownerId": "city_0",
-        "routeId": "seed-route-highway",
-        "cargoType": null,
-        "cargo": 0,
-        "cargoCapacity": 100,
-        "speed": 3,
-        "defence": 1,
-        "upgrades": 2,
-        "tier": "truck",
-        "inTransit": false,
-        "turnsRemaining": 0,
-        "unitId": "seed-transport-truck-unit"
-      },
-      {
-        "id": "seed-transport-juggernaut",
-        "ownerId": "city_0",
-        "routeId": "seed-route-highway",
-        "cargoType": null,
-        "cargo": 0,
-        "cargoCapacity": 100,
-        "speed": 5,
-        "defence": 1,
-        "upgrades": 4,
-        "tier": "juggernaut",
-        "inTransit": false,
-        "turnsRemaining": 0,
-        "unitId": "seed-transport-juggernaut-unit"
-      }
-    ],
-    "hubs": [
-      {
-        "id": "seed-hub-0",
-        "ownerId": "city_0",
-        "tileIndex": 24728,
-        "segment": 0,
-        "buffer": 0,
-        "routeIds": [
-          "seed-route-road",
-          "seed-route-highway"
-        ],
-        "hitPoints": 40,
-        "maxHitPoints": 40
-      }
-    ],
-    "home": {
-      "city_0": {
-        "factionId": "city_0",
-        "refinedProduct": 1000,
-        "oil": 0
-      }
-    },
+    "wells": [],
+    "refineries": [],
+    "routes": [],
+    "transports": [],
+    "hubs": [],
+    "home": {},
     "tasks": [],
     "clearedForests": [],
     "bridges": []
