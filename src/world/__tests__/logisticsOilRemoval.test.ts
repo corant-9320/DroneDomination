@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { removeOil } from '../logistics.js';
+import { removeOil } from '../logistics/production.js';
 import type { OilWell } from '../../../shared/logisticsTypes.js';
 import { WELL_STORAGE_CAPACITY } from '../../../shared/logisticsConstants.js';
 

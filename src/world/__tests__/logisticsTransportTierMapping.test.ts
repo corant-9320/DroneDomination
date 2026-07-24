@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { transportTier } from '../logistics.js';
+import { transportTier } from '../logistics/transport.js';
 import {
   TRANSPORT_TIER_THRESHOLDS,
   type TransportTier,

@@ -124,10 +124,12 @@ describe('movement (reach & mutation)', () => {
       expect(unit.facing).toBe(0);
     });
 
-    it('sets segment when provided', () => {
+    it('accepts the facing segment when explicitly provided', () => {
       const unit = makeUnit({ id: 'u', tileIndex: 0, segment: 0 as HexSegment });
-      moveUnit(unit, 1, tiles, 4 as HexSegment);
-      expect(unit.segment).toBe(4);
+      const arrivalSegment = tiles[1].neighbours.indexOf(0) as HexSegment;
+      const moved = moveUnit(unit, 1, tiles, arrivalSegment);
+      expect(moved).toBe(true);
+      expect(unit.segment).toBe(arrivalSegment);
     });
 
     it('with turn state: deducts movement cost', () => {
@@ -182,14 +184,15 @@ describe('movement (reach & mutation)', () => {
       expect(unit.tileIndex).toBe(0); // unchanged
     });
 
-    it('allows a move onto an explicit free segment even when the default arrival segment is occupied', () => {
+    it('rejects an explicit non-adjacent segment on the destination tile', () => {
       const unit = makeUnit({ id: 'u', tileIndex: 0, segment: 0 as HexSegment });
       const arrivalSeg = tiles[1].neighbours.indexOf(0);
       const isOccupied = buildSegmentOccupancy([{ tileIndex: 1, segment: arrivalSeg }]);
-      const freeSeg = ((arrivalSeg + 1) % 6) as HexSegment;
-      const result = moveUnit(unit, 1, tiles, freeSeg, undefined, isOccupied);
-      expect(result).toBe(true);
-      expect(unit.segment).toBe(freeSeg);
+      const nonAdjacentSeg = ((arrivalSeg + 1) % 6) as HexSegment;
+      const result = moveUnit(unit, 1, tiles, nonAdjacentSeg, undefined, isOccupied);
+      expect(result).toBe(false);
+      expect(unit.tileIndex).toBe(0);
+      expect(unit.segment).toBe(0);
     });
 
     it('with turn state: rejects a move onto an occupied segment even with MP available', () => {

@@ -1,16 +1,17 @@
 /**
- * Graph distance and pathfinding on the authoritative Goldberg tile graph.
+ * Graph distance and pathfinding over the authoritative Goldberg `Tile[]` graph.
  *
- * This file is a compatibility re-export layer. The canonical implementations
- * now live in `shared/pathfinding.ts` so both the client (AI turn) and server
- * share the same algorithms.
+ * This module is the `Tile`-typed entry point to pathfinding. The algorithms
+ * themselves are canonical in `shared/pathfinding.ts` so both the client (AI
+ * turn) and the server run the same code; this module owns only the type
+ * adaptation, which is real work rather than a re-export hop.
  *
  * The server-side `Tile` type differs from the shared `PathTile` only in how
  * the 3D position is stored (`position3d: {x,y,z}` vs `pos: [x,y,z]`). The
  * adapter below creates PathTile wrappers that preserve array indices so the
  * results map back 1:1 to the original tiles array.
  *
- * All existing importers of this file continue to work unchanged.
+ * Add new algorithms to `shared/pathfinding.ts`, not here.
  */
 
 import { Tile } from './types.js';

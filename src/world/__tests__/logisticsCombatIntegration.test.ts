@@ -18,7 +18,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { computeDamage, resolveAttack, type CombatContext } from '../combat.js';
-import { attackStructure, type HpStructure } from '../logistics.js';
+import { attackStructure, type HpStructure } from '../logistics/combatIntegration.js';
 import { Tile } from '../types.js';
 import { createTestGrid, makeUnit, makeCtx } from './combat.fixtures.js';
 

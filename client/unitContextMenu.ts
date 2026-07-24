@@ -6,7 +6,7 @@
  * input routing.
  */
 
-import { UnitData } from './worldData.js';
+import type { UnitData } from './worldData.js';
 import { rotateHexIndex } from './facing.js';
 import { setEwFocus } from './ewOverlay.js';
 
@@ -22,6 +22,9 @@ export interface ContextMenuHost {
     getMaxMovement(unit: UnitData): number;
     movementPoints: Map<string, number>;
     onRefit: ((unitId: string) => void) | null;
+    isGodModeEntityEditingEnabled: () => boolean;
+    onGodModeEditUnit: ((unitId: string) => void) | null;
+    onGodModeDeleteUnit: ((unitId: string) => void) | null;
     onSleepUnit: ((unitId: string) => void) | null;
     onViewUnit: ((unitId: string) => void) | null;
   };
@@ -118,6 +121,37 @@ export class UnitContextMenu {
       grayItem.textContent = '⚙ Refit';
       grayItem.title = 'Unit must not have moved this turn';
       menu.appendChild(grayItem);
+    }
+
+    if (v.isGodModeEntityEditingEnabled() && (v.onGodModeEditUnit || v.onGodModeDeleteUnit)) {
+      const godModeDivider = document.createElement('div');
+      Object.assign(godModeDivider.style, { borderTop: '1px solid #555', margin: '4px 0 2px' });
+      menu.appendChild(godModeDivider);
+
+      const godModeHeading = document.createElement('div');
+      Object.assign(godModeHeading.style, {
+        padding: '3px 14px',
+        color: '#c9a84c',
+        fontSize: '11px',
+        fontWeight: 'bold',
+        letterSpacing: '0.06em',
+        textTransform: 'uppercase',
+      });
+      godModeHeading.textContent = 'God Mode';
+      menu.appendChild(godModeHeading);
+
+      if (v.onGodModeEditUnit) {
+        menu.appendChild(makeItem('⚙ Edit Unit', 'Edit this unit through the development server', () => {
+          host.closeContextMenu();
+          v.onGodModeEditUnit?.(unit.id);
+        }));
+      }
+      if (v.onGodModeDeleteUnit) {
+        menu.appendChild(makeItem('🗑 Delete Unit', 'Delete this unit through the development server', () => {
+          host.closeContextMenu();
+          v.onGodModeDeleteUnit?.(unit.id);
+        }));
+      }
     }
 
     // Sleep

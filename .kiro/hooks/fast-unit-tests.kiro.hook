@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Run fast unit tests on agent stop",
+  "description": "Runs the under-10-second Group 1 unit smoke suite (`npm test`) when the agent finishes a batch of work. The suite is now weighted towards the repo's high-churn areas — combat resolution/formula/facing, logistics turn processing and placement validation, and the server intent appliers (move/attack/attackBuilding/repair/endTurn, logistics intents) — instead of only vector math, unit attributes and turn state, which could not fail on a real regression. Measured 268 tests in ~5.4 s wall-clock, against ~3.3 s for the old 101-test set: a small extra cost for a gate that can actually fail. Trigger stays on agentStop rather than postTaskExecution: postTaskExecution only fires when a spec task completes, and most work here lands through ad-hoc requests, so the gate would go silent on the majority of edits — including the combat/logistics churn it exists to protect. Paying ~5 s on a conversation-only stop is the accepted cost of covering every stop; if that cost ever matters, the fix is a change-detection wrapper around the command, not a narrower trigger. Uses runCommand, not askAgent: agentStop cannot tell whether any file actually changed, so an agent-turn action would burn a full turn on conversation-only stops. The command is cheap enough to run unconditionally; read the output and only involve the agent if it fails.",
+  "version": "3",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "npm test",
+    "timeout": 60
+  },
+  "workspaceFolderName": "DroneDomination",
+  "shortName": "fast-unit-tests"
+}

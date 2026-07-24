@@ -50,6 +50,28 @@ function makeTile(
   };
 }
 
+/**
+ * Minimum chord separation between neighbouring tile centres in a generated grid.
+ *
+ * Two independently-generated unit vectors can land arbitrarily close together,
+ * and `v3.distance` squares each component: a separation near the subnormal range
+ * (e.g. 5e-323) squares to exactly 0, so the chord distance collapses to 0 even
+ * though the coordinates are unequal. Such a grid is not a hex tiling at all, and
+ * the production code already treats it as degenerate (`segmentDistance` falls
+ * back to graph distance when `avgSpacing < 1e-10`). Requiring a real separation
+ * here keeps the generator producing plausible tilings instead of testing
+ * float-underflow artefacts.
+ */
+const MIN_TILE_SEPARATION = 1e-6;
+
+/** Chord (straight-line) distance between two points — mirrors `v3.distance`. */
+function chord(a: Vec3, b: Vec3): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  const dz = a.z - b.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
 /** A ring of 2–6 hex tiles, each with a full 6-vertex boundary (real path). */
 const arbBoundaryGrid: fc.Arbitrary<Tile[]> = fc
   .array(
@@ -65,6 +87,13 @@ const arbBoundaryGrid: fc.Arbitrary<Tile[]> = fc
         (i + 1) % arr.length,
         (i + arr.length - 1) % arr.length,
       ]),
+    ),
+  )
+  .filter((grid) =>
+    grid.every((tile) =>
+      tile.neighbours.every(
+        (n) => chord(tile.position3d, grid[n].position3d) >= MIN_TILE_SEPARATION,
+      ),
     ),
   );
 
@@ -174,9 +203,11 @@ describe('getSegmentCentroid3D', () => {
 describe('getLocalHexSpacing', () => {
   it('returns the mean chord distance to neighbours (positive, finite)', () => {
     fc.assert(
+      // `arbBoundaryGrid` guarantees every neighbour is at least
+      // MIN_TILE_SEPARATION away, so a positive mean spacing is unconditional.
       fc.property(arbBoundaryGrid, fc.nat(), (grid, tileRaw) => {
-        const idx = tileRaw % grid.length;
-        const spacing = getLocalHexSpacing(grid[idx], grid);
+        const tile = grid[tileRaw % grid.length];
+        const spacing = getLocalHexSpacing(tile, grid);
         expect(spacing).toBeGreaterThan(0);
         expect(Number.isFinite(spacing)).toBe(true);
       }),

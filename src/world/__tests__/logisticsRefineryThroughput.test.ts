@@ -14,7 +14,7 @@
 
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { refineryThroughput } from '../logistics.js';
+import { refineryThroughput } from '../logistics/production.js';
 import { REFINERY_THROUGHPUT_RATE } from '../../../shared/logisticsConstants.js';
 
 describe('refineryThroughput (Property 9: linear in segment count)', () => {

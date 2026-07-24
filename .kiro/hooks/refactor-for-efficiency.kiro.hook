@@ -2,11 +2,12 @@
   "version": "1.0.0",
   "enabled": true,
   "name": "Refactor for efficiency",
+  "description": "Delegates agent-efficiency refactoring analysis to the refactor-writer subagent.",
   "when": {
     "type": "userTriggered"
   },
   "then": {
     "type": "askAgent",
-    "prompt": "Analyse this codebase and propose refactorings that will make future AI coding sessions faster, cheaper, and easier.\n\nFocus on:\n\n* Reducing unnecessary complexity and duplication.\n* Making files more self-contained so they can be exported and worked on independently.\n* Keeping functions small, focused, and easy to understand.\n* Improving naming, structure, and separation of concerns.\n* Adding useful comments where context is needed, especially around business rules, assumptions, edge cases, and non-obvious logic.\n* Removing or isolating code that creates excessive cross-file dependency chains.\n\nDo not rewrite the code yet.\n\nReturn:\n\n1. A concise summary of the main complexity/token-cost issues.\n2. A prioritized list of refactorings.\n3. For each refactoring, explain:\n\n   * Why it helps.\n   * Which files/functions are affected.\n   * Whether it is low, medium, or high risk.\n   * Whether it can be done independently.\n4. Highlight any files that should be split, merged, renamed, or documented.\n5. Suggest an order of implementation suitable for future AI coding sessions.\n"
+    "prompt": "Invoke the `refactor-writer` subagent in analysis-only mode: propose a prioritized set of refactorings that make future agent sessions faster and cheaper. Do not change any code yet."
   }
 }

@@ -18,7 +18,7 @@
 
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { extract } from '../logistics.js';
+import { extract } from '../logistics/production.js';
 import {
   EXTRACTION_RATE,
   WELL_STORAGE_CAPACITY,

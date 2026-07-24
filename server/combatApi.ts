@@ -44,6 +44,7 @@ import {
 import { getMovementMode, getMaxMovement, segmentCost } from '../shared/movementConstants.js';
 import { realizeTilePathOverSegments, buildSegmentOccupancy, type SegNode } from '../shared/segmentGraph.js';
 import type { CombatResponse } from '../shared/combatTypes.js';
+import type { WireUnit, WireBuilding } from '../shared/wireTypes.js';
 import {
   explainAttack,
   explainSplash,
@@ -56,26 +57,12 @@ import {
 // Request / Response types
 // ---------------------------------------------------------------------------
 
-/** Wire-format unit (matches CompactUnit + facing). */
-export interface WireUnit {
-  id: string;
-  label: string;
-  ownerId: string;
-  tileIndex: number;
-  segment: number;
-  facing: number;
-  attributes: UnitAttributes;
-  currentHealth: number;
-}
-
-/** Wire-format building (immobile EW/combat source on a city hex). */
-export interface WireBuilding {
-  id: string;
-  ownerId: string;
-  tileIndex: number;
-  segment: number;
-  attributes?: UnitAttributes;
-}
+/**
+ * Wire-format unit/building (matches CompactUnit + facing). Re-exported here
+ * for backward-compatible imports (`./combatApi.js`); the authoritative
+ * definition lives in `shared/wireTypes.ts`.
+ */
+export type { WireUnit, WireBuilding };
 
 /** Minimal tile data needed for combat resolution. */
 export interface WireTile {
@@ -129,8 +116,10 @@ export interface CombatRequest {
   repairTargetId?: string;
   /** For 'move': unit ID that is moving. */
   unitId?: string;
-  /** For 'move': path as tile indices. */
+  /** For 'move': path as tile indices (one tile for an intra-hex move). */
   path?: number[];
+  /** For 'move': requested destination segment. Required for an intra-hex move. */
+  segment?: number;
   /** The faction (ownerId) whose turn it currently is. Only this faction may attack. */
   activeFaction: string;
   /** All units currently on the board. */
@@ -420,22 +409,21 @@ function handlePreview(req: CombatRequest, ctx: CombatContext): CombatResponse<W
  * must be allowed to step off its own segment).
  */
 /**
- * Build the occupant list a mover's segment-path must avoid: every other
- * living unit's segment, plus every building's segment when the mover is a
- * ground chassis (drones fly over buildings freely). Excludes the mover's own
- * current segment so it may step off it.
+ * Build the occupant list a mover's segment path must avoid: every other
+ * living unit and every building. A segment must be empty for every chassis,
+ * including flight-capable units (Requirements B2/B5).
  */
 function movementOccupants(
   units: ReadonlyArray<{ id: string; tileIndex: number; segment: number }>,
   buildings: ReadonlyArray<{ tileIndex: number; segment: number }>,
   moverId: string,
-  isDroneMover: boolean,
 ): { tileIndex: number; segment: number }[] {
-  const occupants = units
-    .filter((u) => u.id !== moverId)
-    .map((u) => ({ tileIndex: u.tileIndex, segment: u.segment }));
-  if (!isDroneMover) occupants.push(...buildings.map((b) => ({ tileIndex: b.tileIndex, segment: b.segment })));
-  return occupants;
+  return [
+    ...units
+      .filter((u) => u.id !== moverId)
+      .map((u) => ({ tileIndex: u.tileIndex, segment: u.segment })),
+    ...buildings.map((b) => ({ tileIndex: b.tileIndex, segment: b.segment })),
+  ];
 }
 
 export function computeMovePath(
@@ -445,6 +433,9 @@ export function computeMovePath(
   occupants: ReadonlyArray<{ tileIndex: number; segment: number }> = [],
   finalSegment?: number,
 ): { error: string } | { cost: number; segmentPath: SegNode[] } {
+  if (path.length === 0) {
+    return { error: 'Move path is required' };
+  }
   if (path[0] !== mover.tileIndex) {
     return { error: 'Move path does not start at the unit\'s current tile' };
   }
@@ -453,7 +444,16 @@ export function computeMovePath(
     if (!prevTile) return { error: 'Move path references an unknown tile' };
     if (prevTile.neighbours.indexOf(path[i]) < 0) return { error: 'Move path is not contiguous' };
   }
-  if (!tiles[path[path.length - 1]]) return { error: 'Move path references an unknown tile' };
+  const finalTile = tiles[path[path.length - 1]];
+  if (!finalTile) return { error: 'Move path references an unknown tile' };
+  if (finalSegment !== undefined && (
+    !Number.isInteger(finalSegment) || finalSegment < 0 || finalSegment >= finalTile.sides
+  )) {
+    return { error: 'Move destination segment is invalid' };
+  }
+  if (path.length === 1 && finalSegment === undefined) {
+    return { error: 'Destination segment required for an intra-hex move' };
+  }
 
   const mode = getMovementMode(mover.attributes);
   const isOccupied = buildSegmentOccupancy(occupants);
@@ -500,9 +500,9 @@ export function validateMovePath(
 
 function handleMove(req: CombatRequest, ctx: CombatContext): CombatResponse<WireUnit> {
   const { units, tiles } = ctx;
-  const { unitId, path, activeFaction } = req;
-  if (!unitId || !path || path.length < 2) {
-    return { success: false, error: 'unitId and path (2+ tiles) required', combats: [], reactions: [], updatedUnits: [] };
+  const { unitId, path, segment, activeFaction } = req;
+  if (!unitId || !path || path.length < 1) {
+    return { success: false, error: 'unitId and path required', combats: [], reactions: [], updatedUnits: [] };
   }
 
   const mover = units.find((u) => u.id === unitId);
@@ -515,13 +515,12 @@ function handleMove(req: CombatRequest, ctx: CombatContext): CombatResponse<Wire
     return { success: false, error: 'Not this faction\'s turn to move', combats: [], reactions: [], updatedUnits: [] };
   }
 
-  // Legality enforcement (Phase 2/B2-B4): reject teleports / impassable /
-  // occupied / overlong paths. Occupancy excludes the mover's own segment;
-  // buildings block ground chassis but not flight (drones pass over freely).
+  // Legality enforcement (Phase 2/B2-B4): reject teleports, impassable or
+  // occupied segments, and overlong paths. The mover's own segment is omitted.
   const isDroneMover = isDrone(mover);
-  const occupants = movementOccupants(units, ctx.buildings, mover.id, isDroneMover);
+  const occupants = movementOccupants(units, ctx.buildings, mover.id);
 
-  const moveResult = computeMovePath(mover, path, tiles, occupants);
+  const moveResult = computeMovePath(mover, path, tiles, occupants, segment);
   if ('error' in moveResult) {
     return { success: false, error: moveResult.error, combats: [], reactions: [], updatedUnits: [] };
   }
@@ -657,7 +656,7 @@ export function rebuildTiles(wireTiles: WireTile[]): Tile[] {
       boundary,
       terrainType: (wt.t as TerrainType) ?? 'plains',
       height: wt.h ?? 0,
-      forested: wt.f || undefined,
+      forested: wt.f ?? false,
       segSteep: wt.ss,
     };
   }
@@ -718,7 +717,7 @@ export function toWireBuilding(b: Building): WireBuilding {
     id: b.id,
     ownerId: b.ownerId,
     tileIndex: b.tileIndex,
-    segment: b.segment,
+    segment: b.segment as HexSegment,
     attributes: b.attributes,
   };
 }

@@ -32,14 +32,18 @@
 import { Tile } from './types.js';
 import { Unit, HexSegment, MOVEMENT_ATTRIBUTES } from './units.js';
 import { TurnState, canMove, canPivot, recordMove, recordPivot, movementRemaining } from './turnState.js';
-import { getApproachDirection } from './combat.js';
+import { getApproachDirection } from './combatFacing.js';
 import {
   MovementMode,
   getMovementMode as getMovementModeFromAttrs,
   hexEntryCost as hexEntryCostShared,
   segmentCost as segmentCostShared,
 } from '../../shared/movementConstants.js';
-import { NO_OCCUPANCY, type SegOccupiedFn } from '../../shared/segmentGraph.js';
+import {
+  NO_OCCUPANCY,
+  segmentNeighbours,
+  type SegOccupiedFn,
+} from '../../shared/segmentGraph.js';
 
 export type { SegOccupiedFn };
 
@@ -197,63 +201,48 @@ export function moveUnit(
   turnState?: TurnState,
   isOccupied: SegOccupiedFn = NO_OCCUPANCY,
 ): boolean {
-  const fromIndex = unit.tileIndex;
-  const isInterHex = fromIndex !== toTileIndex;
+  const sourceTile = tiles[unit.tileIndex];
+  const destinationTile = tiles[toTileIndex];
+  if (!sourceTile || !destinationTile) return false;
+
+  const isInterHex = unit.tileIndex !== toTileIndex;
+  const arrivalSegment = isInterHex
+    ? destinationTile.neighbours.indexOf(unit.tileIndex)
+    : -1;
+  const destinationSegment = segment ?? arrivalSegment;
+  if (
+    !Number.isInteger(destinationSegment)
+    || destinationSegment < 0
+    || destinationSegment >= destinationTile.sides
+  ) return false;
+
+  // This primitive applies exactly one graph edge. Longer routes must be
+  // resolved through shared/segmentGraph.ts and applied one node at a time.
+  const adjacent = segmentNeighbours(tiles, unit.tileIndex, unit.segment).some(
+    (node) => node.tileIndex === toTileIndex && node.segment === destinationSegment,
+  );
+  if (!adjacent || isOccupied(toTileIndex, destinationSegment)) return false;
+
+  const mode = getMovementMode(unit);
+  const cost = segmentCostShared(destinationTile, destinationSegment, mode);
+  if (!Number.isFinite(cost)) return false;
 
   if (turnState) {
     if (isInterHex) {
-      if (!canMove(unit, turnState)) return false;
-
-      const mode = getMovementMode(unit);
-      const destTile = tiles[toTileIndex];
-
-      // Unified segment-step cost: arrival segment is the face pointing back
-      // toward the origin tile, so the steepness gate applies to the exact
-      // segment the unit steps onto.
-      const arrivalSeg = destTile.neighbours.indexOf(fromIndex);
-      const landingSeg = segment !== undefined ? segment : (arrivalSeg >= 0 ? arrivalSeg : 0);
-      if (isOccupied(toTileIndex, landingSeg)) return false;
-
-      const cost = segmentCostShared(destTile, arrivalSeg >= 0 ? arrivalSeg : 0, mode);
-
-      if (cost === Infinity) return false;
-      const remaining = movementRemaining(unit, turnState);
-      if (cost > remaining) return false;
-
-      // Apply the move
-      const dir = getApproachDirection(tiles, fromIndex, toTileIndex);
-      if (dir >= 0) {
-        unit.facing = dir as HexSegment;
-      }
-      unit.tileIndex = toTileIndex;
+      if (!canMove(unit, turnState) || cost > movementRemaining(unit, turnState)) return false;
       recordMove(unit, turnState, cost);
     } else {
-      // Same-hex reposition is a pivot — check pivot rules + occupancy (B6).
-      if (!canPivot(unit, turnState, segment)) return false;
-      if (segment !== undefined && isOccupied(unit.tileIndex, segment)) return false;
-    }
-  } else {
-    // No turn state — legacy/test path
-    if (isInterHex) {
-      const destTile = tiles[toTileIndex];
-      const arrivalSeg = destTile.neighbours.indexOf(fromIndex);
-      const landingSeg = segment !== undefined ? segment : (arrivalSeg >= 0 ? arrivalSeg : 0);
-      if (isOccupied(toTileIndex, landingSeg)) return false;
-
-      const dir = getApproachDirection(tiles, fromIndex, toTileIndex);
-      if (dir >= 0) {
-        unit.facing = dir as HexSegment;
-      }
-      unit.tileIndex = toTileIndex;
-    } else if (segment !== undefined && isOccupied(unit.tileIndex, segment)) {
-      return false;
+      if (!canPivot(unit, turnState, destinationSegment as HexSegment)) return false;
+      recordPivot(unit, turnState, unit.facing, destinationSegment as HexSegment);
     }
   }
 
-  if (segment !== undefined) {
-    unit.segment = segment;
+  if (isInterHex) {
+    const direction = getApproachDirection(tiles, unit.tileIndex, toTileIndex);
+    if (direction >= 0) unit.facing = direction as HexSegment;
+    unit.tileIndex = toTileIndex;
   }
-
+  unit.segment = destinationSegment as HexSegment;
   return true;
 }
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { clampTransport } from '../logistics.js';
+import { clampTransport } from '../logistics/transport.js';
 
 // ---------------------------------------------------------------------------
 // Feature: oil-logistics-system, Property 16: Per-turn transport never exceeds

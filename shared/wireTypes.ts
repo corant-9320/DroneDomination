@@ -151,11 +151,26 @@ export interface WireWorld {
 // ─── Compact save format ──────────────────────────────────────────────────────
 
 /**
+ * Current compact-save schema version (Phase 3 — versioned save contracts).
+ *
+ * Bump this, and add a migration step in `client/world/codec.ts`, whenever the
+ * persisted shape changes in a way older saves can't be read as-is. Saves
+ * written before this field existed are "legacy version 0" — an input-only
+ * shape recognized and migrated by the codec, never written back out.
+ */
+export const COMPACT_SAVE_FORMAT_VERSION = 1 as const;
+
+/**
  * Compact save format — omits tiles (regenerated from seed on load).
  * Used by localStorage saves and bundled battle scenarios.
+ *
+ * `formatVersion` is always present on saves this client writes. Legacy saves
+ * on disk may omit it (implicit version 0); `client/world/codec.ts` migrates
+ * them to this shape at load time — see `decodeCompactSave`.
  */
-export interface CompactSave {
+export interface CompactSaveV1 {
   format: 'compact';
+  formatVersion: 1;
   seed: number;
   cities: WireCity[];
   units: WireUnit[];
@@ -178,4 +193,31 @@ export interface CompactSave {
    * logistics still load.
    */
   logistics?: LogisticsState;
+}
+
+/**
+ * `CompactSave` names the *current* schema version, so existing imports of
+ * `CompactSave` continue to mean "a valid, current-format save" without
+ * callers needing to know a version number exists. There is no separate v0
+ * interface — legacy input is validated/migrated dynamically by the codec
+ * (`client/world/codec.ts::decodeCompactSave`), not typed here.
+ */
+export type CompactSave = CompactSaveV1;
+
+// ─── Tile-regeneration response (POST /api/world-tiles) ───────────────────────
+
+/**
+ * Shape of the JSON response from `POST /api/world-tiles`, shared so the
+ * server handler (`server/regenerate.ts`) and the client's runtime validator
+ * (`client/world/tilesClient.ts`) stay statically in sync. Static typing here
+ * does not replace the client's runtime validation of the actual response.
+ */
+export interface WorldTilesResponse {
+  tiles: WireTile[];
+  pentagonIndices: number[];
+  tileCount: number;
+  pentagonCount: number;
+  hexCount: number;
+  /** Cities as generated (before any filtering by scenario). Not currently consumed by the client. */
+  cities?: { id: string; label: string; tileIndex: number; neighbourCityIds: string[] }[];
 }

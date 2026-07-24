@@ -19,7 +19,7 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 
 import { placeOilDeposits } from '../logisticsGen.js';
-import { tilesWithinRadius } from '../pathfinding.js';
+import { tilesWithinRadius } from '../tilePathfinding.js';
 import { generateGeodesicSphere, computeDual } from '../geodesic.js';
 import { generateTerrain, generateRivers } from '../generate.js';
 import { DEPOSIT_SPACING } from '../../../shared/logisticsConstants.js';

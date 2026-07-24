@@ -17,7 +17,7 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 
-import { distributeHub } from '../logistics.js';
+import { distributeHub } from '../logistics/hubs.js';
 import type { DistributionHub } from '../../../shared/logisticsTypes.js';
 import { HUB_STORAGE_CAPACITY } from '../../../shared/logisticsConstants.js';
 

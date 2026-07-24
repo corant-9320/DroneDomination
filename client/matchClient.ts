@@ -15,15 +15,26 @@
 
 import type { WorldData, UnitData, BuildingData } from './worldData.js';
 import type { TurnManager } from './turnManager.js';
-import type { CreateMatchResponse, MatchIntentResponse, Intent } from '../shared/matchTypes.js';
+import type {
+  CreateMatchResponse,
+  MatchCapabilities,
+  MatchIntentResponse,
+  Intent,
+} from '../shared/matchTypes.js';
 import { dbg } from './debug.js';
 
 export class MatchClient {
   private matchId: string | null = null;
   private version = 0;
+  private matchCapabilities: MatchCapabilities | null = null;
   private creating: Promise<boolean> | null = null;
   /** Serialises intent submissions so versions never race. */
   private chain: Promise<unknown> = Promise.resolve();
+
+  /** Read-only capabilities last supplied by the authoritative server. */
+  get capabilities(): Readonly<MatchCapabilities> | null {
+    return this.matchCapabilities;
+  }
 
   /** Whether an authoritative session is established. */
   get active(): boolean {
@@ -62,6 +73,7 @@ export class MatchClient {
         }
         this.matchId = data.state.matchId;
         this.version = data.state.version;
+        this.matchCapabilities = data.capabilities ?? null;
         dbg.input.log('Authoritative match created:', this.matchId);
         return true;
       } catch (err) {
@@ -100,8 +112,12 @@ export class MatchClient {
         body: JSON.stringify({ matchId: this.matchId, expectedVersion: this.version, intent }),
       });
       const data = (await resp.json()) as MatchIntentResponse;
-      if (data.success && data.version != null) this.version = data.version;
-      else if (!data.success) dbg.input.log('Intent rejected by server:', data.error);
+      if (data.success && data.version != null) {
+        this.version = data.version;
+        if (data.capabilities) this.matchCapabilities = data.capabilities;
+      } else if (!data.success) {
+        dbg.input.log('Intent rejected by server:', data.error);
+      }
       return data;
     } catch (err) {
       dbg.input.error('Match intent error:', err);
@@ -118,6 +134,17 @@ export class MatchClient {
     if (!resp.success) return;
     if (resp.units) world.units = resp.units as UnitData[];
     if (resp.buildings) world.buildings = resp.buildings as BuildingData[];
+    if (resp.logistics) {
+      world.logistics = resp.logistics;
+      for (const tileIndex of resp.logistics.bridges) {
+        const tile = world.tiles[tileIndex];
+        if (tile) tile.bridge = true;
+      }
+      for (const tileIndex of resp.logistics.clearedForests) {
+        const tile = world.tiles[tileIndex];
+        if (tile) tile.clearedForest = true;
+      }
+    }
     if (resp.unitTurn) {
       turnManager.movementPoints.clear();
       turnManager.actedUnits.clear();

@@ -425,7 +425,7 @@ export class LogisticsRenderer {
 
   private renderHubs(hubs: DistributionHub[]): void {
     for (const hub of hubs) {
-      const pos = this.ctx.tileCentre(hub.tileIndex);
+      const pos = this.ctx.segmentCentre(hub.tileIndex, hub.segment);
       if (!pos) continue;
       const model = buildLogisticsModel('hub', this.ctx.factionColorFor(hub.ownerId));
       model.scale.setScalar(this.ctx.scaleAt(hub.tileIndex));
@@ -439,8 +439,9 @@ export class LogisticsRenderer {
     for (const route of routes) {
       const path = this.routePath(route);
       if (path.length < 2) continue;
-      // Scale road width to the tiles it crosses so it reads at the view's scale.
-      const width = this.ctx.scaleAt(route.segments[0]) * 0.9;
+      // Scale road width to the tiles it crosses (decode first encoded key).
+      const firstTile = Math.floor((route.segments[0] ?? 0) / 6);
+      const width = this.ctx.scaleAt(firstTile) * 0.9;
       const group =
         route.tier === 'highway'
           ? buildHighwayMesh(path, { width })
@@ -461,29 +462,42 @@ export class LogisticsRenderer {
     void world;
   }
 
-  /** Route tile-centre world path, dropping any tiles the context can't place. */
+  /** Route segment-centre world path, decoding each encoded segment key. */
   private routePath(route: LogisticsRoute): THREE.Vector3[] {
+    return this.segmentKeyPath(route.segments ?? []);
+  }
+
+  /** Segment-centre world path for an arbitrary list of encoded segment keys. */
+  private segmentKeyPath(keys: readonly number[]): THREE.Vector3[] {
     const path: THREE.Vector3[] = [];
-    for (const tileIndex of route.segments ?? []) {
-      const p = this.ctx.tileCentre(tileIndex);
+    for (const key of keys) {
+      // Each key is encodeSeg(tileIndex, segment) = tileIndex * 6 + segment.
+      const tileIndex = Math.floor(key / 6);
+      const segment = key % 6;
+      // Use segmentCentre for accurate sub-tile road positioning; fall back to
+      // tileCentre when the context doesn't support segmentCentre.
+      const p = this.ctx.segmentCentre(tileIndex, segment) ?? this.ctx.tileCentre(tileIndex);
       if (p) path.push(p);
     }
     return path;
   }
 
   // ── Moving transports with cargo/ETA readouts ─────────────────────────────
+  // Shuttle transports (shuttleMode) walk their own fixed shuttlePath and
+  // carry no cargo/turn-countdown; ordinary cargo transports follow their
+  // assigned route via the turn-countdown progress.
   private renderTransports(transports: Transport[], routes: LogisticsRoute[]): void {
     const routeById = new Map<string, LogisticsRoute>();
     for (const r of routes) routeById.set(r.id, r);
 
     for (const transport of transports) {
-      const route = routeById.get(transport.routeId);
-      if (!route) continue;
-      const path = this.routePath(route);
+      const segmentKeys = transport.shuttleMode ? (transport.shuttlePath ?? []) : routeById.get(transport.routeId)?.segments;
+      if (!segmentKeys || segmentKeys.length === 0) continue;
+      const path = this.segmentKeyPath(segmentKeys);
       if (path.length < 2) continue;
 
       const model = buildTransportModel(transport.tier, this.ctx.factionColorFor(transport.ownerId) ?? '#8090a0');
-      const scale = this.ctx.scaleAt(route.segments[0]);
+      const scale = this.ctx.scaleAt(Math.floor((segmentKeys[0] ?? 0) / 6));
       model.scale.setScalar(scale);
 
       // Arc-length table so we can interpolate an even crawl along the path.
@@ -493,12 +507,24 @@ export class LogisticsRenderer {
       }
       const totalLength = arcLengths[arcLengths.length - 1];
 
-      // Progress from the turn countdown: at dispatch turnsRemaining = travelTime
-      // (progress 0), at arrival turnsRemaining = 0 (progress 1).
-      const travelTime = Math.max(1, route.travelTime || 1);
-      const baseProgress = transport.inTransit
-        ? Math.max(0, Math.min(1, (travelTime - transport.turnsRemaining) / travelTime))
-        : 0;
+      let baseProgress: number;
+      let progressPerTurn: number;
+      if (transport.shuttleMode) {
+        // Direct index along the shuttle's own fixed path (no turn countdown).
+        const lastIndex = path.length - 1;
+        const position = Math.max(0, Math.min(lastIndex, transport.shuttlePosition ?? 0));
+        baseProgress = lastIndex > 0 ? position / lastIndex : 0;
+        progressPerTurn = 0; // shuttle position is authoritative; no within-turn crawl interpolation.
+      } else {
+        // Progress from the turn countdown: at dispatch turnsRemaining = travelTime
+        // (progress 0), at arrival turnsRemaining = 0 (progress 1).
+        const route = routeById.get(transport.routeId);
+        const travelTime = Math.max(1, route?.travelTime || 1);
+        baseProgress = transport.inTransit
+          ? Math.max(0, Math.min(1, (travelTime - transport.turnsRemaining) / travelTime))
+          : 0;
+        progressPerTurn = 1 / travelTime;
+      }
 
       const readout = makeReadoutSprite();
       readout.sprite.scale.setScalar(scale * 3);
@@ -512,7 +538,7 @@ export class LogisticsRenderer {
         arcLengths,
         totalLength,
         baseProgress,
-        progressPerTurn: 1 / travelTime,
+        progressPerTurn,
         cargo: transport.cargo,
         turnsRemaining: transport.turnsRemaining,
         scale,

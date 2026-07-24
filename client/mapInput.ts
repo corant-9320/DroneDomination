@@ -76,7 +76,21 @@ export interface MapViewInterface {
   readonly onViewSegment: ((tileIndex: number, segment: number) => void) | null;
   readonly onCityDesign: ((cityId: string) => void) | null;
   readonly onBuildingRefit: ((buildingId: string) => void) | null;
+  readonly onGodModeBuildBridge: ((tileIndex: number) => void) | null;
+  readonly onGodModeClearForest: ((tileIndex: number) => void) | null;
+  readonly onGodModeBuildRoad: ((tileIndex: number, segment: number) => void) | null;
+  readonly onGodModeCreateOilBuilding: ((structure: 'well' | 'refinery', tileIndex: number, segment: number) => void) | null;
+  readonly onGodModeEditOilBuilding: ((structure: 'well' | 'refinery', structureId: string) => void) | null;
+  readonly onGodModeDeleteOilBuilding: ((structure: 'well' | 'refinery', structureId: string, segment: number) => void) | null;
+  readonly onGodModeEditUnit: ((unitId: string) => void) | null;
+  readonly onGodModeDeleteUnit: ((unitId: string) => void) | null;
+  readonly onGodModeEditBuilding: ((buildingId: string) => void) | null;
+  readonly onGodModeDeleteBuilding: ((buildingId: string) => void) | null;
   readonly onBuildingSelected: ((buildingId: string | null) => void) | null;
+  /** Create a point-to-point shuttle transport from this owned oil structure (RMB action). */
+  readonly onCreateShuttleTransport: ((structureId: string) => void) | null;
+  /** Stop the shuttle transport currently parked on this segment (RMB action). */
+  readonly onStopShuttleTransport: ((transportId: string) => void) | null;
 
   // Coordinate conversion
   worldToScreen(wx: number, wy: number): [number, number];
@@ -102,6 +116,9 @@ export interface MapViewInterface {
   /** Get the current screen position of a unit (null if not visible). */
   getUnitScreenPos(unitId: string): { x: number; y: number } | null;
 
+  /** Remaining movement points per unit id (owned by TurnManager). */
+  readonly movementPoints: Map<string, number>;
+
   // Movement helpers
   getMaxMovement(unit: UnitData): number;
   getMovementMode(unit: UnitData): 'wheeled' | 'limb' | 'flight';
@@ -117,6 +134,12 @@ export interface MapViewInterface {
   /** Fired after a player move is committed (unit id, tile path, arrival segment). */
   onMoveCommitted: ((unitId: string, path: number[], segment: number) => void) | null;
   isImpassableTerrain(terrain: string): boolean;
+  /** True only when the active authoritative match permits unit-free terrain tasks. */
+  isGodModeRemoteTerrainTasksEnabled(): boolean;
+  /** True only when the active authoritative match permits standalone road overlays. */
+  isGodModeStandaloneRoadConstructionEnabled(): boolean;
+  /** True only when the active authoritative match permits entity editing. */
+  isGodModeEntityEditingEnabled(): boolean;
   computeFacingAngle(fromTileIndex: number, toTileIndex: number): number;
   angleToFacing(angle: number): 0 | 1 | 2 | 3 | 4 | 5;
 }
@@ -518,7 +541,7 @@ export class MapInputHandler {
 
       const tileData = v.world.tiles[capTile];
       let seg = -1;
-      if (tileData && tileData.s === 6) {
+      if (tileData) {
         const ft = v.flatTiles.find((f) => f.tileIndex === capTile);
         if (ft) seg = v.findSegmentAt(cx, cy, ft);
       }
@@ -528,20 +551,147 @@ export class MapInputHandler {
 
       const homeCity = v.world.cities.find((c) => c.isPlayerHome);
       const playerFaction = homeCity ? (homeCity.ownerId ?? homeCity.id) : null;
+      const entityEditingEnabled = v.isGodModeEntityEditingEnabled();
 
       const building = seg >= 0 && playerFaction
         ? v.world.buildings.find(
             (b) => b.tileIndex === capTile && b.segment === seg && b.ownerId === playerFaction,
           )
         : undefined;
+      const godModeBuilding = seg >= 0
+        ? v.world.buildings.find((b) => b.tileIndex === capTile && b.segment === seg)
+        : undefined;
+      const godModeUnit = seg >= 0
+        ? v.world.units.find((u) => u.tileIndex === capTile && u.segment === seg)
+        : undefined;
+      const oilWell = seg >= 0
+        ? (v.world.logistics?.wells ?? []).find((well) => well.tileIndex === capTile && well.segment === seg)
+        : undefined;
+      const refinery = seg >= 0
+        ? (v.world.logistics?.refineries ?? []).find(
+            (candidate) => candidate.tileIndex === capTile && candidate.segments.includes(seg),
+          )
+        : undefined;
+      const oilHub = seg >= 0
+        ? (v.world.logistics?.hubs ?? []).find((hub) => hub.tileIndex === capTile && hub.segment === seg)
+        : undefined;
+      const oilBuilding = oilWell
+        ? { structure: 'well' as const, structureId: oilWell.id }
+        : refinery ? { structure: 'refinery' as const, structureId: refinery.id } : undefined;
+      // "Create Transport" is offered on any owned well/refinery/storage-hub
+      // segment. "Stop Transport" is offered when a shuttle transport is
+      // currently parked exactly on this segment.
+      const oilStructure = oilWell ?? refinery ?? oilHub;
+      const oilStructureId = oilStructure && oilStructure.ownerId === playerFaction
+        ? oilStructure.id
+        : undefined;
+      const shuttleAtSegment = seg >= 0
+        ? (v.world.logistics?.transports ?? []).find((transport) => {
+            if (!transport.shuttleMode || transport.shuttleStopped) return false;
+            if (transport.ownerId !== playerFaction) return false;
+            const path = transport.shuttlePath ?? [];
+            if (path.length === 0) return false;
+            const idx = Math.max(0, Math.min(path.length - 1, transport.shuttlePosition ?? 0));
+            const key = path[idx];
+            return Math.floor(key / 6) === capTile && key % 6 === seg;
+          })
+        : undefined;
+      // Pending well tasks reserve their target segment and tile designation so
+      // the menu cannot offer a conflicting refinery or consume the last road slot.
+      const tileOilWells = [
+        ...(v.world.logistics?.wells ?? []).filter((well) => well.tileIndex === capTile),
+        ...(v.world.logistics?.tasks ?? []).filter(
+          (task) => task.kind === 'well' && task.tileIndex === capTile,
+        ),
+      ];
+      const tileRefinerySegments = (v.world.logistics?.refineries ?? [])
+        .filter((candidate) => candidate.tileIndex === capTile)
+        .reduce((count, candidate) => count + candidate.segments.length, 0);
+      const tileStorageSegments = (v.world.logistics?.hubs ?? []).filter(
+        (hub) => hub.tileIndex === capTile,
+      ).length;
+      const oilTileDesignation = tileOilWells.length > 0
+        ? 'well'
+        : tileRefinerySegments > 0
+          ? 'refinery'
+          : tileStorageSegments > 0 ? 'storage' : null;
+      const maxOilBuildingSegments = Math.max(0, (tileData?.s ?? 0) - 1);
 
       const city = v.world.cities.find((c) => c.tileIndex === capTile && c.isPlayerHome);
+      const remoteTerrainTasksEnabled = v.isGodModeRemoteTerrainTasksEnabled();
+      const standaloneRoadConstructionEnabled = v.isGodModeStandaloneRoadConstructionEnabled();
+      const roadSegmentKey = capTile * 6 + seg;
+      const roadSegmentOccupied = seg < 0
+        || godModeBuilding !== undefined
+        || godModeUnit !== undefined
+        || (v.world.logistics?.wells ?? []).some(
+          (well) => well.tileIndex === capTile && well.segment === seg,
+        )
+        || (v.world.logistics?.refineries ?? []).some(
+          (refinery) => refinery.tileIndex === capTile && refinery.segments.includes(seg),
+        )
+        || (v.world.logistics?.hubs ?? []).some(
+          (hub) => hub.tileIndex === capTile && hub.segment === seg,
+        )
+        || (v.world.logistics?.tasks ?? []).some(
+          (task) =>
+            (task.kind === 'well' || task.kind === 'road')
+            && task.tileIndex === capTile
+            && task.segment === seg,
+        )
+        || (v.world.logistics?.routes ?? []).some((route) => route.segments.includes(roadSegmentKey))
+        || (v.world.logistics?.standaloneRoadSegments ?? []).includes(roadSegmentKey);
+      const hasPendingBridge = v.world.logistics?.tasks.some(
+        (task) => task.kind === 'bridge' && task.tileIndex === capTile,
+      ) ?? false;
+      const hasPendingForestClear = v.world.logistics?.tasks.some(
+        (task) => task.kind === 'clearForest' && task.tileIndex === capTile,
+      ) ?? false;
 
       this.showSegmentMenu(event.clientX, event.clientY, {
         tileIndex: capTile,
         segment: seg,
         buildingId: building ? building.id : undefined,
         cityId: city && !building ? city.id : undefined,
+        canBuildBridge: remoteTerrainTasksEnabled
+          && !!tileData
+          && v.isImpassableTerrain(tileData.terrain)
+          && !tileData.bridge
+          && !hasPendingBridge,
+        canClearForest: remoteTerrainTasksEnabled
+          && !!tileData
+          && tileData.f === true
+          && !tileData.clearedForest
+          && !hasPendingForestClear,
+        canBuildRoad: standaloneRoadConstructionEnabled
+          && !!tileData
+          && seg >= 0
+          && seg < tileData.s
+          && !roadSegmentOccupied
+          && !(tileData.f === true && !tileData.clearedForest)
+          && !(v.isImpassableTerrain(tileData.terrain) && !tileData.bridge),
+        canCreateOilWell: entityEditingEnabled
+          && !!tileData
+          && seg >= 0
+          && seg < tileData.s
+          && tileData.resourceType === 'oil'
+          && (oilTileDesignation === null || oilTileDesignation === 'well')
+          && tileOilWells.length < maxOilBuildingSegments
+          && !roadSegmentOccupied,
+        canCreateRefinery: entityEditingEnabled
+          && !!tileData
+          && seg >= 0
+          && seg < tileData.s
+          && (oilTileDesignation === null || oilTileDesignation === 'refinery')
+          && tileRefinerySegments < maxOilBuildingSegments
+          && tileData.terrain !== 'ocean'
+          && !(tileData.f === true && !tileData.clearedForest)
+          && !roadSegmentOccupied,
+        oilBuilding: entityEditingEnabled ? oilBuilding : undefined,
+        godModeBuildingId: entityEditingEnabled ? godModeBuilding?.id : undefined,
+        godModeUnitId: entityEditingEnabled ? godModeUnit?.id : undefined,
+        oilStructureId,
+        shuttleTransportId: shuttleAtSegment?.id,
       });
       return;
     }
@@ -766,8 +916,9 @@ export class MapInputHandler {
     // Refresh detail panel (unit info, squad mates) to reflect the unit's new tile
     v.onTileSelectCb(v.selectedTile, v.selectedSegment);
 
-    // Animate the glide, then lock in the final facing.
-    v.playMoveAnimation(unit.id, fromTile, fromSeg, travelFacing).then(() => {
+    // Animate the glide, then lock in the final facing (fire-and-forget; the
+    // animation promise resolves after the visual glide completes).
+    void v.playMoveAnimation(unit.id, fromTile, fromSeg, travelFacing).then(() => {
       unit.facing = travelFacing;
       v.render();
     });
@@ -863,16 +1014,43 @@ export class MapInputHandler {
   private showSegmentMenu(
     clientX: number,
     clientY: number,
-    actions: { tileIndex: number; segment: number; buildingId?: string; cityId?: string },
+    actions: {
+      tileIndex: number;
+      segment: number;
+      buildingId?: string;
+      cityId?: string;
+      canBuildBridge?: boolean;
+      canClearForest?: boolean;
+      canBuildRoad?: boolean;
+      canCreateOilWell?: boolean;
+      canCreateRefinery?: boolean;
+      oilBuilding?: { structure: 'well' | 'refinery'; structureId: string };
+      godModeBuildingId?: string;
+      godModeUnitId?: string;
+      oilStructureId?: string;
+      shuttleTransportId?: string;
+    },
   ): void {
     this.segmentMenu.show(clientX, clientY, actions, {
       onViewSegment: this.view.onViewSegment,
       onCityDesign: this.view.onCityDesign,
       onBuildingRefit: this.view.onBuildingRefit,
+      onGodModeBuildBridge: this.view.onGodModeBuildBridge,
+      onGodModeClearForest: this.view.onGodModeClearForest,
+      onGodModeBuildRoad: this.view.onGodModeBuildRoad,
+      onGodModeCreateOilBuilding: this.view.onGodModeCreateOilBuilding,
+      onGodModeEditOilBuilding: this.view.onGodModeEditOilBuilding,
+      onGodModeDeleteOilBuilding: this.view.onGodModeDeleteOilBuilding,
+      onGodModeEditBuilding: this.view.onGodModeEditBuilding,
+      onGodModeDeleteBuilding: this.view.onGodModeDeleteBuilding,
+      onGodModeEditUnit: this.view.onGodModeEditUnit,
+      onGodModeDeleteUnit: this.view.onGodModeDeleteUnit,
       onShowEwCoverage: (tileIndex, segment) => {
         setEwFocus(tileIndex, segment);
         this.view.render();
       },
+      onCreateShuttleTransport: this.view.onCreateShuttleTransport,
+      onStopShuttleTransport: this.view.onStopShuttleTransport,
     });
   }
 

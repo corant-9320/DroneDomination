@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { upgradeTransport, transportTier } from '../logistics.js';
+import { upgradeTransport, transportTier } from '../logistics/transport.js';
 import type { Transport } from '../../../shared/logisticsTypes.js';
 import { TRANSPORT_CARGO_MAX } from '../../../shared/logisticsConstants.js';
 

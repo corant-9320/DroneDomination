@@ -44,6 +44,12 @@ export interface LogisticsTile {
   terrainType: string;
   height: number;
   forested: boolean;
+  /**
+   * Number of triangular segments (6 for hex, 5 for pentagon). Mirrors
+   * `Tile.sides`. Required by segment-graph adjacency; falls back to
+   * `segSteep.length` or `neighbours.length` when absent in test fixtures.
+   */
+  sides?: number;
   /** Per-segment steepness in radians; used by placement gates and travel time. */
   segSteep?: number[];
   /** `"oil"` marks an Oil_Deposit (Req 1.3, 2.4). */
@@ -79,13 +85,13 @@ export interface Refinery {
   maxHitPoints: number;
 }
 
-/** Req 6, 7, 12 — a physical road/highway along a contiguous tile path. */
+/** Req 6, 7, 12 — a physical road/highway along adjacent segment nodes. */
 export interface LogisticsRoute {
   id: string;
   ownerId: string;
   fromStructureId: string;         // Oil_Well | Refinery | Home_City
   toStructureId: string;
-  segments: number[];              // Route_Segment tile indices, pairwise adjacent (Req 6.1)
+  segments: number[];              // encodeSeg(tileIndex, segment), pairwise adjacent (Req 6.1)
   capacity: number;                // ROUTE_CAPACITY_MIN..MAX (Req 6.4/6.5)
   tier: 'road' | 'highway';        // Req 6.7 render form
   travelTime: number;              // whole turns >= 1 (Req 7.3), = routeTravelTime(steepness)
@@ -107,6 +113,33 @@ export interface Transport {
   inTransit: boolean;
   turnsRemaining: number;          // countdown to delivery = travelTime at dispatch (Req 7.4)
   unitId: string;                  // id of the backing Unit used for combat (Req 8.5)
+  /**
+   * True when this transport is a player-created point-to-point shuttle (RMB
+   * "Create Transport" on a well/refinery/storage hex) rather than a cargo
+   * hauler dispatched by the normal supply-driven pipeline. A shuttle never
+   * loads or delivers cargo (`cargoType` stays `null`, `cargo` stays `0`); it
+   * walks back and forth along `shuttlePath`, advancing
+   * `SHUTTLE_SEGMENTS_PER_TURN` segments per turn and reversing direction at
+   * either end, until explicitly stopped. Optional so ordinary cargo
+   * transports and existing fixtures/saves are unaffected.
+   */
+  shuttleMode?: boolean;
+  /**
+   * The fixed, ordered segment-key path (encodeSeg(tileIndex, segment)) a
+   * shuttle walks, computed once at creation time from whatever road
+   * segments already existed then — the union of every `LogisticsRoute`'s
+   * `segments` and any development `standaloneRoadSegments` overlay
+   * (shuttle creation never builds new road). `routeId` is NOT meaningful for
+   * a shuttle and must never be used to look up a `LogisticsRoute` for it —
+   * use `shuttlePath` directly (see `shared/transportPath.ts`).
+   */
+  shuttlePath?: number[];
+  /** Current index into `shuttlePath` (shuttle mode only). */
+  shuttlePosition?: number;
+  /** Current travel direction along `shuttlePath` (shuttle mode only). */
+  shuttleDirection?: 1 | -1;
+  /** True once the player has explicitly stopped the shuttle's automated movement. */
+  shuttleStopped?: boolean;
 }
 
 /** Req 11, 12 — buffers and balances flow across connected routes. */
@@ -133,10 +166,10 @@ export interface HomeStock {
 /** Req 2, 9, 10 — an in-progress engineer task with a countdown. */
 export interface EngineerTask {
   id: string;
-  kind: 'well' | 'clearForest' | 'bridge';
-  unitId: string;                  // constructing engineer
+  kind: 'well' | 'clearForest' | 'bridge' | 'road';
+  unitId: string;                  // constructing engineer or server-only God Mode task actor
   tileIndex: number;
-  segment?: number;                // for 'well'
+  segment?: number;                // required for 'well' and 'road' (segment-addressed work)
   turnsRemaining: number;          // decremented each turn, clamp >= 0 (Req 2.7)
   ownerId: string;
 }
@@ -168,6 +201,8 @@ export interface LogisticsState {
   tasks: EngineerTask[];
   clearedForests: number[];         // tile indices no longer forested (overlay, Req 9.4)
   bridges: number[];                // tile indices with a completed bridge (overlay, Req 10.3)
+  /** Development-created visual road overlays, encoded with `encodeSeg`; never logistics routes. */
+  standaloneRoadSegments?: number[];
 }
 
 /**
@@ -191,7 +226,7 @@ export type LogisticsRejectionReason =
   | 'lacks-engineer'        // Req 2.2, 9.6, 10.6
   | 'too-steep'             // Req 2.3, 4.11
   | 'no-deposit'            // Req 2.4
-  | 'in-city'               // wells/refineries may not be built inside a city
+  | 'in-city'               // oil structures may not be built inside a city
   | 'segment-occupied'      // Req 2.5
   | 'outside-refinery-tile' // Req 4.8
   | 'refinery-at-capacity'  // Req 4.9

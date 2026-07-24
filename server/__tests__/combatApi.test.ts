@@ -74,15 +74,15 @@ function adjacentTiles(elev0 = 'lowlands', elev1 = 'lowlands'): WireTile[] {
   ];
 }
 
-function wu(id: string, ownerId: string, tileIndex: number, attributes: UnitAttributes, hp: number, segment = 0): WireUnit {
+function wu(id: string, ownerId: string, tileIndex: number, attributes: UnitAttributes, hp: number, segment: 0 | 1 | 2 | 3 | 4 | 5 = 0): WireUnit {
   return { id, label: id.toUpperCase(), ownerId, tileIndex, segment, facing: 0, attributes, currentHealth: hp };
 }
 
 function buildCtx(attackerAttrs: UnitAttributes, targetAttrs: UnitAttributes): CombatContext {
   const tiles = rebuildTiles(adjacentTiles());
   const units = rebuildUnits([
-    wu('atk', 'p1', 0, attackerAttrs, attackerAttrs.size * 10),
-    wu('def', 'p2', 1, targetAttrs, targetAttrs.size * 10),
+    wu('atk', 'p1', 0, attackerAttrs, (attackerAttrs.size ?? 1) * 10),
+    wu('def', 'p2', 1, targetAttrs, (targetAttrs.size ?? 1) * 10),
   ]);
   return { units, tiles, buildings: [] };
 }
@@ -263,7 +263,9 @@ describe('combatApi — end-to-end wiring', () => {
       ],
       tiles: adjacentTiles(),
       buildings: [
-        { id: 'tower', ownerId: 'p2', tileIndex: 1, segment: 0, attributes: { size: 3, antiAir: 4, kinetic: 0, splashAttack: 0, rangeAttack: 0, armour: 0, defence: 0, wheeledMovement: 0, limbMovement: 0, flightMovement: 0, repair: 0 } },
+        // Keep the AA tower off arrival segment 0: buildings block flight
+        // movement too, while reaction fire remains tile/range based.
+        { id: 'tower', ownerId: 'p2', tileIndex: 1, segment: 1, attributes: { size: 3, antiAir: 4, kinetic: 0, splashAttack: 0, rangeAttack: 0, armour: 0, defence: 0, wheeledMovement: 0, limbMovement: 0, flightMovement: 0, repair: 0 } },
       ],
     });
     expect(res.success).toBe(true);
@@ -283,7 +285,7 @@ describe('combatApi — end-to-end wiring', () => {
       ],
       tiles: adjacentTiles(),
       buildings: [
-        { id: 'tower', ownerId: 'p1', tileIndex: 1, segment: 0, attributes: { size: 3, antiAir: 4, kinetic: 0, splashAttack: 0, rangeAttack: 0, armour: 0, defence: 0, wheeledMovement: 0, limbMovement: 0, flightMovement: 0, repair: 0 } },
+        { id: 'tower', ownerId: 'p1', tileIndex: 1, segment: 1, attributes: { size: 3, antiAir: 4, kinetic: 0, splashAttack: 0, rangeAttack: 0, armour: 0, defence: 0, wheeledMovement: 0, limbMovement: 0, flightMovement: 0, repair: 0 } },
       ],
     });
     expect(res.success).toBe(true);

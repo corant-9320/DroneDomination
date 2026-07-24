@@ -23,40 +23,71 @@ import { WorldData, UnitData, TileData } from './worldData.js';
 import { factionColor } from './colors.js';
 import { drawUnitIcon } from './unitIcons.js';
 import { getBuildingSprite } from './buildingRenderer.js';
+import { getLogisticsSprite } from './logisticsSpriteRenderer.js';
+import type { LogisticsModelKind } from './logisticsModel.js';
 import { FlatTile } from './localMapProjection.js';
 import { getMaxMovement as sharedGetMaxMovement } from '../shared/movementConstants.js';
+import {
+  HUB_STORAGE_CAPACITY,
+  REFINERY_THROUGHPUT_RATE,
+  WELL_STORAGE_CAPACITY,
+} from '../shared/logisticsConstants.js';
+import { decodeSeg, encodeSeg, segmentNeighbours, type SegGraphTile } from '../shared/segmentGraph.js';
 import { spriteFacingForRender } from './facing.js';
 
-// ─── Entity-number label toggle ───────────────────────────────────────────────
+// ─── Entity overlay visibility ────────────────────────────────────────────────
 
-/** Whether unit and building #N labels are visible. Toggled by the N key. */
+/** The N-key cycle: all overlays, labels only hidden, then a minimal map. */
+export type EntityOverlayMode = 'all' | 'labelsHidden' | 'minimal';
+
+let entityOverlayMode: EntityOverlayMode = 'all';
 let showEntityNumbers = true;
 
-/** Toggle unit/building number labels on or off. Returns the new state. */
-export function toggleEntityNumbers(): boolean {
-  showEntityNumbers = !showEntityNumbers;
+/** Advance the N-key entity-overlay cycle and return the active mode. */
+export function cycleEntityOverlayMode(): EntityOverlayMode {
+  entityOverlayMode = entityOverlayMode === 'all'
+    ? 'labelsHidden'
+    : entityOverlayMode === 'labelsHidden'
+      ? 'minimal'
+      : 'all';
+  showEntityNumbers = entityOverlayMode === 'all';
+  return entityOverlayMode;
+}
+
+/** Whether unit and building #N labels are visible. */
+export function getShowEntityNumbers(): boolean {
   return showEntityNumbers;
 }
 
-/** Returns the current show-entity-numbers state (for use by other views). */
-export function getShowEntityNumbers(): boolean {
-  return showEntityNumbers;
+/** Whether unit health and movement bars are visible. */
+export function getShowEntityStatusBars(): boolean {
+  return entityOverlayMode !== 'minimal';
+}
+
+/** Whether selected unit and building rings are visible. */
+export function getShowEntitySelectionRings(): boolean {
+  return entityOverlayMode !== 'minimal';
+}
+
+/** Whether faction-colour circles beneath units are visible. */
+export function getShowEntityUnitCircles(): boolean {
+  return entityOverlayMode !== 'minimal';
 }
 
 // ─── Segment geometry helpers ─────────────────────────────────────────────────
 
 /**
- * Get the centroid of a triangular segment within a hex.
- * Segment i = triangle(centre, boundary[i], boundary[(i+1)%6]).
- * Returns null if the tile has fewer than 6 polygon vertices.
+ * Get the centroid of a triangular segment within a hex or pentagon.
+ * Segment i = triangle(centre, boundary[i], boundary[(i+1)%sides]).
  */
 export function getSegmentCentroid(
   ft: FlatTile,
   segment: number,
 ): { x: number; y: number } | null {
-  if (ft.poly.length < 6) return null;
-  const v0 = ft.poly[segment % 6];
-  const v1 = ft.poly[(segment + 1) % 6];
+  const sides = ft.poly.length;
+  if (sides < 3 || segment < 0 || segment >= sides) return null;
+  const v0 = ft.poly[segment];
+  const v1 = ft.poly[(segment + 1) % sides];
   return {
     x: (ft.cx + v0.x + v1.x) / 3,
     y: (ft.cy + v0.y + v1.y) / 3,
@@ -211,7 +242,18 @@ export function drawUnits(
     const currentMP = movementPoints.get(unit.id) ?? 0;
     const maxMP     = sharedGetMaxMovement(unit.attributes);
 
-    drawUnitIcon(ctx, unit, sx, sy, size, color, correctedFacing, currentMP, maxMP);
+    drawUnitIcon(
+      ctx,
+      unit,
+      sx,
+      sy,
+      size,
+      color,
+      correctedFacing,
+      currentMP,
+      maxMP,
+      getShowEntityStatusBars(),
+    );
 
     // Unit number label — same id suffix as the detail panel (#N)
     // Rendered in red when the unit has already used its move/action this turn
@@ -257,7 +299,7 @@ export function drawUnitSelectionRings(
     { fromTile: number; fromSeg: number; toTile: number; toSeg: number; progress: number }
   > = new Map(),
 ): void {
-  if (selectedUnits.size === 0) return;
+  if (!getShowEntitySelectionRings() || selectedUnits.size === 0) return;
 
   const units = world.units;
   if (!units || units.length === 0) return;
@@ -325,7 +367,7 @@ export function drawBuildingSelectionRing(
   selectedBuildingId: string | null,
   wts: (wx: number, wy: number) => [number, number],
 ): void {
-  if (!selectedBuildingId) return;
+  if (!getShowEntitySelectionRings() || !selectedBuildingId) return;
 
   const building = world.buildings.find((b) => b.id === selectedBuildingId);
   if (!building) return;
@@ -442,6 +484,67 @@ export function drawBuildings(
  * same `world.logistics` payload and the tiles' `resourceType`. Drawn beneath
  * the mobile units (called between buildings and units in `LocalMapView.render`).
  */
+interface StandaloneRoadTopology {
+  connections: Array<[fromKey: number, toKey: number]>;
+  isolatedKeys: number[];
+}
+
+/**
+ * Return the built road-to-road links permitted by canonical segment traversal.
+ * A standalone road joins only its three adjacent segment nodes, never a tile
+ * centre or an arbitrary road in the same/adjacent tile.
+ */
+function getStandaloneRoadTopology(
+  roadKeys: readonly number[],
+  tiles: readonly SegGraphTile[],
+): StandaloneRoadTopology {
+  const roadSet = new Set(roadKeys.filter((key) => {
+    const { tileIndex, segment } = decodeSeg(key);
+    return Number.isInteger(key) && tileIndex >= 0 && segment >= 0 && segment < (tiles[tileIndex]?.sides ?? 0);
+  }));
+  const connections: Array<[number, number]> = [];
+  const connectedKeys = new Set<number>();
+
+  for (const key of roadSet) {
+    const { tileIndex, segment } = decodeSeg(key);
+    for (const neighbour of segmentNeighbours(tiles, tileIndex, segment)) {
+      const neighbourKey = encodeSeg(neighbour.tileIndex, neighbour.segment);
+      if (!roadSet.has(neighbourKey) || key >= neighbourKey) continue;
+      connections.push([key, neighbourKey]);
+      connectedKeys.add(key);
+      connectedKeys.add(neighbourKey);
+    }
+  }
+
+  return {
+    connections,
+    isolatedKeys: [...roadSet].filter((key) => !connectedKeys.has(key)),
+  };
+}
+
+/**
+ * Draw the oil hex id (tile index) beneath an oil-infrastructure icon
+ * (deposit ring, well, refinery, storage hub), in the same visual style as
+ * unit/building #N labels (white/amber text, drop-shadow, no background).
+ * This plain tile-index number is what the shuttle-transport destination
+ * picker shows and what the player uses to identify oil hexes at a glance —
+ * distinct from the internal entity id hash.
+ */
+function drawOilHexNumber(ctx: CanvasRenderingContext2D, sx: number, sy: number, size: number, tileIndex: number): void {
+  if (!getShowEntityNumbers()) return;
+  const fontSize = Math.max(6, size * 0.75);
+  const labelY = sy + size * 0.9 + fontSize;
+  ctx.save();
+  ctx.font = `${fontSize}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillText(`#${tileIndex}`, sx + 1, labelY + 1);
+  ctx.fillStyle = 'rgba(244,208,63,0.95)'; // amber — matches the oil-deposit ring colour
+  ctx.fillText(`#${tileIndex}`, sx, labelY);
+  ctx.restore();
+}
+
 export function drawLogistics(
   ctx: CanvasRenderingContext2D,
   world: WorldData,
@@ -450,6 +553,33 @@ export function drawLogistics(
 ): void {
   const ftByTile = new Map<number, FlatTile>();
   for (const ft of flatTiles) ftByTile.set(ft.tileIndex, ft);
+
+  const logistics = world.logistics;
+  if (logistics) {
+    const claimedOilTiles = new Set<number>([
+      ...logistics.wells.map((well) => well.tileIndex),
+      ...logistics.refineries.map((refinery) => refinery.tileIndex),
+      ...logistics.hubs.map((hub) => hub.tileIndex),
+    ]);
+    ctx.save();
+    ctx.fillStyle = 'rgba(43, 46, 50, 0.72)';
+    ctx.strokeStyle = 'rgba(18, 20, 22, 0.9)';
+    ctx.lineWidth = 1.5;
+    for (const ft of flatTiles) {
+      if (!claimedOilTiles.has(ft.tileIndex) || ft.poly.length === 0) continue;
+      const [firstX, firstY] = wts(ft.poly[0].x, ft.poly[0].y);
+      ctx.beginPath();
+      ctx.moveTo(firstX, firstY);
+      for (let i = 1; i < ft.poly.length; i++) {
+        const [x, y] = wts(ft.poly[i].x, ft.poly[i].y);
+        ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   // ── Oil deposits (visible pre-drill) — amber ring at the tile centre ──
   for (const ft of flatTiles) {
@@ -466,17 +596,21 @@ export function drawLogistics(
     ctx.strokeStyle = '#f4d03f';
     ctx.stroke();
     ctx.restore();
+    drawOilHexNumber(ctx, sx, sy, r, ft.tileIndex);
   }
 
-  const logistics = world.logistics;
   if (!logistics) return;
 
-  // ── Route polylines through tile centres (drawn under structure badges) ──
+  // ── Route polylines through their occupied segment centres ──
   const drawRoute = (segments: number[], color: string, width: number, dashed: boolean): void => {
     const pts: Array<[number, number]> = [];
-    for (const idx of segments) {
-      const ft = ftByTile.get(idx);
-      if (ft) pts.push(wts(ft.cx, ft.cy)); // tiles outside the view are clipped
+    for (const key of segments) {
+      const tileIndex = Math.floor(key / 6);
+      const segment = key % 6;
+      const ft = ftByTile.get(tileIndex);
+      if (!ft) continue;
+      const centroid = getSegmentCentroid(ft, segment);
+      if (centroid) pts.push(wts(centroid.x, centroid.y));
     }
     if (pts.length < 2) return;
     ctx.save();
@@ -501,12 +635,110 @@ export function drawLogistics(
     }
   }
 
-  // ── Structure badges ──
-  const drawBadge = (
+  // ── Standalone development roads: segment-centre topology network ──────
+  const roadTopology = getStandaloneRoadTopology(
+    logistics.standaloneRoadSegments ?? [],
+    world.tiles.map((tile) => ({ sides: tile.s, neighbours: tile.n })),
+  );
+  const drawStandaloneRoad = (
+    fromKey: number,
+    toKey: number,
+  ): void => {
+    const from = decodeSeg(fromKey);
+    const to = decodeSeg(toKey);
+    const fromTile = ftByTile.get(from.tileIndex);
+    const toTile = ftByTile.get(to.tileIndex);
+    const fromCentroid = fromTile ? getSegmentCentroid(fromTile, from.segment) : null;
+    const toCentroid = toTile ? getSegmentCentroid(toTile, to.segment) : null;
+    if (!fromTile || !toTile || !fromCentroid || !toCentroid) return;
+
+    const [fromX, fromY] = wts(fromCentroid.x, fromCentroid.y);
+    const [toX, toY] = wts(toCentroid.x, toCentroid.y);
+    const width = Math.max(
+      3,
+      ((getSegmentIconSize(fromTile, from.segment, wts) + getSegmentIconSize(toTile, to.segment, wts)) / 2) * 0.75,
+    );
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#4a4a52';
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
+    ctx.stroke();
+    ctx.strokeStyle = '#d6b34d';
+    ctx.lineWidth = Math.max(1, width * 0.18);
+    ctx.setLineDash([width * 0.7, width * 0.45]);
+    ctx.beginPath();
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
+    ctx.stroke();
+    ctx.restore();
+  };
+  for (const [fromKey, toKey] of roadTopology.connections) {
+    drawStandaloneRoad(fromKey, toKey);
+  }
+
+  // An unconnected built segment remains visible as a small roundabout until
+  // construction reaches one of its canonical segment neighbours.
+  for (const key of roadTopology.isolatedKeys) {
+    const { tileIndex, segment } = decodeSeg(key);
+    const ft = ftByTile.get(tileIndex);
+    const centroid = ft ? getSegmentCentroid(ft, segment) : null;
+    if (!ft || !centroid) continue;
+
+    const [x, y] = wts(centroid.x, centroid.y);
+    const width = Math.max(3, getSegmentIconSize(ft, segment, wts) * 0.75);
+    const radius = Math.max(width * 0.9, getSegmentIconSize(ft, segment, wts) * 0.5);
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#4a4a52';
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = '#d6b34d';
+    ctx.lineWidth = Math.max(1, width * 0.18);
+    ctx.setLineDash([width * 0.7, width * 0.45]);
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Draw a compact cargo/storage meter above a logistics entity. */
+  const drawFillMeter = (sx: number, sy: number, size: number, stored: number, capacity: number): void => {
+    if (!getShowEntityStatusBars() || capacity <= 0) return;
+    const width = Math.max(14, size * 2.1);
+    const height = Math.max(2, size * 0.18);
+    const x = sx - width / 2;
+    const y = sy - size * 1.45;
+    const ratio = Math.max(0, Math.min(1, stored / capacity));
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.78)';
+    ctx.fillRect(x, y, width, height);
+    ctx.fillStyle = ratio >= 1 ? '#f2c94c' : '#61d36b';
+    ctx.fillRect(x, y, width * ratio, height);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 0.75;
+    ctx.strokeRect(x, y, width, height);
+    ctx.restore();
+  };
+
+  // ── Structures: real 3D-model sprite, with a glyph badge fallback ──
+  // Each structure prefers its baked sprite (logisticsSpriteRenderer.ts); while
+  // that sprite is still rendering we draw the faction-tinted glyph badge so the
+  // structure is always visible.
+  const drawStructure = (
     tileIndex: number,
     segment: number | null,
     ownerId: string,
+    kind: LogisticsModelKind,
     glyph: string,
+    stored: number,
+    capacity: number,
+    segmentCount = 1,
   ): void => {
     const ft = ftByTile.get(tileIndex);
     if (!ft) return;
@@ -514,8 +746,24 @@ export function drawLogistics(
     if (!pos) return;
     const [sx, sy] = wts(pos.x, pos.y);
     const size = getSegmentIconSize(ft, segment ?? 0, wts);
-    const r = Math.max(6, size * 0.9);
     const color = factionColor(world, ownerId);
+
+    const sprite = getLogisticsSprite(kind, color, segmentCount);
+    if (sprite) {
+      // Same sprite-to-screen scale as buildings/units for a consistent footprint.
+      const spriteSize = size * 7.058;
+      ctx.save();
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(sprite, sx - spriteSize / 2, sy - spriteSize / 2, spriteSize, spriteSize);
+      ctx.restore();
+      drawFillMeter(sx, sy, size, stored, capacity);
+      drawOilHexNumber(ctx, sx, sy, size, tileIndex);
+      return;
+    }
+
+    // Fallback: faction-tinted glyph badge while the sprite renders.
+    const r = Math.max(6, size * 0.9);
     ctx.save();
     ctx.beginPath();
     ctx.arc(sx, sy, r, 0, Math.PI * 2);
@@ -532,10 +780,76 @@ export function drawLogistics(
     ctx.textBaseline = 'middle';
     ctx.fillText(glyph, sx, sy);
     ctx.restore();
+    drawFillMeter(sx, sy, size, stored, capacity);
+    drawOilHexNumber(ctx, sx, sy, size, tileIndex);
   };
-  for (const refinery of logistics.refineries ?? []) drawBadge(refinery.tileIndex, null, refinery.ownerId, 'R');
-  for (const hub of logistics.hubs ?? []) drawBadge(hub.tileIndex, hub.segment, hub.ownerId, 'H');
-  for (const well of logistics.wells ?? []) drawBadge(well.tileIndex, well.segment, well.ownerId, '⛏');
+  for (const refinery of logistics.refineries ?? []) {
+    // Refinery ownership is a collection of explicit segment footprints. Draw
+    // each footprint where it is built so the map and God Mode targets agree.
+    for (const segment of refinery.segments ?? []) {
+      drawStructure(
+        refinery.tileIndex,
+        segment,
+        refinery.ownerId,
+        'refinery',
+        'R',
+        refinery.heldOil,
+        Math.max(1, refinery.segments.length * REFINERY_THROUGHPUT_RATE),
+        refinery.segments.length,
+      );
+    }
+  }
+  for (const hub of logistics.hubs ?? []) {
+    drawStructure(hub.tileIndex, hub.segment, hub.ownerId, 'hub', 'H', hub.buffer, HUB_STORAGE_CAPACITY);
+  }
+  for (const well of logistics.wells ?? []) {
+    drawStructure(well.tileIndex, well.segment, well.ownerId, 'well', '⛏', well.storedOil, WELL_STORAGE_CAPACITY);
+  }
+
+  // ── Transports: compact route-position marker with the same fill meter ──
+  // Shuttle transports (shuttleMode) walk their own fixed shuttlePath and have
+  // no meaningful LogisticsRoute; ordinary cargo transports position along
+  // their assigned route via the turn-countdown progress.
+  const routeById = new Map(logistics.routes.map((route) => [route.id, route]));
+  for (const transport of logistics.transports ?? []) {
+    let tileIndex: number;
+    let segment: number;
+    if (transport.shuttleMode) {
+      const path = transport.shuttlePath ?? [];
+      if (path.length === 0) continue;
+      const idx = Math.max(0, Math.min(path.length - 1, transport.shuttlePosition ?? 0));
+      ({ tileIndex, segment } = decodeSeg(path[idx]));
+    } else {
+      const route = routeById.get(transport.routeId);
+      if (!route || route.segments.length === 0) continue;
+      const travelTime = Math.max(1, route.travelTime);
+      const progress = transport.inTransit
+        ? Math.max(0, Math.min(1, (travelTime - transport.turnsRemaining) / travelTime))
+        : 0;
+      const routeIndex = Math.round(progress * (route.segments.length - 1));
+      ({ tileIndex, segment } = decodeSeg(route.segments[routeIndex]));
+    }
+    const ft = ftByTile.get(tileIndex);
+    const pos = ft ? getSegmentCentroid(ft, segment) : null;
+    if (!ft || !pos) continue;
+    const [sx, sy] = wts(pos.x, pos.y);
+    const size = getSegmentIconSize(ft, segment, wts);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(sx, sy, Math.max(4, size * 0.55), 0, Math.PI * 2);
+    ctx.fillStyle = factionColor(world, transport.ownerId);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.max(7, size * 0.8)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('T', sx, sy);
+    ctx.restore();
+    drawFillMeter(sx, sy, size, transport.cargo, transport.cargoCapacity);
+  }
 }
 
 /**

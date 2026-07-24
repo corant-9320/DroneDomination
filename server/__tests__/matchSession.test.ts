@@ -82,6 +82,17 @@ describe('match session authority', () => {
     expect(r.unitTurn!['mover'].mp).toBeGreaterThanOrEqual(0);
   });
 
+  it('accepts an occupancy-gated intra-hex segment move', async () => {
+    const matchId = await freshMatch();
+    const r = await handleMatchIntent({
+      matchId,
+      intent: { kind: 'move', unitId: 'mover', path: [5], segment: 1 },
+    });
+    expect(r.success).toBe(true);
+    expect(r.units!.find((unit) => unit.id === 'mover')!.segment).toBe(1);
+    expect(r.unitTurn!['mover'].mp).toBeLessThan(1);
+  });
+
   it('rejects a move that exceeds the unit\'s remaining MP', async () => {
     const matchId = await freshMatch();
     const r = await handleMatchIntent({ matchId, intent: { kind: 'move', unitId: 'mover', path: [5, 6, 7, 8, 9, 10, 11] } });

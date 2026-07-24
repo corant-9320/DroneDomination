@@ -14,6 +14,12 @@ import {
   segmentCost as sharedSegmentCost,
 } from '../shared/movementConstants.js';
 import {
+  encodeSeg,
+  decodeSeg,
+  segmentReachability,
+  type SegGraphTile,
+} from '../shared/segmentGraph.js';
+import {
   isTargetInRange,
   hasWeapon,
   weaponRangeFromAttributes,
@@ -92,12 +98,8 @@ export function buildOccupiedSegmentSet(world: WorldData, excludeUnitId?: string
 }
 
 /**
- * Build a set of segment keys occupied by buildings, for ground-movement blocking.
- *
- * Tanks (wheeled) and spiders (limb) cannot pass through a segment that holds a
- * building — buildings are permanent full-segment occupants on city hexes and
- * count as impassable walls for ground units. Drones (flight) are unaffected and
- * pass freely over buildings, so callers must skip this check for flight mode.
+ * Build a set of building-occupied segment keys. Buildings are full-segment
+ * occupants and block every chassis from stepping onto their segment.
  *
  * Key encoding: tileIndex * 6 + segment.
  */
@@ -167,81 +169,31 @@ export function computeMovementRange(
   const startSegment = unit.segment;
   const tiles     = world.tiles;
 
-  // A segment holds at most one occupant regardless of faction (B2) — block
-  // on ANY other unit's segment, not just enemies. Excludes the mover itself.
-  const occupiedByUnit = buildOccupiedSegmentSet(world, unit.id);
-  // Ground units cannot pass through building-occupied segments (road-only
-  // pathing within cities). Drones fly over buildings freely.
-  const buildingSegments = mode !== 'flight' ? buildBuildingSegmentSet(world) : null;
+  // One occupancy rule for every chassis: a destination segment must contain
+  // neither another unit nor a building (Requirements B2/B5).
+  const occupiedSegments = buildOccupiedSegmentSet(world, unit.id);
+  for (const key of buildBuildingSegmentSet(world)) occupiedSegments.add(key);
+  const isOccupied = (tileIndex: number, segment: number) =>
+    occupiedSegments.has(encodeSeg(tileIndex, segment));
 
-  const encode = (tile: number, seg: number) => tile * 6 + seg;
-  const dist = new Map<number, number>();
-  const startKey = encode(startTile, startSegment);
-  dist.set(startKey, 0);
-
-  const pq: { key: number; cost: number }[] = [{ key: startKey, cost: 0 }];
-
-  while (pq.length > 0) {
-    let minI = 0;
-    for (let i = 1; i < pq.length; i++) {
-      if (pq[i].cost < pq[minI].cost) minI = i;
-    }
-    const { key: currentKey, cost: currentCost } = pq[minI];
-    pq.splice(minI, 1);
-
-    if (currentCost > (dist.get(currentKey) ?? Infinity)) continue;
-
-    const currentTile = Math.floor(currentKey / 6);
-    const currentSeg = currentKey % 6;
-    const tile = tiles[currentTile];
-
-    // Edge type 1: intra-hex pivot — each adjacent segment is steepness-gated
-    {
-      for (let delta = -1; delta <= 1; delta += 2) {
-        const adjSeg = ((currentSeg + delta) % 6 + 6) % 6;
-        const adjKey = encode(currentTile, adjSeg);
-        if (occupiedByUnit.has(adjKey)) continue;
-        if (buildingSegments?.has(adjKey)) continue;
-        const newCost = currentCost + sharedSegmentCost(tile, adjSeg, mode);
-        if (newCost > remainingMP) continue;
-        const existing = dist.get(adjKey);
-        if (existing === undefined || newCost < existing) {
-          dist.set(adjKey, newCost);
-          pq.push({ key: adjKey, cost: newCost });
-        }
-      }
-    }
-
-    // Edge type 2: cross hex border — gate on arrival segment
-    if (currentSeg < tile.n.length) {
-      const neighbour = tile.n[currentSeg];
-      const nTile = tiles[neighbour];
-      const arrivalSeg = nTile.n.indexOf(currentTile);
-      const arrival = arrivalSeg >= 0 ? arrivalSeg : 0;
-      const crossCost = sharedSegmentCost(nTile, arrival, mode);
-      if (crossCost !== Infinity) {
-        const newCost = currentCost + crossCost;
-        if (newCost <= remainingMP) {
-          const candidateSegs = [arrival, (arrival + 1) % 6, (arrival + 5) % 6];
-          for (const cSeg of candidateSegs) {
-            const nKey = encode(neighbour, cSeg);
-            if (occupiedByUnit.has(nKey)) continue;
-            if (buildingSegments?.has(nKey)) continue;
-            const existing = dist.get(nKey);
-            if (existing === undefined || newCost < existing) {
-              dist.set(nKey, newCost);
-              pq.push({ key: nKey, cost: newCost });
-            }
-          }
-        }
-      }
-    }
-  }
+  interface ClientSegTile extends SegGraphTile { original: (typeof tiles)[number] }
+  const graphTiles: ClientSegTile[] = tiles.map((tile) => ({
+    sides: tile.s,
+    neighbours: tile.n,
+    original: tile,
+  }));
+  const dist = segmentReachability(
+    graphTiles,
+    { tileIndex: startTile, segment: startSegment },
+    remainingMP,
+    (tile, segment) => sharedSegmentCost(tile.original, segment, mode),
+    isOccupied,
+  );
 
   // Collapse segment-level costs to tile-level: cheapest segment per tile
   const tileBestCost = new Map<number, number>();
   for (const [key, cost] of dist) {
-    const tileIdx = Math.floor(key / 6);
+    const tileIdx = decodeSeg(key).tileIndex;
     const existing = tileBestCost.get(tileIdx);
     if (existing === undefined || cost < existing) {
       tileBestCost.set(tileIdx, cost);
@@ -290,11 +242,8 @@ export function computeMovementRange(
     }
   }
 
-  // Reachable segments
+  // Reachable segments (the shared traversal already excludes occupants).
   for (const [key, cost] of dist) {
-    if (key === startKey) continue;
-    if (occupiedByUnit.has(key)) continue;
-    if (buildingSegments?.has(key)) continue;
     const zone: 'attackReady' | 'moveOnly' =
       remainingMP - cost >= 1 ? 'attackReady' : 'moveOnly';
     reachableSegments.set(key, zone);
@@ -345,7 +294,9 @@ export function computeMovementRange(
         for (const arTile of attackReadyTiles) {
           const arTileData = tiles[arTile];
           for (let arSeg = 0; arSeg < arTileData.s; arSeg++) {
-            if (occupiedByUnit.has(arTile * 6 + arSeg)) continue;
+            const arKey = encodeSeg(arTile, arSeg);
+            const isCurrentPosition = arTile === startTile && arSeg === startSegment;
+            if (!isCurrentPosition && !dist.has(arKey)) continue;
             const d = sharedSegmentDistance(rangeTiles, arTile, arSeg, candTile, seg);
             if (d <= threshold) {
               maxAttackSegments.add(segKey);

@@ -32,18 +32,18 @@ import {
 
 describe('logisticsConstants — specification constants', () => {
   it('exposes the exact resolved numeric values from the requirements Glossary', () => {
-    expect(EXTRACTION_RATE).toBe(10);
-    expect(WELL_STORAGE_CAPACITY).toBe(100);
-    expect(REFINERY_THROUGHPUT_RATE).toBe(20);
-    expect(CONVERSION_RATIO).toBe(0.5);
-    expect(HUB_STORAGE_CAPACITY).toBe(500);
+    expect(EXTRACTION_RATE).toBe(1);
+    expect(WELL_STORAGE_CAPACITY).toBe(5);
+    expect(REFINERY_THROUGHPUT_RATE).toBe(5);
+    expect(CONVERSION_RATIO).toBe(1);
+    expect(HUB_STORAGE_CAPACITY).toBe(5);
     expect(DEPOSIT_SPACING).toBe(20);
     expect(HOME_CITY_REFINED_PRODUCT_MAX).toBe(100000);
     expect(ROUTE_CAPACITY_MIN).toBe(100);
     expect(ROUTE_CAPACITY_MAX).toBe(1000);
     expect(ROUTE_CAPACITY_STEP).toBe(100);
     expect(TRANSPORT_CARGO_MIN).toBe(1);
-    expect(TRANSPORT_CARGO_MAX).toBe(1000);
+    expect(TRANSPORT_CARGO_MAX).toBe(5);
     expect(MAX_TRANSPORTS_PER_ROUTE).toBe(3);
     expect(ENGINEER_TASK_BASE).toBe(6);
     expect(DEFAULT_SEED).toBe(4242);

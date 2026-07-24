@@ -5,20 +5,52 @@
 **This is the live, curated list.** It replaces the old "append everything to
 `DECISIONS.md`" workflow. Two kinds of knowledge live here:
 
-1. **Open Issues** — bugs/limitations that are still unresolved. Close them by
-   moving the line to the "Recently Fixed" list with a date.
+1. **Open Issues** — bugs/limitations that are still unresolved. When resolving
+   one, remove it from this list and preserve useful historical context in the
+   [fixed-issue archive](archive/known-issues-fixed.md).
 2. **Enduring Gotchas & Sync Requirements** — non-obvious invariants that stay
    true across many changes (not tied to one commit).
 
 Per-diff *rationale* ("why we made this specific change") now lives in the **git
 commit body**, not here — see [`docs-as-we-go.md`](../../.kiro/steering/docs-as-we-go.md).
-The frozen historical record of past decisions is [`DECISIONS.md`](../../DECISIONS.md)
-(archived — no longer appended to).
+A frozen archive of decisions recorded through the older workflow is
+[`DECISIONS.md`](../../DECISIONS.md) (read-only; it is not a complete index of
+all later fixes or rationale).
 
 ---
 
 ## Open Issues
 
+- **`vite` and `vitest` majors are mismatched.** `package.json` declares
+  `vite: ^5.4.0` and `vitest: ^4.1.6`, but vitest 4 does not support vite 5, so npm
+  satisfies its peer requirement with a nested `vite 8.1.0` under
+  `node_modules/vitest` alongside the top-level `vite 5.4.21`. Vitest also loads the
+  vite-5-authored `vite.config.ts`. The suite currently passes (843/843), so this is
+  latent rather than breaking, and it is **not** the cause of the agentStop-hook
+  failure described below (that is invoker-dependent; this mismatch is not). Resolve
+  deliberately, not mid-debugging: either downgrade vitest to `^2.x` (peer range
+  includes vite 5; keeps the shipped dev-server/build path untouched, but may need
+  API fixes across the test suite) or upgrade vite to `^8` (one dependency line, no
+  test changes, but three majors of risk to `vite.config.ts`, the dev server, and the
+  client bundle). Downgrading vitest is the lower-risk option for shipped code.
+- **No UI for route-level logistics actions.** `buildRoute`, `upgradeRoute`,
+  `purchaseTransport`, `upgradeTransport`, `buildDistributionHub`,
+  `addRefinerySegment`, `buildRefinery`, and `buildOilWell` are all implemented in
+  `client/logisticsController.ts` and server-side, but nothing in the client calls
+  them — no button, context-menu item, or shortcut. Only bridge/forest/standalone-road
+  (God Mode), the `R` engineer road shortcut, and the shuttle create/stop RMB flow
+  are wired. So a real `LogisticsRoute` currently cannot be created through the UI at
+  all; road connectivity comes from engineer-paved `standaloneRoadSegments` instead.
+  `buildRoute` also commits a whole route instantly, which does not fit the intended
+  engineer-driven construction model — expect it to be reworked (see next item)
+  rather than simply wired to a button.
+- **Engineer road building: auto-build mode not implemented (Phase 2).** Phase 1
+  (`buildRoadSegment`) paves one segment per timed task, driven by the engineer that
+  occupies it. The intended follow-up is an auto-build mode: pick two endpoints,
+  resolve a segment path once, then queue/advance construction turn by turn as the
+  engineer walks it, aborting if the engineer dies or the path becomes blocked.
+  `previewRoutePath` in `client/logisticsController.ts` is the existing (unused)
+  path-preview helper to build that on.
 - **Globe: units float/sink on slopes.** On the globe view, units are placed at
   the flat per-tile height, not the averaged/tilted segment-centroid surface, so
   they float or sink near slopes (more visible with smaller units at high tile
@@ -30,42 +62,40 @@ The frozen historical record of past decisions is [`DECISIONS.md`](../../DECISIO
   fast, but on Lambda the cost recurs per cold container. Fix: persist/cache
   tiles (warm layer or precomputed artifact) instead of regenerating per
   container.
-- **Server MP model doesn't cover intra-hex repositions.** ~~A move intent needs a
-  2+ tile path, so same-hex repositions aren't sent to the session; their MP cost
-  isn't tracked server-side and a later `reconcile` refunds it. Needs a
-  segment-move model server-side.~~ → See Recently Fixed.
-- **Client/server MP-cost parity.** ~~The server move cost (`computeMovePath`) and
-  the client route cost can differ in edge cases; since `reconcile` makes the
-  server authoritative, MP can visibly snap after an action. Aligning the two
-  cost models is the follow-up.~~ → See Recently Fixed.
 - **In-range highlight overlay ignores elevation.** The hover highlight uses base
   range (`isTargetInRange` default), while the authoritative server gate and the
   attack preview both account for the elevation range multiplier. The player sees
   the truth on hover/preview; only the overlay is approximate.
-- **Logistics placement validators can't see main-game buildings.** The pure
-  logistics validators in `src/world/logistics.ts` (`validateWellPlacement`,
-  `validateRefineryPlacement`, `validateRefinerySegment`) determine segment
-  occupancy from `LogisticsState` only (wells + refinery segments + hubs). The
-  main-game building layer (`shared/buildings.ts`) is not part of
-  `LogisticsContext`, so a segment occupied by an ordinary building is not
-  detected here. The server applier (spec task 13.2) must add any
-  building-collision check it can see against authoritative match state.
-  *(Partially mitigated 2026-07-12: the default-world seed now runs after cities
-  are founded and is passed the occupied building/unit segments, so the seeded
-  network avoids them — see `server/generateApi.ts` + `seedDefaultLogisticsNetwork`.
-  Player-built structures still lack a building-collision check.)*
-- **Roads can visually cross building segments.** The seeded/player logistics
-  route is a tile-level path and buildings only block segments, so a route can
-  legally cross a city tile even though it looks like it crosses a building.
-  Fixing the visual requires a segment-level route representation in the
-  authoritative state (a wire-format change) plus route validation that
-  rejects/reroutes around building segments. Not attempted as part of the
-  2026-07-12 authoritative-logistics fix below.
+- **Legacy and logistics bridges share `TileData.bridge` and may overlap in
+  serialized overlays.** `CompactSaveV1.bridges` (legacy player-built bridges)
+  and `CompactSaveV1.logistics.bridges` (completed logistics-engineer bridges)
+  both set the same runtime `tile.bridge` render flag on load
+  (`client/world/expand.ts::expandCompactSave`), and `projectCompactSave`
+  derives `bridges` back from `tile.bridge` without knowing which overlay a
+  given tile index originally came from. Loading either or both arrays
+  produces the same visible bridge overlay, so this is currently harmless, but
+  a tile index can appear in both `bridges` and `logistics.bridges` after a
+  save round-trip. A broader bridge-ownership redesign (deduplicating the two
+  origins) is deliberately out of scope for the Phase 3 save-contract work.
 
 ## Enduring Gotchas & Sync Requirements
 
 These are invariants not already covered by the Cross-File Dependencies table in
 [`conventions.md`](../../.kiro/steering/conventions.md). Check that table too.
+
+- **Every `vitest` npm script must go through `scripts/run-vitest.mjs`.** On Windows,
+  a lowercase drive letter in the cwd (`c:\Kiro\...` rather than `C:\Kiro\...`) makes
+  vite resolve modules under two path spellings, instantiating vitest twice; the
+  `describe` a test file imports then belongs to a different instance than the one
+  holding worker state, and every file fails at its first `describe()` with
+  `TypeError: Cannot read properties of undefined (reading 'config')`. Kiro's
+  `agentStop` hook shell uses a lowercase drive letter, so the whole suite failed
+  under the hook while passing from an agent shell. The launcher normalises the drive
+  letter for **both** `process.cwd()` and the resolved vitest bin path — normalising
+  only one reintroduces the duplicate load. Calling `vitest` directly from a script
+  reintroduces the bug; `scripts/__tests__/runVitest.test.ts` guards against that.
+  The launcher also needs its main-module guard: without it, a test importing
+  `normaliseDriveLetter` spawns vitest at import time and recurses.
 
 - **`shared/segmentGraph.ts` ↔ movement consumers (server + client + AI) must agree
   on occupancy rules.** `buildSegmentOccupancy` / `farthestAffordablePrefix` /
@@ -74,9 +104,10 @@ These are invariants not already covered by the Cross-File Dependencies table in
   `server/matchApi.ts::applyMoveIntent`, `client/movementRange.ts::computeMovementRange`,
   `client/movementRoute.ts::computeMovementCostRoute`, and `client/aiTurn.ts` /
   `server/aiTurnApi.ts` (affordableSteps) all flow through them. If the occupancy
-  rules change (e.g. drones blocking ground units, faction-specific blocking), the
-  change must propagate to all five consumers, and the shared module is the single
-  update point. (Segment-Based Movement spec, Requirement B5.)
+  rules change (including what entity types count as occupants), the change must
+  propagate to all five consumers through the shared helper. Every other unit
+  and every building currently blocks every chassis, including flight-capable
+  units. (Segment-Based Movement spec, Requirement B5.)
 
 - **Building placement (`shared/buildings.ts`) and segment movement/occupancy
   (`shared/segmentGraph.ts`) must stay consistent.** `validateBuildingPlacement`
@@ -88,15 +119,16 @@ These are invariants not already covered by the Cross-File Dependencies table in
 
 - **`STEEP_VERTICAL_EXAGGERATION` ↔ world scale.** In `segmentSteepness.ts` it
   must stay in sync with `ELEV_WORLD_SCALE / HEX_WORLD_RADIUS` in
-  `client/firstPersonView.ts` (currently 4.4). Re-run
+  `client/firstPersonConstants.ts` (currently 4.4). Re-run
   `node scripts/calibrateSteepness.js` if elevation curve / exaggeration / terrain
   generation changes.
 - **`buildVertexHeight()` is the single source of surface height.** Both the
   terrain mesh (`firstPersonTerrain.ts`) and unit/building placement
-  (`firstPersonView.ts`) sample it; they must stay in sync or units float/clip.
+  (`firstPersonScene.ts`, via `sampleSurface` in `firstPersonGeometry.ts`) sample
+  it; they must stay in sync or units float/clip.
   Placement also clamps `max(sampled, tilePlateau)` so buildings/units don't sink
   into shore slopes.
-- **First-person webp import list ↔ `terrainTextures.ts`.** `firstPersonView.ts`
+- **First-person webp import list ↔ `terrainTextures.ts`.** `firstPersonTerrain.ts`
   imports the same webp assets; the key→artwork mapping is shared via `keyForTile`,
   but the import list itself must be kept in sync when terrain artwork changes.
 - **Global `window` keydown listeners.** Both the map and first-person views attach
@@ -119,10 +151,37 @@ These are invariants not already covered by the Cross-File Dependencies table in
 - **Encoding when restoring files via git.** `git show HEAD:path > file` in
   PowerShell writes UTF-16LE+BOM, which breaks Vite/esbuild (`Unexpected "\ufeff"`).
   Re-encode to UTF-8 (no BOM) after such a redirect.
+- **Pure logistics placement ↔ authoritative server collision checks.**
+  `src/world/logistics/placement.ts` deliberately sees only `LogisticsState`, so
+  ordinary main-game buildings remain outside its occupancy checks. The canonical
+  server appliers compensate before mutation: `server/logistics/wells.ts` checks
+  the target segment, `server/logistics/refineries.ts` checks whole-tile and added-
+  segment placement, and `server/logistics/hubs.ts` checks the hub segment. Keep
+  these checks when adding placement intents.
+
+- **Oil-building tile designation and road access.** The first Oil_Well,
+  Refinery_Segment, or Distribution_Hub (oil storage) claims the whole tile for
+  that type. Wells, refinery segments, and storage hubs cannot mix; a hex may
+  use at most five of its six segments (a pentagon at most four of five),
+  keeping one segment available for road ingress/egress. All oil buildings are
+  map-only: they cannot be created on city tiles. A pending well task reserves
+  its segment and well designation until it completes, preventing a concurrent
+  refinery, storage hub, or sixth well from invalidating that limit. The
+  completed designation clears only after every footprint on that tile is
+  deleted; God Mode follows the same reset rule.
+  `src/world/logistics/placement.ts` is authoritative, while
+  `client/localMapUnits.ts` shades claimed tiles dark grey and `mapInput.ts`
+  suppresses invalid God Mode options. Legacy city-based storage hubs are
+  removed with their dependent routes/transports and stale hub route references
+  when a compact save expands or a match state is created/used; server city
+  footprints come from regenerated tile `cityId` markers and compact saves use
+  every persisted `ownedHexes` entry.
+
 - **Logistics structure Hit_Points share the unit combat HP domain [0, 50].**
-  `attackStructure` in `src/world/logistics.ts` reduces a structure's `hitPoints`
-  with the combat model's own `applyDamage` (`src/world/combat.ts`), which clamps
-  into `[0, 50]` — the same domain as unit health. So a destroyable structure's
+  `attackStructure` in `src/world/logistics/combatIntegration.ts` reduces a
+  structure's `hitPoints` with `applyDamage` from the combat compatibility facade
+  (`src/world/combat.ts`), which clamps into `[0, 50]` — the same domain as unit
+  health. So a destroyable structure's
   `maxHitPoints` must be a positive integer within `[1, 50]`; a caller that assigns
   `maxHitPoints > 50` will see HP silently clamped to 50 on the first hit. Structure
   damage magnitude itself is produced upstream by the shared `computeDamage`
@@ -136,69 +195,42 @@ The logistics feature spans four wire/serialization seams that must move togethe
 
 - **Entity wire shapes stay a straight field copy across three files.**
   `shared/logisticsTypes.ts` (authoritative + wire shapes — same field names, like
-  `WireUnit`/`WireBuilding`) ↔ `client/worldData.ts` mirror aliases ↔
+  `WireUnit`/`WireBuilding`) ↔ `client/world/model.ts` mirror aliases ↔
   `src/world/compact.ts` (de)serializers. Wire shape === authoritative shape, so
   serialization is a plain copy; adding/renaming a field means touching all three.
+  `client/world/codec.ts` additionally runtime-validates every logistics field
+  (`decodeLogisticsState`) — a new field must be validated there too, or it
+  silently passes through unchecked.
 - **Save round-trip.** `src/world/compact.ts` logistics (de)serialize ↔
-  `client/worldData.ts` `expandCompactSave` load path — the load path must decode
-  exactly what the serializer emits.
+  `client/world/expand.ts::expandCompactSave` load path ↔
+  `client/world/codec.ts::projectCompactSave` save path — the load path must
+  decode exactly what the serializer emits, and the save path must include
+  every field the load path expects (the historical omission of `logistics`
+  from the saved payload is fixed; see the
+  [fixed-issue archive](archive/known-issues-fixed.md)).
 - **Generate/save payload.** `shared/wireTypes.ts` `CompactSave`/`WireWorld`
   logistics payload ↔ `src/world/compact.ts::toCompactWorld` ↔
-  `server/generateApi.ts` payload. (`shared/logisticsConstants.ts` is imported
+  `server/generateApi.ts` payload ↔ `client/world/codec.ts::decodeWorldBootstrap`
+  (which normalizes the generated `WireWorld` payload into `CompactSaveV1`,
+  dropping deterministic tiles). (`shared/logisticsConstants.ts` is imported
   directly by the client — no duplicated copy to sync.)
+- **Save schema version vs. match version.** `CompactSaveV1.formatVersion`
+  (`shared/wireTypes.ts::COMPACT_SAVE_FORMAT_VERSION`) is serialization
+  compatibility for persisted saves; `MatchState.version`
+  (`shared/matchTypes.ts`) is optimistic-concurrency for the live match
+  session. They are unrelated counters — do not reuse one for the other.
 - **Intent routing.** `shared/matchTypes.ts` `Intent` union ↔ `server/matchApi.ts`
-  routing + `server/logisticsApi.ts` appliers. Adding a new logistics intent means
-  extending the union, routing it in `matchApi`, and adding a matching applier.
+  routing ↔ `server/logistics/dispatch.ts` ↔ canonical appliers under
+  `server/logistics/**`. Adding a new logistics intent
+  means extending the union, routing it in `matchApi`, and adding a matching
+  focused applier.
 - **`MatchState.logistics` is required.** Any new `MatchState` construction site
   must initialise the `logistics` field, or the appliers/serializers will fault.
 
-## Recently Fixed
+## Fixed-Issue History
 
-- **Segment-Based Movement & Unrestricted In-Cluster Building** — FIXED 2026-07-12.
-  Two interlocked changes: (1) `shared/buildings.ts` no longer enforces per-tile
-  through-street or whole-city external reachability invariants — a player may
-  build on any eligible segment inside a city, even if it seals off others; sealed
-  pockets are the player's problem, not an illegal build. (2) Movement is now a
-  uniform segment-step model gated by `shared/segmentGraph.ts` — every unit move
-  (server `computeMovePath`, matchApi `applyMoveIntent`, client `computeMovementRange`
-  / `computeMovementCostRoute`, AI `affordableSteps`) validates occupancy on the
-  destination segment before stepping, so no unit or building can be walked through.
-  Server, client, and AI all use the same shared primitive (B5). `src/world/movement.ts`
-  `moveUnit`/`pivotUnit` now accept an optional `isOccupied` predicate.
-
-- **Seeded logistics network was client-render-only, not authoritative** — FIXED
-  2026-07-12. `server/generateApi.ts` seeded the default Oil Logistics network
-  into the compact world, but `server/matchApi.ts::handleCreateMatch` hardcoded
-  `MatchState.logistics` to empty and never adopted it — a split source of truth.
-  Fix: added optional `logistics?: LogisticsState` to `CreateMatchRequest`;
-  `handleCreateMatch` now adopts `req.logistics ?? createEmptyLogisticsState()`;
-  `client/matchClient.ts::create()` passes `world.logistics` through. Seeding
-  itself still happens exactly once, in `generateApi.ts`; the client just carries
-  the already-seeded compact-save network into the create-match request rather
-  than the server re-deriving it. The per-turn economy (`advanceTurn` →
-  `resolveLogisticsTurn`) and the intent round-trip already operated on
-  `state.logistics`; only initial population was missing.
-
-- **Oil-deposit markers didn't reach the client (integration seam)** — FIXED
-  2026-07-04. `tile.resourceType` is now carried by the compact wire tile under
-  the identical field name: added to `shared/wireTypes.ts::WireTile`, emitted by
-  `src/world/compact.ts::toCompactTile`, and flowing through the `/api/world-tiles`
-  regeneration path automatically. `client/logisticsRenderer.ts::renderDeposits`
-  now receives `resourceType === 'oil'` tiles and draws their pre-drill markers.
-
-- **Cliff skirt drawn on every edge** — FIXED 2026-07-03. `buildTerrainMesh`'s
-  `isCliff` stub (`tile.n && tile.n.length > 0`, always true) emitted a full skirt
-  wall on every hex edge, occluding units on non-cliff slopes. Now gated on
-  `isCliffEdge(a, b)`.
-- **Units invisible on shore-adjacent segments** — FIXED 2026-07-03. Unit
-  placement now applies the same `max(sampled, plateau)` clamp as buildings.
-- **Movement cost modelled twice** — FIXED 2026-06-10. Single segment-step model;
-  rotation is a flat once-per-turn `ROTATION_FEE`.
-- **Server combat ignored elevation** — FIXED 2026-06-10. `server/combatApi.ts`
-  carries `elev` through the wire format.
-- **Compact wire format hand-mirrored** — FIXED 2026-06-17. Unified into
-  `shared/wireTypes.ts`; both sides import it. `TileData` in `client/worldData.ts`
-  extends `WireTile` with a client-only `bridge?` flag.
-
-Detail on any fixed item is in the [`DECISIONS.md`](../../DECISIONS.md) archive
-(search by date) and the git history for the relevant commit.
+Resolved issue notes are archived in
+[`archive/known-issues-fixed.md`](archive/known-issues-fixed.md) so this live page
+stays focused on unresolved work and enduring constraints. Use git history for
+exact diffs and per-change rationale; do not assume a fixed item has a matching
+entry in `DECISIONS.md`.

@@ -11,12 +11,7 @@
       },
       "disabled": false,
       "autoApprove": [
-        "create_entities",
-        "create_relations",
-        "search_nodes",
-        "add_observations",
-        "open_nodes",
-        "read_graph"
+        "*"
       ]
     },
     "git": {
@@ -30,15 +25,7 @@
       },
       "disabled": false,
       "autoApprove": [
-        "git_status",
-        "git_log",
-        "git_diff",
-        "git_branch_list",
-        "git_set_working_dir",
-        "git_add",
-        "git_commit",
-        "git_push",
-        "git_blame"
+        "*"
       ]
     },
     "chrome-devtools": {
@@ -52,20 +39,7 @@
       },
       "disabled": false,
       "autoApprove": [
-        "navigate_page",
-        "take_screenshot",
-        "list_console_messages",
-        "get_console_message",
-        "list_network_requests",
-        "get_network_request",
-        "evaluate_script",
-        "list_pages",
-        "select_page",
-        "new_page",
-        "take_snapshot",
-        "click",
-        "wait_for",
-        "resize_page"
+        "*"
       ]
     }
   }

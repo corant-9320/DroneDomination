@@ -22,6 +22,8 @@
  */
 
 import { findPath, type PathTile } from '../shared/pathfinding.js';
+import { findSegmentPath, encodeSeg, type SegGraphTile } from '../shared/segmentGraph.js';
+import { segmentCost } from '../shared/movementConstants.js';
 import type { Intent, MatchIntentResponse } from '../shared/matchTypes.js';
 import type { GameContext } from './gameContext.js';
 import { dbg } from './debug.js';
@@ -50,10 +52,9 @@ async function dispatchLogistics(
     return resp ?? null;
   }
 
-  // Adopt the authoritative logistics state so the renderer/panel reflect the
-  // outcome. Wire and authoritative shapes are identical, so this is a straight
-  // assignment (no field remapping) — mirrors matchClient.reconcile for units.
-  if (resp.logistics) ctx.world.logistics = resp.logistics;
+  // Adopt the complete authoritative response, including completed bridge and
+  // cleared-forest tile overlays after a task resolves on end turn.
+  ctx.matchClient.reconcile(resp, ctx.world, ctx.turnManager);
 
   return resp;
 }
@@ -65,18 +66,67 @@ export function buildOilWell(ctx: GameContext, unitId: string): Promise<MatchInt
   return dispatchLogistics(ctx, { kind: 'buildOilWell', unitId });
 }
 
-/** Order an engineer to build a bridge over its adjacent impassable tile (Req 10.1). */
+/** Queue a bridge task for a selected impassable tile. Unit-free actions need server God Mode. */
 export function buildBridge(
   ctx: GameContext,
-  unitId: string,
   tileIndex: number,
+  unitId?: string,
 ): Promise<MatchIntentResponse | null> {
-  return dispatchLogistics(ctx, { kind: 'buildBridge', unitId, tileIndex });
+  return dispatchLogistics(ctx, { kind: 'buildBridge', tileIndex, unitId });
 }
 
-/** Order an engineer to clear the forest on its current tile (Req 9.1). */
-export function clearForest(ctx: GameContext, unitId: string): Promise<MatchIntentResponse | null> {
-  return dispatchLogistics(ctx, { kind: 'clearForest', unitId });
+/** Queue a forest-clearing task for a selected tile. Unit-free actions need server God Mode. */
+export function clearForest(
+  ctx: GameContext,
+  tileIndex: number,
+  unitId?: string,
+): Promise<MatchIntentResponse | null> {
+  return dispatchLogistics(ctx, { kind: 'clearForest', tileIndex, unitId });
+}
+
+/**
+ * Order an engineer to pave the road segment it is standing on. Completes as a
+ * timed `road` EngineerTask, like bridge/forest work; pave segment by segment
+ * along a path to connect two structures so a shuttle transport can run.
+ */
+export function buildRoadSegment(
+  ctx: GameContext,
+  unitId: string,
+): Promise<MatchIntentResponse | null> {
+  return dispatchLogistics(ctx, { kind: 'buildRoadSegment', unitId });
+}
+
+/** Build a server-authoritative, development-only road overlay on one empty segment. */
+export function buildStandaloneRoad(
+  ctx: GameContext,
+  tileIndex: number,
+  segment: number,
+): Promise<MatchIntentResponse | null> {
+  return dispatchLogistics(ctx, { kind: 'godModeBuildRoad', tileIndex, segment });
+}
+
+/** Development-only segment-based oil-building CRUD. */
+export function godModeCreateOilBuilding(
+  ctx: GameContext,
+  structure: 'well' | 'refinery',
+  tileIndex: number,
+  segment: number,
+): Promise<MatchIntentResponse | null> {
+  return dispatchLogistics(ctx, { kind: 'godModeCreateOilBuilding', structure, tileIndex, segment });
+}
+
+export function godModeEditOilBuilding(
+  ctx: GameContext,
+  intent: Extract<Intent, { kind: 'godModeEditOilBuilding' }>,
+): Promise<MatchIntentResponse | null> {
+  return dispatchLogistics(ctx, intent);
+}
+
+export function godModeDeleteOilBuilding(
+  ctx: GameContext,
+  intent: Extract<Intent, { kind: 'godModeDeleteOilBuilding' }>,
+): Promise<MatchIntentResponse | null> {
+  return dispatchLogistics(ctx, intent);
 }
 
 // ─── Refineries ────────────────────────────────────────────────────────────────
@@ -98,12 +148,14 @@ export function addRefinerySegment(
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 /**
- * Preview the tile path a road would follow between two endpoints, using the
- * shared `findPath` (great-circle A*). The cost function routes around tiles the
- * server would reject for a `buildRoute` (ocean without a completed bridge,
- * forest that has not been cleared), so the preview is a viable candidate path
- * the player can inspect before committing. Returns the inclusive tile-index
- * path, or null when no traversable path exists.
+ * Preview the tile path a road would follow between two endpoints. Returns the
+ * inclusive tile-index path (still tile-level for the client preview overlay),
+ * or null when no traversable path exists.
+ *
+ * The server converts this tile-index path to a segment-level path when it
+ * applies the `buildRoute` intent. The preview is segment-aware for blocking
+ * (won't route through fully-sealed tiles), but shows tile-level for the
+ * overlay since the 2D map renders roads as tile-to-tile lines.
  */
 export function previewRoutePath(
   ctx: GameContext,
@@ -112,29 +164,47 @@ export function previewRoutePath(
 ): number[] | null {
   const { world } = ctx;
 
-  // findPath indexes `tiles[idx]`; build an index-aligned adapter exposing the
-  // minimal PathTile shape (client tiles store neighbours as `n`). Carry `idx`
-  // so the cost function can inspect the underlying tile's terrain/overlays.
-  interface PreviewTile extends PathTile {
-    idx: number;
-  }
-  const adapter: PreviewTile[] = world.tiles.map((t) => ({
+  // Adapter for segmentGraph: client tiles use n/s but SegGraphTile needs sides/neighbours
+  interface ClientSegTile extends SegGraphTile { idx: number; terrain: string; f?: boolean; bridge?: boolean }
+  const segTiles: ClientSegTile[] = world.tiles.map((t) => ({
+    sides: t.s,
     neighbours: t.n,
-    pos: t.pos,
     idx: t.idx,
+    terrain: t.terrain,
+    f: t.f && !t.clearedForest,
+    bridge: t.bridge,
   }));
 
-  const costFn = (pt: PathTile): number => {
-    const tile = world.tiles[(pt as PreviewTile).idx];
-    if (!tile) return Infinity;
-    // Unbridged water is impassable for a road.
-    if (tile.terrain === 'ocean' && tile.bridge !== true) return Infinity;
-    // Uncleared forest blocks a road until an engineer clears it.
-    if (tile.f === true && tile.clearedForest !== true) return Infinity;
-    return 1;
+  // Build occupancy for buildings (drones can cross over, but road must avoid)
+  const buildingOccupied = new Set<number>();
+  for (const b of world.buildings) buildingOccupied.add(encodeSeg(b.tileIndex, b.segment));
+
+  const costFn = (t: ClientSegTile, segment: number): number => {
+    if (t.terrain === 'ocean' && !t.bridge) return Infinity;
+    if (t.f === true) return Infinity; // uncleared forest
+    // Occupied building segments are not impassable for the road itself at the
+    // segment level — roads run through tiles, not through specific occupied
+    // segments of those tiles. The server validates at segment level on commit.
+    // Use ground-movement cost as the heuristic.
+    return 0.25; // flat cost for preview (avoids heavy segSteep lookups client-side)
   };
 
-  return findPath(adapter, fromTile, toTile, costFn);
+  // Find a segment path from any segment of fromTile to any segment of toTile.
+  // Since the client preview just needs a tile-level route for display, we find
+  // the cheapest path starting from segment 0 of each tile.
+  const result = findSegmentPath(segTiles, { tileIndex: fromTile, segment: 0 }, { tileIndex: toTile, segment: 0 }, costFn, (_t, _s) => false);
+  if (!result) return null;
+
+  // Deduplicate to unique tile indices for the overlay.
+  const tilePath: number[] = [];
+  for (const node of result.path) {
+    if (tilePath.length === 0 || tilePath[tilePath.length - 1] !== node.tileIndex) {
+      tilePath.push(node.tileIndex);
+    }
+  }
+  return tilePath.length >= 2 ? tilePath : null;
+
+  void findPath; // kept for potential fallback usage
 }
 
 /**
@@ -182,4 +252,27 @@ export function upgradeTransport(
   stat: 'cargo' | 'speed' | 'defence',
 ): Promise<MatchIntentResponse | null> {
   return dispatchLogistics(ctx, { kind: 'upgradeTransport', transportId, stat });
+}
+
+// ─── Shuttle transports (point-to-point auto-patrol) ────────────────────────
+
+/**
+ * Create a point-to-point shuttle transport between two owned oil structures
+ * (well / refinery / storage hub) along their EXISTING connecting road. The
+ * server rejects this when no road connects the two structures yet.
+ */
+export function createShuttleTransport(
+  ctx: GameContext,
+  fromStructureId: string,
+  toStructureId: string,
+): Promise<MatchIntentResponse | null> {
+  return dispatchLogistics(ctx, { kind: 'createShuttleTransport', fromStructureId, toStructureId });
+}
+
+/** Permanently stop a shuttle transport's automated back-and-forth movement. */
+export function stopShuttleTransport(
+  ctx: GameContext,
+  transportId: string,
+): Promise<MatchIntentResponse | null> {
+  return dispatchLogistics(ctx, { kind: 'stopShuttleTransport', transportId });
 }

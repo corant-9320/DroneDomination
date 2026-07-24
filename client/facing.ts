@@ -198,3 +198,24 @@ export function spriteFacingForRender(
   const normalised = ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
   return (Math.round(normalised / (Math.PI / 3)) % 6) as SpriteFacing;
 }
+
+// ─── NeighbourFacing → continuous world direction (3D views) ───────────────────
+
+/**
+ * World-space (X, Z) direction a NeighbourFacing points in, derived from the
+ * midpoint of the faced boundary edge in the flat projection. Mapping to 3D is
+ * (px, py) → (px, -py), matching the first-person projection's `toWorld`.
+ *
+ * Unlike {@link spriteFacingForRender} this stays continuous (no quantization to
+ * one of six pre-rendered sprites) because 3D models rotate freely. Used to
+ * orient unit/building models and to aim the first-person camera along a facing.
+ */
+export function facingDirection(ft: FacingFlatTile, facing: number): { x: number; z: number } {
+  const n = ft.poly.length;
+  const v0 = ft.poly[facing % n];
+  const v1 = ft.poly[(facing + 1) % n];
+  const ex = (v0.x + v1.x) / 2 - ft.cx;
+  const ey = (v0.y + v1.y) / 2 - ft.cy;
+  const len = Math.sqrt(ex * ex + ey * ey) || 1;
+  return { x: ex / len, z: -ey / len };
+}

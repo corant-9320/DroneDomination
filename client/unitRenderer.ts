@@ -98,6 +98,17 @@ function ensureRenderer(): void {
 /** Cache key → array of 6 ImageBitmaps (one per facing direction). */
 const spriteCache = new Map<string, (ImageBitmap | null)[]>();
 const pendingRenders = new Set<string>();
+const spriteCompletionListeners = new Set<() => void>();
+
+/** Subscribe to completed unit-sprite renders so canvas consumers can repaint. */
+export function onUnitSpriteRendered(listener: () => void): () => void {
+  spriteCompletionListeners.add(listener);
+  return () => spriteCompletionListeners.delete(listener);
+}
+
+function notifyUnitSpriteRendered(): void {
+  for (const listener of spriteCompletionListeners) listener();
+}
 
 /**
  * Bump this whenever camera position or sprite rendering changes so that
@@ -169,7 +180,9 @@ export function getUnitSpriteAtFacing(unit: UnitData, factionHex: string | undef
   // Start async render for all 6 facings of this unit type
   if (!pendingRenders.has(key)) {
     pendingRenders.add(key);
-    renderAllFacings(attrs, key, factionHex);
+    // Fire-and-forget: the cache is populated asynchronously and the caller
+    // (getUnitSpriteAtFacing) re-checks the cache on the next call/render tick.
+    void renderAllFacings(attrs, key, factionHex);
   }
 
   return null;
@@ -182,7 +195,7 @@ async function renderAllFacings(attrs: UnitModelAttrs, key: string, factionHex?:
   ensureRenderer();
   initMaterials();
 
-  const results: (ImageBitmap | null)[] = new Array(FACING_COUNT).fill(null);
+  const results: (ImageBitmap | null)[] = new Array<ImageBitmap | null>(FACING_COUNT).fill(null);
 
   for (let facing = 0; facing < FACING_COUNT; facing++) {
     // Build a fresh model
@@ -214,6 +227,7 @@ async function renderAllFacings(attrs: UnitModelAttrs, key: string, factionHex?:
 
   spriteCache.set(key, results);
   pendingRenders.delete(key);
+  notifyUnitSpriteRendered();
 }
 
 /**

@@ -1,7 +1,7 @@
 // Feature: oil-logistics-system, Task 13.5 — intent rejections + ownership recording.
 //
 // Unit tests for the authoritative logistics intent appliers in
-// `server/logisticsApi.ts`. Two concerns:
+// `server/logistics/**`. Two concerns:
 //
 //   1. Rejections are REJECT-AND-PRESERVE: a rejected intent returns `{ error }`
 //      with the correct reason and leaves `MatchState.logistics` byte-for-byte
@@ -26,7 +26,7 @@ import {
   applyPurchaseTransportIntent,
   applyUpgradeTransportIntent,
   applyBuildOilWellIntent,
-} from '../logisticsApi.js';
+} from '../logistics/index.js';
 import {
   CONSTRUCTION_COST,
   MAX_TRANSPORTS_PER_ROUTE,

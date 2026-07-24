@@ -82,4 +82,26 @@ describe('computeMovePath / validateMovePath', () => {
     const r = computeMovePath(drone, [0, 1, 2], tiles);
     expect('cost' in r).toBe(true);
   });
+
+  it('supports a one-tile path for an intra-hex segment move', () => {
+    const r = computeMovePath(tankAt(0), [0], lineTiles(2), [], 1);
+    expect('cost' in r).toBe(true);
+    if ('cost' in r) {
+      expect(r.cost).toBeGreaterThan(0);
+      expect(r.segmentPath[r.segmentPath.length - 1]).toEqual({ tileIndex: 0, segment: 1 });
+    }
+  });
+
+  it('does not let a drone step onto a building-occupied segment', () => {
+    const tiles = lineTiles(2);
+    const drone = { id: 'd', label: 'd', ownerId: 'p', tileIndex: 0, segment: 0, facing: 0, currentHealth: 10, attributes: attrs({ flightMovement: 3 }) } as Unit;
+    const arrivalSegment = tiles[1].neighbours.indexOf(0);
+    const r = computeMovePath(
+      drone,
+      [0, 1],
+      tiles,
+      [{ tileIndex: 1, segment: arrivalSegment }],
+    );
+    expect(r).toHaveProperty('error');
+  });
 });

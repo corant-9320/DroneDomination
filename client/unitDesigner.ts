@@ -8,13 +8,14 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { buildUnitModel, initMaterials } from './unitModel.js';
-import type { ChassisType, UnitModelAttrs } from './unitModel.js';
+import { preloadSplashBomb } from './splashBombModel.js';
+import type { UnitChassisType, UnitModelAttrs } from './unitModel.js';
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
-let currentChassis: ChassisType = 'wheeled';
+let currentChassis: UnitChassisType = 'wheeled';
 let currentAttrs = {
   kinetic: 0,
   rangeAttack: 0,
@@ -118,7 +119,7 @@ function updateUI(): void {
   const total = Object.values(currentAttrs).reduce((s, v) => s + v, 0);
   document.getElementById('points-total')!.textContent = String(total);
 
-  const chassisName: Record<ChassisType, string> = { wheeled: 'Tank', limbed: 'Spider', flight: 'Drone' };
+  const chassisName: Record<UnitChassisType, string> = { wheeled: 'Tank', limbed: 'Spider', flight: 'Drone' };
   const parts: string[] = [];
   parts.push(`Mov${currentAttrs.movement}`);
   parts.push(`HP${currentAttrs.health * 10}`);
@@ -140,7 +141,7 @@ function updateMovementComparison(): void {
   if (!el) return;
 
   const mp = currentAttrs.movement;
-  const colIndex: Record<ChassisType, number> = { wheeled: 0, limbed: 1, flight: 2 };
+  const colIndex: Record<UnitChassisType, number> = { wheeled: 0, limbed: 1, flight: 2 };
   const active = colIndex[currentChassis];
 
   // Compute "max hexes + can attack?" for each chassis at current MP
@@ -294,7 +295,7 @@ function updateChassisTraits(): void {
     },
   ];
 
-  const colIndex: Record<ChassisType, number> = { wheeled: 0, limbed: 1, flight: 2 };
+  const colIndex: Record<UnitChassisType, number> = { wheeled: 0, limbed: 1, flight: 2 };
   const active = colIndex[currentChassis];
 
   const headerRow = `
@@ -329,7 +330,7 @@ chassisBtns.forEach(btn => {
   btn.addEventListener('click', () => {
     chassisBtns.forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    currentChassis = btn.dataset.chassis as ChassisType;
+    currentChassis = btn.dataset.chassis as UnitChassisType;
     enforceChassisConstraints();
     rebuildUnit();
   });
@@ -386,6 +387,11 @@ function animate(): void {
   renderer.render(scene, camera);
 }
 
-initMaterials();
-rebuildUnit();
-animate();
+async function initialize(): Promise<void> {
+  initMaterials();
+  await preloadSplashBomb();
+  rebuildUnit();
+  animate();
+}
+
+void initialize();

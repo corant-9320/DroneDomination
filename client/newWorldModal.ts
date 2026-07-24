@@ -5,6 +5,7 @@
 
 import { FACTION_PALETTE } from './colors.js';
 import { dbg } from './debug.js';
+import { expectBoolean, expectObject, expectString } from './world/validation.js';
 
 /** Must match CITY_COUNT in src/world/cities.ts. World always generates this many cities. */
 const MAX_CITIES = 12;
@@ -14,6 +15,36 @@ const MAX_SPACING = 45;
 export interface NewWorldResult {
   world: unknown;
   playerColor: string;
+}
+
+/**
+ * Shape of the JSON response from POST /api/generate. Mirrors
+ * `server/generateApi.ts::GenerateResult` — `world` stays `unknown` here too
+ * (the generated-world bootstrap payload is handed to `applyNewWorld`, which
+ * normalizes it through `client/world/codec.ts::decodeWorldInput`; this modal
+ * does not decode the world body itself beyond debug logging).
+ */
+interface GenerateApiResponse {
+  success: boolean;
+  world?: unknown;
+  error?: string;
+}
+
+/**
+ * Validate just enough of the `/api/generate` envelope to decide whether the
+ * request succeeded and to safely read `error`/`world`: `success` must be a
+ * boolean, and a failure response must carry a usable string `error`. The
+ * `world` bootstrap payload itself is validated later by
+ * `client/world/codec.ts::decodeWorldBootstrap` (via `applyNewWorld`) — this
+ * envelope check is not a duplicate of that decoder.
+ */
+function decodeGenerateApiResponse(value: unknown): GenerateApiResponse {
+  const o = expectObject(value, '');
+  const success = expectBoolean(o.success, 'success');
+  if (!success) {
+    return { success, error: expectString(o.error, 'error') };
+  }
+  return { success, world: o.world };
 }
 
 /**
@@ -52,8 +83,8 @@ export function showNewWorldModal(): Promise<NewWorldResult | null> {
     modal.innerHTML = `
       <h2 style="margin:0 0 16px;font-size:18px;">New World</h2>
       <label style="display:block;margin-bottom:12px;">
-        <span style="display:block;margin-bottom:4px;font-size:13px;color:#aaa;">Enemy Cities (1–${maxEnemies})</span>
-        <input id="nw-enemies" type="range" min="1" max="${maxEnemies}" value="3"
+        <span style="display:block;margin-bottom:4px;font-size:13px;color:#aaa;">Enemy Cities (0–${maxEnemies}; 0 = Sandbox)</span>
+        <input id="nw-enemies" type="range" min="0" max="${maxEnemies}" value="3"
           style="width:100%;" />
         <span id="nw-enemies-val" style="font-size:13px;">3</span>
       </label>
@@ -97,8 +128,8 @@ export function showNewWorldModal(): Promise<NewWorldResult | null> {
       const enemies = parseInt(enemiesInput.value);
       enemiesVal.textContent = String(enemies);
 
-      // At max enemies, spacing is irrelevant
-      if (enemies >= maxEnemies) {
+      // Spacing is irrelevant with no enemies or when every city is active.
+      if (enemies === 0 || enemies >= maxEnemies) {
         spacingSection.style.display = 'none';
       } else {
         spacingSection.style.display = 'block';
@@ -157,14 +188,15 @@ export function showNewWorldModal(): Promise<NewWorldResult | null> {
         });
         dbg.api.timeEnd('POST /api/generate');
         dbg.api.log('Response status:', res.status);
-        const data = await res.json();
+        const rawJson: unknown = await res.json();
+        const data = decodeGenerateApiResponse(rawJson);
         if (!data.success) {
           dbg.api.error('Generate failed:', data.error);
           statusEl.textContent = `Error: ${data.error}`;
           generateBtn.disabled = false;
           return;
         }
-        dbg.api.log('Generate success, world seed:', data.world?.seed);
+        dbg.api.log('Generate success, world:', data.world);
         cleanup();
         resolve({ world: data.world, playerColor: selectedColor });
       } catch (err) {

@@ -14,6 +14,30 @@ running game without a human relaying screenshots.
   and writes `artifacts/sessions/<timestamp>/{summary.md,state.json,errors.json,console.log,screenshot.png}`.
   Flags: `--turns N`, `--url`, `--wait`.
 
+### What the snapshot does and does not cover
+
+`snapshot()` is **units-only**. It returns `seed`, `turn`, `counts`
+(tiles/cities/units + units-by-faction), `selection`, `units[]`, and `errors` —
+and nothing else. It does **not** include:
+
+- `world.logistics` (wells, refineries, routes, transports, hubs, tasks, home stock)
+- `world.buildings`
+- city detail beyond a count
+
+So it cannot answer "is this logistics entity present?" — use `console.log` in the
+relevant renderer, or read `console.log` from the session directory, which does
+capture every browser console message including rejected-intent errors. Check this
+list before spending a run: a snapshot that structurally cannot contain the answer
+is a wasted round-trip. Extend the `snapshot()` return in `client/debugState.ts`
+if a new domain needs coverage.
+
+### Load-time floor
+
+The default `--wait` is 30 s, which is **shorter than this project's cold load**
+(seed-based tile regeneration alone is ~4–9 s and the `#loading` overlay clears
+well after that). A default-flag run typically fails with
+`waiting for locator('#loading') to be hidden`. Pass `--wait 45000` or higher.
+
 ## DOM Debug Instrumentation (`window.gameDebug`)
 
 Activate by appending `?debug=true` to the URL, or:

@@ -12,8 +12,7 @@ import {
   addBoltHead,
   hexToColor,
 } from './unitModelHelpers.js';
-import type { UnitModelAttrs } from './unitModel.js';
-import type { TurretInfo } from './unitModelTypes.js';
+import type { UnitModelAttrs, TurretInfo } from './unitModelTypes.js';
 
 // Shared material references — set by initLimbedMaterials() called from unitModel.ts
 let matHull: THREE.MeshStandardMaterial;

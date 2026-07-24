@@ -11,7 +11,7 @@
 
 import { Tile } from './types.js';
 import { mulberry32 } from './rng.js';
-import { tilesWithinRadius } from './pathfinding.js';
+import { tilesWithinRadius } from './tilePathfinding.js';
 import { DEPOSIT_SPACING } from '../../shared/logisticsConstants.js';
 
 /**

@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { createRoute, upgradeRoute, upgradeRouteCapacity } from '../logistics.js';
+import { createRoute, upgradeRoute, upgradeRouteCapacity } from '../logistics/routes.js';
 import type { LogisticsRoute, LogisticsTile } from '../../../shared/logisticsTypes.js';
+import { encodeSeg } from '../../../shared/segmentGraph.js';
 import {
   ROUTE_CAPACITY_MAX,
   ROUTE_CAPACITY_MIN,
@@ -85,14 +86,24 @@ describe('logistics route creation & capacity bounds (Property 14)', () => {
     fc.assert(
       fc.property(arbPathLength, arbSteep, (length, steep) => {
         const tiles = makeChain(length, steep);
-        const path = tiles.map((t) => t.index);
+        const tileIndices = tiles.map((t) => t.index);
+        // Build a segment path that follows actual segmentNeighbours adjacency:
+        // tile 0 has neighbours[indexOf(1)] = 0 (seg 0 → tile 1);
+        // tile k (middle) has neighbours = [k-1, k+1], indexOf(k-1)=0 so arriving from k-1 lands on seg 0.
+        const encodedPath: number[] = [];
+        for (let k = 0; k < length; k++) {
+          // The facing segment on tile k when entering from tile k-1.
+          const prevTile = k > 0 ? k - 1 : -1;
+          const seg = prevTile >= 0 ? tiles[k].neighbours.indexOf(prevTile) : tiles[k].neighbours.indexOf(k + 1);
+          encodedPath.push(encodeSeg(k, Math.max(0, seg)));
+        }
         const route = createRoute(
           {
             id: 'r1',
             ownerId: 'faction-a',
             fromStructureId: 'well-1',
             toStructureId: 'city-1',
-            path,
+            path: encodedPath,
           },
           tiles,
         );
@@ -106,9 +117,9 @@ describe('logistics route creation & capacity bounds (Property 14)', () => {
         expect(route.capacity).toBeGreaterThanOrEqual(ROUTE_CAPACITY_MIN);
         expect(route.capacity).toBeLessThanOrEqual(ROUTE_CAPACITY_MAX);
 
-        // Req 6.1 — segments follow the supplied path exactly, as a fresh array.
-        expect(route.segments).toEqual(path);
-        expect(route.segments).not.toBe(path);
+        // Req 6.1 — segments follow the supplied encoded path exactly, as a fresh array.
+        expect(route.segments).toEqual(encodedPath);
+        expect(route.segments).not.toBe(encodedPath);
 
         // Endpoints/owner carried through unchanged.
         expect(route.ownerId).toBe('faction-a');

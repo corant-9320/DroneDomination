@@ -35,6 +35,7 @@ export function segmentAngle(segment: number): number {
  * @param facingOverride  Corrected facing index (0–5) to select the right pre-rendered sprite
  * @param currentMP    Remaining movement points this turn
  * @param maxMP        Maximum movement points for this unit
+ * @param showStatusBars Whether the health and movement bars are visible
  */
 export function drawUnitIcon(
   ctx: CanvasRenderingContext2D,
@@ -46,6 +47,7 @@ export function drawUnitIcon(
   facingOverride?: number,
   currentMP?: number,
   maxMP?: number,
+  showStatusBars = true,
 ): void {
   // Scale sprite by max health relative to baseline of 5.
   // Each step below 5 reduces size by 10%: scale = 0.9^(5 - maxHealth)
@@ -84,10 +86,12 @@ export function drawUnitIcon(
 
   ctx.restore();
 
-  // Bars in screen space (always horizontal, above/below the unit)
-  const extent = spriteSize / 2;
-  const healthBarH = drawHealthBar(ctx, unit, sx, sy, size, extent);
-  drawMovementBar(ctx, sx, sy, size, extent, healthBarH, currentMP, maxMP);
+  if (showStatusBars) {
+    // Bars in screen space (always horizontal, above/below the unit)
+    const extent = spriteSize / 2;
+    const healthBarH = drawHealthBar(ctx, unit, sx, sy, size, extent);
+    drawMovementBar(ctx, sx, sy, size, extent, healthBarH, currentMP, maxMP);
+  }
 }
 
 // ---------------------------------------------------------------------------

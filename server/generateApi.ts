@@ -9,7 +9,7 @@
 import { generateWorld } from '../src/world/generate.js';
 import { validateWorld } from '../src/world/validate.js';
 import { World, City } from '../src/world/types.js';
-import { graphDistance } from '../src/world/pathfinding.js';
+import { graphDistance } from '../src/world/tilePathfinding.js';
 import { spawnInitialUnits } from '../src/world/spawn.js';
 import { foundCities } from '../src/world/buildings.js';
 import { CITY_COUNT } from '../src/world/generate.js';

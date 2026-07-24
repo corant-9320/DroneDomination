@@ -2,7 +2,7 @@
 //
 // Validates: Requirements 2.1, 2.2, 2.3, 2.4, 2.5, 12.2, 12.3
 //
-// Property-based test for `validateWellPlacement` (src/world/logistics.ts). The gate
+// Property-based test for `validateWellPlacement` (src/world/logistics/placement.ts). The gate
 // admits a well ONLY when every condition holds simultaneously:
 //   - the unit's `engineer` attribute is an integer in 1..5            (Req 2.1, 2.2)
 //   - the target segment's steepness is <= MAX_STEEP_WHEELED           (Req 2.3)
@@ -18,7 +18,7 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 
-import { validateWellPlacement } from '../logistics.js';
+import { validateWellPlacement } from '../logistics/placement.js';
 import { MAX_STEEP_WHEELED } from '../../../shared/movementConstants.js';
 import type {
   EngineerUnitRef,

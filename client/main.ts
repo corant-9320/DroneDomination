@@ -15,7 +15,9 @@ import { executeAiTurn as _executeAiTurn } from './aiTurn.js';
 import { AiPlaybackController } from './aiPlayback.js';
 import { MatchClient } from './matchClient.js';
 import { preRenderUnits } from './unitRenderer.js';
+import { preloadSplashBomb } from './splashBombModel.js';
 import { preRenderBuildings } from './buildingRenderer.js';
+import { preRenderLogistics } from './logisticsSpriteRenderer.js';
 import { FirstPersonView } from './firstPersonView.js';
 import { dbg } from './debug.js';
 import { installErrorCapture, installDebugState } from './debugState.js';
@@ -26,6 +28,7 @@ import { syncPlannedToWorld } from './cityPlan.js';
 import { setupPanels } from './panelWiring.js';
 import { setupKeyboardShortcuts } from './keyboardShortcuts.js';
 import { advanceTurn } from './turnController.js';
+import { buildBridge, buildStandaloneRoad, clearForest } from './logisticsController.js';
 import {
   handlePlayerAttack,
   handlePlayerBuildingAttack,
@@ -34,6 +37,15 @@ import {
   handlePlayerSleep,
   handlePlayerRefit,
   handlePlayerBuildingRefit,
+  handleGodModeEditUnit,
+  handleGodModeDeleteUnit,
+  handleGodModeEditBuilding,
+  handleGodModeDeleteBuilding,
+  handleGodModeCreateOilBuilding,
+  handleGodModeEditOilBuilding,
+  handleGodModeDeleteOilBuilding,
+  handleCreateShuttleTransport,
+  handleStopShuttleTransport,
 } from './playerActions.js';
 import type { GameContext } from './gameContext.js';
 
@@ -59,11 +71,17 @@ async function main() {
     );
     dbg.init.log('Seed:', world.seed, '| playerColor:', world.playerColor);
 
+    setLoadingStatus('Loading models…');
+    await preloadSplashBomb();
+
     setLoadingStatus('Rendering unit sprites…');
     await preRenderUnits(world.units, world);
 
     setLoadingStatus('Rendering building sprites…');
     await preRenderBuildings(world.buildings, world);
+
+    setLoadingStatus('Rendering logistics sprites…');
+    await preRenderLogistics(world);
 
     const globeCanvas = document.getElementById('globe-canvas') as HTMLCanvasElement;
     const localCanvas = document.getElementById('local-canvas') as HTMLCanvasElement;
@@ -181,6 +199,69 @@ async function main() {
       updateTurnIndicator,
     };
 
+    localMap.setRemoteTerrainTasksEnabled(
+      () => matchClient.capabilities?.remoteTerrainTasks === true,
+    );
+    localMap.setStandaloneRoadConstructionEnabled(
+      () => matchClient.capabilities?.standaloneRoadConstruction === true,
+    );
+    localMap.setEntityEditingEnabled(
+      () => matchClient.capabilities?.entityEditing === true,
+    );
+    const refreshAfterGodModeTerrainTask = () => {
+      localMap.computeMovementRange();
+      localMap.render();
+      detailPanel.showTile(
+        localMap.selectedTile,
+        localMap.selectedSegment >= 0 ? localMap.selectedSegment : undefined,
+      );
+    };
+    localMap.setOnGodModeBuildBridge((tileIndex) => {
+      void (async () => {
+        const response = await buildBridge(ctx, tileIndex);
+        if (response?.success) refreshAfterGodModeTerrainTask();
+      })();
+    });
+    localMap.setOnGodModeClearForest((tileIndex) => {
+      void (async () => {
+        const response = await clearForest(ctx, tileIndex);
+        if (response?.success) refreshAfterGodModeTerrainTask();
+      })();
+    });
+    localMap.setOnGodModeBuildRoad((tileIndex, segment) => {
+      void (async () => {
+        const response = await buildStandaloneRoad(ctx, tileIndex, segment);
+        if (response?.success) refreshAfterGodModeTerrainTask();
+      })();
+    });
+    localMap.setOnGodModeCreateOilBuilding((structure, tileIndex, segment) => {
+      void handleGodModeCreateOilBuilding(ctx, structure, tileIndex, segment);
+    });
+    localMap.setOnGodModeEditOilBuilding((structure, structureId) => {
+      void handleGodModeEditOilBuilding(ctx, structure, structureId);
+    });
+    localMap.setOnGodModeDeleteOilBuilding((structure, structureId, segment) => {
+      void handleGodModeDeleteOilBuilding(ctx, structure, structureId, segment);
+    });
+    localMap.setOnGodModeEditUnit((unitId) => {
+      void handleGodModeEditUnit(ctx, unitId);
+    });
+    localMap.setOnGodModeDeleteUnit((unitId) => {
+      void handleGodModeDeleteUnit(ctx, unitId);
+    });
+    localMap.setOnGodModeEditBuilding((buildingId) => {
+      void handleGodModeEditBuilding(ctx, buildingId);
+    });
+    localMap.setOnGodModeDeleteBuilding((buildingId) => {
+      void handleGodModeDeleteBuilding(ctx, buildingId);
+    });
+    localMap.setOnCreateShuttleTransport((structureId) => {
+      void handleCreateShuttleTransport(ctx, structureId);
+    });
+    localMap.setOnStopShuttleTransport((transportId) => {
+      void handleStopShuttleTransport(ctx, transportId);
+    });
+
     // ─── View cross-wiring ───────────────────────────────────────────────
     globe.setOnViewCentreChange((tileIndex, up) => {
       localMap.setCentre(tileIndex, false, up);
@@ -261,6 +342,11 @@ async function main() {
       onRepair:  (r, t) => { void handlePlayerRepair(ctx, r, t); },
       onSleep:   (id)   => { handlePlayerSleep(ctx, id); },
       onRefit:   (id)   => { void handlePlayerRefit(ctx, id); },
+      isGodModeEntityEditingEnabled: () => matchClient.capabilities?.entityEditing === true,
+      onGodModeEditUnit: (id) => { void handleGodModeEditUnit(ctx, id); },
+      onGodModeDeleteUnit: (id) => { void handleGodModeDeleteUnit(ctx, id); },
+      onCreateShuttleTransport: (structureId) => { void handleCreateShuttleTransport(ctx, structureId); },
+      onStopShuttleTransport: (transportId) => { void handleStopShuttleTransport(ctx, transportId); },
       onCommit:  ()     => { localMap.render(); },
     });
 
@@ -270,6 +356,10 @@ async function main() {
       const result = await showNewWorldModal();
       if (result) {
         dbg.modal.log('New world generated, applying. playerColor:', result.playerColor);
+        // `result.world` is validated inside `applyNewWorld` (decodeWorldInput);
+        // it is genuinely `unknown` here — the bootstrap payload from
+        // `/api/generate` — so playerColor is spliced in via a narrow cast
+        // rather than widening applyNewWorld's contract.
         const worldData = result.world as Record<string, unknown>;
         worldData.playerColor = result.playerColor;
         applyNewWorld(worldData);
@@ -324,4 +414,4 @@ async function main() {
   }
 }
 
-main();
+void main();

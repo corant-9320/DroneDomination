@@ -10,10 +10,10 @@
  *   drawMovementCostRoute  — dotted route line with cost labels
  */
 
-import { WorldData } from './worldData.js';
-import { FlatTile } from './localMapProjection.js';
-import { MovementRangeResult } from './movementRange.js';
-import { MovementCostRoute, RouteHopZone } from './movementRoute.js';
+import type { WorldData } from './worldData.js';
+import type { FlatTile } from './localMapProjection.js';
+import type { MovementRangeResult } from './movementRange.js';
+import type { MovementCostRoute, RouteHopZone } from './movementRoute.js';
 
 // ─── Movement range overlay ───────────────────────────────────────────────────
 

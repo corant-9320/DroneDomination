@@ -88,16 +88,21 @@ domains:
       - ElevationAdvantage
     source:
       - src/world/combat.ts
+      - src/world/combat/**
       - src/world/combatFacing.ts
       - src/world/combatFormula.ts
       - server/combatApi.ts
       - server/combatExplainer.ts
+      - shared/combatTypes.ts
       - shared/unitTypes.ts
     likely_tests:
       - src/world/__tests__/combat.test.ts
       - src/world/__tests__/combat.resolve.test.ts
+      - src/world/__tests__/combat.compatibility.test.ts
       - src/world/__tests__/combatFacing.test.ts
       - src/world/__tests__/combatFormula.test.ts
+      - src/world/__tests__/logisticsCombatIntegration.test.ts
+      - src/world/__tests__/logisticsStructureCombat.test.ts
       - server/__tests__/combat.test.ts
       - server/__tests__/combatApi.test.ts
       - server/__tests__/combatExplainer.test.ts
@@ -106,7 +111,15 @@ domains:
         - npm test
       full:
         - npm run build
+        - npm run deps:check
     danger_zones:
+      - "Random draw count and ordering, especially splash damage across buildings."
+      - "Unit/building mutation order and combat result/event ordering."
+      - "Preview/resolution parity; previews must not mutate state or consume randomness."
+      - "Reaction and anti-air eligibility, reactor ordering, and destruction stop timing."
+      - "Simultaneous attack snapshot semantics and returned result ordering."
+      - "Building component damage and logistics structure destruction integration."
+      - "Every public export must remain available through the src/world/combat.ts compatibility façade."
       - "Do not pin exact damage values in tests unless deliberately creating a labelled golden smoke test."
       - "Facing uses neighbour-relative indexes; do not treat them as global directions."
       - "COMBAT_RULES.md may be stale for balance constants; cross-check formula code and recent git decisions."
@@ -117,6 +130,7 @@ domains:
       bottom detail bar, controls, first-person view, and debug state.
     steering:
       - .kiro/steering/ui-defaults.md
+      - .kiro/steering/ui-facing.md
       - .kiro/steering/architecture-debugging.md
     memory_nodes:
       - GlobeView
@@ -127,7 +141,9 @@ domains:
       - client/**
       - index.html
     likely_tests:
-      - e2e/**
+      - client/__tests__/**
+    escalation_tests:
+      - e2e/** (Playwright; explicit user approval required)
     debug_tools:
       - npm run debug:snapshot
       - "window.__DD_STATE__.snapshot()"
@@ -172,14 +188,27 @@ domains:
       and unit reach calculations.
     memory_nodes:
       - MovementSystem
-    source:
+    canonical_implementation:
+      - shared/pathfinding.ts
+      - shared/segmentGraph.ts
+      - shared/movementConstants.ts
       - src/world/movement.ts
-      - src/world/pathfinding.ts
       - src/world/segmentGeometry.ts
       - src/world/segmentSteepness.ts
-      - shared/movementConstants.ts
+      - src/world/tilePathfinding.ts (Tile-typed entry point; owns Tile[] -> PathTile[] adaptation, algorithms stay in shared/pathfinding.ts)
+    source:
       - shared/pathfinding.ts
+      - shared/segmentGraph.ts
+      - shared/movementConstants.ts
+      - src/world/tilePathfinding.ts
+      - src/world/movement.ts
+      - src/world/segmentGeometry.ts
+      - src/world/segmentSteepness.ts
     likely_tests:
+      - shared/__tests__/pathfinding.test.ts
+      - shared/__tests__/segmentGraph.test.ts
+      - shared/__tests__/movementConstants.test.ts
+      - client/__tests__/movementRoute.test.ts
       - src/world/__tests__/movement.test.ts
       - src/world/__tests__/movement.reach.test.ts
       - src/world/__tests__/pathfinding.test.ts
@@ -192,6 +221,7 @@ domains:
       full:
         - npm run build
     danger_zones:
+      - "Add new pathfinding algorithms to shared/pathfinding.ts, not src/world/tilePathfinding.ts (which owns only Tile type adaptation)."
       - "Movement cost constants live in shared/movementConstants.ts — keep in sync with pathfinding."
       - "Segment steepness affects both movement and combat elevation advantage."
 
@@ -235,7 +265,7 @@ domains:
     steering:
       - .kiro/steering/debugging.md
       - .kiro/steering/architecture-debugging.md
-      - .kiro/steering/efficiency.md
+      - .kiro/steering/conventions.md
     canonical_docs:
       - docs/architecture/debugging.md
     source:
@@ -272,6 +302,118 @@ domains:
         - npm run build
     danger_zones:
       - "AI turn results are replayed on client via aiPlayback — keep wire contract in sync."
+
+  logistics:
+    purpose: >
+      Authoritative oil extraction, refining, construction economy, routes,
+      transports, hubs, engineer tasks, logistics combat integration, rendering,
+      and per-turn resolution.
+    memory_nodes:
+      - LogisticsSystem
+    canonical_implementation:
+      pure_engine:
+        - src/world/logistics/**
+      server_appliers:
+        - server/logistics/**
+    import_guidance: >
+      Import the owning module under src/world/logistics/** or server/logistics/**,
+      or that area's index.js when a caller needs many symbols. The former
+      src/world/logistics.ts and server/logisticsApi.ts facades are deleted.
+    source:
+      - shared/logisticsTypes.ts
+      - shared/logisticsConstants.ts
+      - src/world/logistics/**
+      - src/world/logisticsGen.ts
+      - src/world/logisticsSeed.ts
+      - server/logistics/**
+      - client/logisticsController.ts
+      - client/logisticsModel.ts
+      - client/logisticsModelBridge.ts
+      - client/logisticsModelHub.ts
+      - client/logisticsModelRefinery.ts
+      - client/logisticsModelRoad.ts
+      - client/logisticsModelTransport.ts
+      - client/logisticsModelWell.ts
+      - client/logisticsPanel.ts
+      - client/logisticsRenderer.ts
+      - client/logisticsSpriteRenderer.ts
+    likely_tests:
+      - src/world/__tests__/logistics*.test.ts
+      - server/__tests__/logisticsApiIntents.test.ts
+      - server/__tests__/logisticsEndTurn.test.ts
+      - server/__tests__/matchCreateLogistics.test.ts
+      - shared/__tests__/logisticsConstants.test.ts
+      - client/__tests__/logisticsModel*.test.ts
+      - client/__tests__/worldDataLogisticsExpand.test.ts
+    canonical_docs:
+      - docs/architecture/known-issues.md
+    verification:
+      cheap:
+        - npm run typecheck
+        - npm test
+        - npm run deps:check
+      full:
+        - npm run build
+    danger_zones:
+      - "Wire/save/API synchronization across shared/logisticsTypes.ts, client/worldData.ts, src/world/compact.ts, shared/wireTypes.ts, server/generateApi.ts (see known-issues.md logistics wire-format sync requirements section)."
+      - "Segment occupancy must agree across units, buildings, and logistics structures (see shared/segmentGraph.ts sync requirement in known-issues.md)."
+      - "Route segment encoding must stay consistent between renderers (client/logisticsRenderer.ts, client/globe.ts, client/firstPersonScene.ts) and the authoritative LogisticsRoute.segments format."
+      - "Logistics state initialization: any new MatchState construction site must initialise the logistics field."
+      - "Authoritative server ownership and reject-and-preserve behaviour: pure validators in src/world/logistics/placement.ts cannot see ordinary buildings, so server/logistics/wells.ts, refineries.ts, and hubs.ts must retain their authoritative building-collision checks."
+      - "Add behavior in the canonical src/world/logistics/** or server/logistics/** module that owns the concern; do not reintroduce a flat re-export facade."
+    steering:
+      - .kiro/steering/architecture-api.md
+
+  world_data_and_save_contracts:
+    purpose: >
+      Client world-data boundary: the compact-save wire contract (versioned),
+      runtime validation of external JSON at the client, generated-world
+      bootstrap normalization, tile-regeneration client, and world
+      cache/load/save/reload orchestration.
+    canonical_docs:
+      - docs/architecture/data-flow-and-api.md
+      - docs/architecture/modules.md
+      - docs/architecture/known-issues.md
+    memory_nodes:
+      - CompactWireFormat
+      - ModuleLayout
+      - ServerAPI
+    source:
+      - shared/wireTypes.ts (CompactSave/CompactSaveV1, COMPACT_SAVE_FORMAT_VERSION, WorldTilesResponse)
+      - client/worldData.ts (compatibility facade — implementation in client/world/**)
+      - client/world/model.ts
+      - client/world/validation.ts
+      - client/world/codec.ts
+      - client/world/tilesClient.ts
+      - client/world/expand.ts
+      - client/world/repository.ts
+      - client/saveLoad.ts
+      - client/newWorldModal.ts
+      - server/regenerate.ts
+    likely_tests:
+      - client/__tests__/worldCodec.test.ts
+      - client/__tests__/worldExpand.test.ts
+      - client/__tests__/worldTilesClient.test.ts
+      - client/__tests__/worldRepository.test.ts
+      - client/__tests__/worldDataCompatibility.test.ts
+      - client/__tests__/worldDataLogisticsExpand.test.ts
+      - server/__tests__/regenerate.test.ts
+    verification:
+      cheap:
+        - npm run typecheck
+        - npm test
+        - npm run deps:check
+      full:
+        - npm run build
+    danger_zones:
+      - "Never trust a JSON.parse/response.json() cast — decode external input as unknown through client/world/codec.ts."
+      - "Do not conflate CompactSaveV1.formatVersion (save schema) with MatchState.version (match optimistic-concurrency); they are unrelated counters."
+      - "Do not remove or rename worldData.ts facade exports — ~40 existing consumers import from it directly."
+      - "Deterministic tile geometry (tiles/tileCount/pentagonIndices) must never be persisted in a compact save — always regenerated from the seed via /api/world-tiles."
+      - "getCompactSave/projectCompactSave must include the full logistics state — this was historically omitted (fixed; see docs/architecture/archive/known-issues-fixed.md and the projectCompactSave regression-guard test)."
+      - "Legacy and logistics bridges share tile.bridge and may both list the same tile index after a round-trip — see known-issues.md."
+    steering:
+      - .kiro/steering/architecture-api.md
 
   buildings_and_cities:
     purpose: >

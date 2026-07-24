@@ -32,7 +32,7 @@ import fc from 'fast-check';
 
 import { generateTerrain } from '../generate.js';
 import { generateGeodesicSphere, computeDual } from '../geodesic.js';
-import { graphDistance } from '../pathfinding.js';
+import { graphDistance } from '../tilePathfinding.js';
 import { placeOilDeposits } from '../logisticsGen.js';
 import { DEPOSIT_SPACING } from '../../../shared/logisticsConstants.js';
 import type { Tile } from '../types.js';

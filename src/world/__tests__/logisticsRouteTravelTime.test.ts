@@ -20,7 +20,7 @@
 
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { routeTravelTime } from '../logistics.js';
+import { routeTravelTime } from '../logistics/routes.js';
 import { MAX_STEEP_WHEELED } from '../../../shared/movementConstants.js';
 
 const NUM_RUNS = 200;

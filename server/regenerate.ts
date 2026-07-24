@@ -7,17 +7,15 @@
 
 import { generateWorld } from '../src/world/generate.js';
 import { toCompactTile } from '../src/world/compact.js';
-import type { CompactTile } from '../src/world/compact.js';
+import type { WorldTilesResponse } from '../shared/wireTypes.js';
 
-export interface RegenerateResult {
-  tiles: CompactTile[];
-  pentagonIndices: number[];
-  tileCount: number;
-  pentagonCount: number;
-  hexCount: number;
-  /** Cities as generated (before any filtering by scenario). */
-  cities: { id: string; label: string; tileIndex: number; neighbourCityIds: string[] }[];
-}
+/**
+ * `cities` is always populated by this handler (unlike the shared response
+ * type, which marks it optional since the client doesn't currently read it).
+ */
+export type RegenerateResult = WorldTilesResponse & {
+  cities: NonNullable<WorldTilesResponse['cities']>;
+};
 
 /**
  * Regenerate the full tile array and cities from a world seed.

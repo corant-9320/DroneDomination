@@ -33,6 +33,7 @@ import { esc, capitalize } from './htmlUtils.js';
 import {
   WELL_STORAGE_CAPACITY,
   HUB_STORAGE_CAPACITY,
+  REFINERY_THROUGHPUT_RATE,
   HOME_CITY_REFINED_PRODUCT_MAX,
   ROUTE_CAPACITY_MAX,
 } from '../shared/logisticsConstants.js';
@@ -98,10 +99,13 @@ export function renderHubStorage(hub: DistributionHub): string {
  * endpoint shows its stock alongside wells/hubs.
  */
 export function renderRefineryInfo(refinery: Refinery): string {
+  const throughput = Math.max(1, refinery.segments.length * REFINERY_THROUGHPUT_RATE);
+  const heldOil = clampInt(refinery.heldOil);
   let html = section('🏭 Refinery', refinery.id.replace(/^refinery_/, ''));
+  html += storageBar(heldOil, throughput);
   html += dpRow('Segments', String(refinery.segments.length));
-  html += dpRow('Held Oil', String(clampInt(refinery.heldOil)));
-  html += dpRow('Refined Product', String(clampInt(refinery.refinedProductAvailable)));
+  html += dpRow('Oil Feed', `${heldOil} / ${throughput}`);
+  html += dpRow('Petrol Ready', String(clampInt(refinery.refinedProductAvailable)));
   html += dpRow('Hit Points', `${clampInt(refinery.hitPoints)} / ${clampInt(refinery.maxHitPoints)}`);
   html += sectionEnd();
   return html;
@@ -141,6 +145,7 @@ export function renderTransportInfo(transport: Transport): string {
       ? 'Refined Product'
       : 'Empty';
   let html = section('🚚 Transport', transport.id.replace(/^transport_/, ''));
+  html += storageBar(cargo, cap);
   html += dpRow('Tier', tierLabel(transport.tier));
   html += dpRow('Cargo', `${cargo} / ${cap} (${cargoLabel})`);
   html += dpRow('Status', transport.inTransit ? `In transit — ${clampInt(transport.turnsRemaining)} turn(s) left` : 'At endpoint');

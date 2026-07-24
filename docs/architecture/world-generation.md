@@ -1,6 +1,6 @@
 # World Generation, Hex Segments & Pathfinding
 
-[← Architecture Wiki](README.md) · Covers `src/world/**`
+[← Architecture Wiki](README.md) · Applies to world generation, geometry/serialization, movement/segments, and pathfinding
 
 ## World Generation Pipeline
 
@@ -14,13 +14,19 @@
 
 ## Hex Segments
 
-Each tile is divided into 6 triangular segments (0–5, clockwise from neighbour[0]).
-Each segment holds at most 1 unit. Max 5 units per tile — one segment must remain
-unoccupied, keeping hex and pentagon capacity equal.
+Each tile is divided into triangular segments indexed by neighbour face: six
+segments (0–5) on a hexagon and five (0–4) on a pentagon. Each segment holds at
+most one occupant (unit or building). No segment is reserved as a mandatory
+street; a tile may be filled to its actual side count, and any open segment
+sealed behind occupants is intentionally unreachable.
 
 ## Pathfinding
 
-Pure helpers, available in both `shared/pathfinding.ts` and `src/world/pathfinding.ts`:
+Canonical pure algorithms live in `shared/pathfinding.ts`.
+`src/world/tilePathfinding.ts` is the `Tile`-typed entry point: it owns the type
+adaptation that wraps the server's `Tile[]` as `PathTile[]` (index-preserving) and
+exposes the same three functions over server tiles. Add new algorithms to
+`shared/pathfinding.ts`, never to the entry point:
 
 - `graphDistance(tiles, from, to)` — BFS, returns hop count or -1
 - `tilesWithinRadius(tiles, centre, radius)` — BFS flood fill → Map<index, distance>
@@ -39,6 +45,12 @@ segment is empty and `segmentCost` is finite (Segment-Based Movement spec, B1–
 
 `CITY_COUNT = 12` (`src/world/generate.ts`), `MIN_SPACING = 20`, `MAX_SPACING = 45`,
 `FREQUENCY = 24`.
+
+## Determinism
+
+All world generation seeds from `mulberry32`, canonical in `shared/rng.ts` (so the
+client can share the PRNG without importing `src/`). `src/world/rng.ts` re-exports
+it as the world-gen entry point every `src/world/**` caller already imports.
 
 ## See Also
 

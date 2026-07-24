@@ -15,6 +15,8 @@ import { CombatAnimator } from './combatAnimations.js';
 import { dbg } from './debug.js';
 import { TurnManager } from './turnManager.js';
 import { MapInputHandler, MapViewInterface, FlatTileRef } from './mapInput.js';
+import { onUnitSpriteRendered } from './unitRenderer.js';
+import { onBuildingSpriteRendered } from './buildingRenderer.js';
 import {
   getMovementMode,
   getMaxMovement as sharedGetMaxMovement,
@@ -133,6 +135,36 @@ export class LocalMapView implements MapViewInterface {
 
   /** Open the refit modal for a player-owned building (by building id). */
   onBuildingRefit: ((buildingId: string) => void) | null = null;
+  /** Queue a server-authoritative bridge task without a selected engineer. */
+  onGodModeBuildBridge: ((tileIndex: number) => void) | null = null;
+  /** Queue a server-authoritative forest-clearing task without a selected engineer. */
+  onGodModeClearForest: ((tileIndex: number) => void) | null = null;
+  /** Build a server-authoritative standalone road on an empty segment. */
+  onGodModeBuildRoad: ((tileIndex: number, segment: number) => void) | null = null;
+  /** Create one well or refinery footprint on a God Mode-selected segment. */
+  onGodModeCreateOilBuilding: ((structure: 'well' | 'refinery', tileIndex: number, segment: number) => void) | null = null;
+  /** Edit the operational state of a God Mode-selected oil structure. */
+  onGodModeEditOilBuilding: ((structure: 'well' | 'refinery', structureId: string) => void) | null = null;
+  /** Delete a well or the selected footprint of a refinery. */
+  onGodModeDeleteOilBuilding: ((structure: 'well' | 'refinery', structureId: string, segment: number) => void) | null = null;
+  /** Edit a unit through the server-authoritative God Mode intent. */
+  onGodModeEditUnit: ((unitId: string) => void) | null = null;
+  /** Delete a unit through the server-authoritative God Mode intent. */
+  onGodModeDeleteUnit: ((unitId: string) => void) | null = null;
+  /** Edit a building through the server-authoritative God Mode intent. */
+  onGodModeEditBuilding: ((buildingId: string) => void) | null = null;
+  /** Delete a building through the server-authoritative God Mode intent. */
+  onGodModeDeleteBuilding: ((buildingId: string) => void) | null = null;
+  /** Create a point-to-point shuttle transport from this owned oil structure (RMB action). */
+  onCreateShuttleTransport: ((structureId: string) => void) | null = null;
+  /** Stop the shuttle transport currently parked on this segment (RMB action). */
+  onStopShuttleTransport: ((transportId: string) => void) | null = null;
+  /** Read-only capability getter backed by the latest authoritative match response. */
+  private remoteTerrainTasksEnabled: () => boolean = () => false;
+  /** Read-only capability getter backed by the latest authoritative match response. */
+  private standaloneRoadConstructionEnabled: () => boolean = () => false;
+  /** Read-only capability getter backed by the latest authoritative match response. */
+  private entityEditingEnabled: () => boolean = () => false;
   /**
    * Fired when the player selects or deselects a building by left-clicking.
    * Called with the building id when a building is selected, or null when
@@ -206,6 +238,7 @@ export class LocalMapView implements MapViewInterface {
 
   /** Input handler — owns all 8 event listeners. */
   private inputHandler: MapInputHandler;
+  private spriteRedrawQueued = false;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -224,6 +257,8 @@ export class LocalMapView implements MapViewInterface {
 
     // Delegate all input event handling to MapInputHandler
     this.inputHandler = new MapInputHandler(canvas, this, tm);
+    onUnitSpriteRendered(() => this.scheduleSpriteRedraw());
+    onBuildingSpriteRendered(() => this.scheduleSpriteRedraw());
 
     window.addEventListener('resize', () => this.render());
 
@@ -232,11 +267,23 @@ export class LocalMapView implements MapViewInterface {
     textures.load().then(() => {
       this.terrain.setTextures(textures);
       this.render();
+    }).catch((err: unknown) => {
+      dbg.detail.error('Failed to load terrain textures:', err);
     });
 
     if (world.cities.length > 0) {
       this.setCentre(world.cities[0].tileIndex, true);
     }
+  }
+
+  /** Coalesce async sprite-cache completions into one Canvas repaint per frame. */
+  private scheduleSpriteRedraw(): void {
+    if (this.spriteRedrawQueued) return;
+    this.spriteRedrawQueued = true;
+    requestAnimationFrame(() => {
+      this.spriteRedrawQueued = false;
+      this.render();
+    });
   }
 
   /** Satisfies MapViewInterface — forwards to the private onTileSelect callback. */
@@ -767,6 +814,18 @@ export class LocalMapView implements MapViewInterface {
     return sharedIsImpassableTerrain(terrain);
   }
 
+  isGodModeRemoteTerrainTasksEnabled(): boolean {
+    return this.remoteTerrainTasksEnabled();
+  }
+
+  isGodModeStandaloneRoadConstructionEnabled(): boolean {
+    return this.standaloneRoadConstructionEnabled();
+  }
+
+  isGodModeEntityEditingEnabled(): boolean {
+    return this.entityEditingEnabled();
+  }
+
   // ─── Movement range ─────────────────────────────────────────────────────────
 
   computeMovementRange(): void {
@@ -1058,6 +1117,70 @@ export class LocalMapView implements MapViewInterface {
 
   setOnBuildingRefit(cb: (buildingId: string) => void): void {
     this.onBuildingRefit = cb;
+  }
+
+  setOnGodModeBuildBridge(cb: (tileIndex: number) => void): void {
+    this.onGodModeBuildBridge = cb;
+  }
+
+  setOnGodModeClearForest(cb: (tileIndex: number) => void): void {
+    this.onGodModeClearForest = cb;
+  }
+
+  setOnGodModeBuildRoad(cb: (tileIndex: number, segment: number) => void): void {
+    this.onGodModeBuildRoad = cb;
+  }
+
+  setOnGodModeCreateOilBuilding(
+    cb: (structure: 'well' | 'refinery', tileIndex: number, segment: number) => void,
+  ): void {
+    this.onGodModeCreateOilBuilding = cb;
+  }
+
+  setOnGodModeEditOilBuilding(cb: (structure: 'well' | 'refinery', structureId: string) => void): void {
+    this.onGodModeEditOilBuilding = cb;
+  }
+
+  setOnGodModeDeleteOilBuilding(
+    cb: (structure: 'well' | 'refinery', structureId: string, segment: number) => void,
+  ): void {
+    this.onGodModeDeleteOilBuilding = cb;
+  }
+
+  setOnGodModeEditUnit(cb: (unitId: string) => void): void {
+    this.onGodModeEditUnit = cb;
+  }
+
+  setOnGodModeDeleteUnit(cb: (unitId: string) => void): void {
+    this.onGodModeDeleteUnit = cb;
+  }
+
+  setOnGodModeEditBuilding(cb: (buildingId: string) => void): void {
+    this.onGodModeEditBuilding = cb;
+  }
+
+  setOnGodModeDeleteBuilding(cb: (buildingId: string) => void): void {
+    this.onGodModeDeleteBuilding = cb;
+  }
+
+  setOnCreateShuttleTransport(cb: (structureId: string) => void): void {
+    this.onCreateShuttleTransport = cb;
+  }
+
+  setOnStopShuttleTransport(cb: (transportId: string) => void): void {
+    this.onStopShuttleTransport = cb;
+  }
+
+  setRemoteTerrainTasksEnabled(cb: () => boolean): void {
+    this.remoteTerrainTasksEnabled = cb;
+  }
+
+  setStandaloneRoadConstructionEnabled(cb: () => boolean): void {
+    this.standaloneRoadConstructionEnabled = cb;
+  }
+
+  setEntityEditingEnabled(cb: () => boolean): void {
+    this.entityEditingEnabled = cb;
   }
 
   setOnBuildingSelected(cb: (buildingId: string | null) => void): void {

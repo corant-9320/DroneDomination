@@ -32,8 +32,8 @@ import {
   dropRefineryResources,
   dropHubResources,
   markRoutesInoperable,
-} from '../logistics.js';
-import type { HpStructure } from '../logistics.js';
+} from '../logistics/combatIntegration.js';
+import type { HpStructure } from '../logistics/combatIntegration.js';
 import type {
   DistributionHub,
   LogisticsRoute,
@@ -246,7 +246,9 @@ describe('markRoutesInoperable (Property 24: destroyed segment disables its rout
         for (let i = 0; i < before.length; i++) {
           const original = before[i];
           const updated = next.find((r) => r.id === original.id)!;
-          const crosses = original.segments.includes(destroyedTileIndex);
+          const crosses = original.segments.some(
+            (key) => Math.floor(key / 6) === destroyedTileIndex,
+          );
           if (crosses) {
             // Every route using the destroyed segment is reported and left inoperable.
             expect(affected.has(original.id)).toBe(true);
@@ -261,7 +263,9 @@ describe('markRoutesInoperable (Property 24: destroyed segment disables its rout
         // affectedRouteIds contains only ids of routes that actually cross the tile.
         for (const id of affectedRouteIds) {
           const src = before.find((r) => r.id === id)!;
-          expect(src.segments.includes(destroyedTileIndex)).toBe(true);
+          expect(src.segments.some(
+            (key) => Math.floor(key / 6) === destroyedTileIndex,
+          )).toBe(true);
         }
 
         expect(routes).toEqual(before); // no mutation of the input array/routes

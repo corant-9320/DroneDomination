@@ -2,11 +2,12 @@
   "version": "1.0.0",
   "enabled": true,
   "name": "Search for redundant code",
+  "description": "Delegates the redundant/unused/duplicate code sweep to the refactor-writer subagent.",
   "when": {
     "type": "userTriggered"
   },
   "then": {
     "type": "askAgent",
-    "prompt": "Scan the repository to identify redundant, unused, or duplicate code (functions, classes, files, imports, and commented-out blocks). For each candidate:\n\nExplain why it appears redundant and show the exact locations and code snippets.\nRemove the redundant code locally and run the full test suite (include unit, integration, and linting). If tests fail or coverage drops, revert the change and report the failure details and stack traces.\nIf behavior or intent is unclear, do not modify—present a concise explanation of the candidate, potential risks of removal, and a suggested action (safe removal, refactor, or ask developer). Provide a one-line summary and the exact diff for any proposed change.\nCommit changes in a separate branch with a clear message and include the test results and a short changelog entry.\nAssume the project uses common tools (git, pytest/jest, npm/maven/gradle, linters). When multiple interpretations exist, prefer the conservative option and ask the user before making non-trivial behavioral changes."
+    "prompt": "Invoke the `refactor-writer` subagent to run a redundant-code sweep: find redundant, unused, or duplicated code (functions, classes, files, imports, commented-out blocks) and follow its rules for safe removal, verification, and reporting uncertain candidates instead of deleting them."
   }
 }

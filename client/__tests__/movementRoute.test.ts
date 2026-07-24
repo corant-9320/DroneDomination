@@ -177,6 +177,41 @@ describe('movementRoute — characterization', () => {
     expect(dumpRoute(route)).toMatchSnapshot();
   });
 
+  it('charges a second segment step after crossing to a side segment', () => {
+    const unit = makeUnit(startTile, { segment: 0 });
+    const dest = at(1, 0);
+    const arrival = tiles[dest].n.indexOf(startTile);
+    const arrivalRoute = computeMovementCostRoute(makeWorld(tiles, [unit]), unit, null, arrival, MP, dest)!;
+    const sideSegment = (arrival + 1) % tiles[dest].s;
+    const sideRoute = computeMovementCostRoute(makeWorld(tiles, [unit]), unit, null, sideSegment, MP, dest)!;
+    expect(sideRoute.hops.length).toBeGreaterThan(arrivalRoute.hops.length);
+    expect(sideRoute.hops[sideRoute.hops.length - 1].cumulativeCost)
+      .toBeGreaterThan(arrivalRoute.hops[arrivalRoute.hops.length - 1].cumulativeCost);
+  });
+
+  it('wraps intra-hex adjacency using a pentagon\'s five sides', () => {
+    const pentagon: TileData = {
+      idx: 0,
+      s: 5,
+      n: [1, 1, 1, 1, 1],
+      pos: [0, 0, 1],
+      b: Array.from({ length: 5 }, () => [0, 0, 1] as [number, number, number]),
+      terrain: 'plains',
+      h: 1,
+    };
+    const neighbour: TileData = {
+      ...pentagon,
+      idx: 1,
+      n: [0, 0, 0, 0, 0],
+      pos: [0.1, 0, 0.995],
+    };
+    const unit = makeUnit(0, { segment: 0 });
+    const route = computeMovementCostRoute(makeWorld([pentagon, neighbour], [unit]), unit, null, 4, 1, 0);
+    expect(route).not.toBeNull();
+    expect(route!.hops).toHaveLength(1);
+    expect(route!.hops[0].segment).toBe(4);
+  });
+
   it('computeMovementRouteForDestination: in-range destination matches computeMovementCostRoute', () => {
     const unit = makeUnit(startTile);
     const dest = at(2, 0);
@@ -213,15 +248,16 @@ describe('movementRoute — characterization', () => {
     expect(dumpRoute(route)).toMatchSnapshot();
   });
 
-  it('computeMovementTowardTile: returns null when the nearest reachable tile is degenerate', () => {
-    // Captured behavior: toward-routing hardcodes destSegment 0, so when segment 0
-    // of the closest reachable tile costs more than the MP budget, it returns null.
+  it('computeMovementTowardTile: selects an actually reachable segment on the nearest tile', () => {
     const unit = makeUnit(startTile);
     const dest = at(4, 0);
     const world = makeWorld(tiles, [unit]);
     const rangeResult = computeMovementRange(world, unit, MP);
     const route = computeMovementTowardTile(world, unit, dest, MP, rangeResult);
-    expect(route).toBeNull();
+    expect(route).not.toBeNull();
+    assertRouteInvariants(route, tiles, MP);
+    const finalHop = route!.hops[route!.hops.length - 1];
+    expect(rangeResult.reachableSegments.has(finalHop.tileIndex * 6 + finalHop.segment)).toBe(true);
   });
 
   it('computeContextualAttackRoute: enemy already in range → single red hop, no movement', () => {

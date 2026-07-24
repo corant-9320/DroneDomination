@@ -18,6 +18,7 @@ import type { WireUnit, WireBuilding } from './wireTypes.js';
 import type { ExplainedCombat, ExplainedRepair } from './combatTypes.js';
 import type { BuildingComponent } from './buildingComponents.js';
 import type { LogisticsState, LogisticsEvent } from './logisticsTypes.js';
+import type { UnitAttributes } from './unitTypes.js';
 
 /** Per-unit, per-turn budget the server enforces authoritatively. */
 export interface UnitTurnState {
@@ -61,15 +62,37 @@ export type Intent =
   | { kind: 'buildingAttackUnit'; buildingId: string; targetId: string }
   | { kind: 'repair'; repairerId: string; targetId: string }
   | { kind: 'buildOilWell'; unitId: string }
+  /**
+   * Engineer paves the road segment it is standing on; completes as a timed
+   * `road` EngineerTask. Position is derived from the unit, like `buildOilWell`.
+   */
+  | { kind: 'buildRoadSegment'; unitId: string }
   | { kind: 'buildRefinery'; tileIndex: number }
   | { kind: 'addRefinerySegment'; refineryId: string; segment: number }
   | { kind: 'buildRoute'; fromStructureId: string; toStructureId: string; path: number[] }
   | { kind: 'upgradeRoute'; routeId: string }
   | { kind: 'buildDistributionHub'; tileIndex: number; segment: number; routeIds: string[] }
-  | { kind: 'buildBridge'; unitId: string; tileIndex: number }
-  | { kind: 'clearForest'; unitId: string }
+  | { kind: 'buildBridge'; tileIndex: number; unitId?: string }
+  | { kind: 'clearForest'; tileIndex?: number; unitId?: string }
+  /** Development-only standalone road overlay; it is not a LogisticsRoute. */
+  | { kind: 'godModeBuildRoad'; tileIndex: number; segment: number }
+  /** Development-only CRUD for segment-based oil structures. */
+  | { kind: 'godModeCreateOilBuilding'; structure: 'well' | 'refinery'; tileIndex: number; segment: number }
+  | { kind: 'godModeEditOilBuilding'; structure: 'well'; structureId: string; hitPoints: number; storedOil: number }
+  | { kind: 'godModeEditOilBuilding'; structure: 'refinery'; structureId: string; hitPoints: number; heldOil: number; refinedProductAvailable: number }
+  | { kind: 'godModeDeleteOilBuilding'; structure: 'well'; structureId: string }
+  | { kind: 'godModeDeleteOilBuilding'; structure: 'refinery'; structureId: string; segment: number }
   | { kind: 'purchaseTransport'; routeId: string }
   | { kind: 'upgradeTransport'; transportId: string; stat: 'cargo' | 'speed' | 'defence' }
+  /** Create a point-to-point shuttle transport along an existing road between two owned oil structures. */
+  | { kind: 'createShuttleTransport'; fromStructureId: string; toStructureId: string }
+  /** Permanently stop an existing shuttle transport's automated back-and-forth movement. */
+  | { kind: 'stopShuttleTransport'; transportId: string }
+  /** Development-only, server-authorized entity maintenance. */
+  | { kind: 'godModeEditUnit'; unitId: string; attributes: UnitAttributes }
+  | { kind: 'godModeDeleteUnit'; unitId: string }
+  | { kind: 'godModeEditBuilding'; buildingId: string; attributes: UnitAttributes }
+  | { kind: 'godModeDeleteBuilding'; buildingId: string }
   | { kind: 'endTurn' };
 
 /** Request to create a new authoritative match from a loaded scenario/save. */
@@ -88,10 +111,24 @@ export interface CreateMatchRequest {
   logistics?: LogisticsState;
 }
 
+/** Read-only capabilities derived from the server's active policy, never request data. */
+export interface MatchCapabilities {
+  /** Whether the player may queue bridge/forest tasks without an engineer. */
+  remoteTerrainTasks: boolean;
+  /** Whether paid logistics construction preserves Refined_Product. */
+  waiveConstructionCosts: boolean;
+  /** Whether development-only standalone road overlays may be built on empty segments. */
+  standaloneRoadConstruction: boolean;
+  /** Whether development-only unit, building, and oil-structure editing and deletion are allowed. */
+  entityEditing: boolean;
+}
+
 export interface CreateMatchResponse {
   success: boolean;
   error?: string;
   state?: MatchState;
+  /** Server-derived capabilities for this authoritative session. */
+  capabilities?: MatchCapabilities;
 }
 
 /** Request to apply one intent to a match. */
@@ -123,6 +160,8 @@ export interface MatchIntentResponse {
   repair?: ExplainedRepair;
   /** Updated authoritative logistics state (present on success). */
   logistics?: LogisticsState;
+  /** Server-derived capabilities for this authoritative session. */
+  capabilities?: MatchCapabilities;
   /** Per-turn logistics events surfaced by the turn hook (endTurn only). */
   events?: LogisticsEvent[];
 }

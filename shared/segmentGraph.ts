@@ -105,27 +105,25 @@ export function buildSegmentOccupancy(
 }
 
 /**
- * Build the movement-occupancy predicate for a specific mover, given the
- * living units and buildings on the board. Units block every chassis; a
- * building blocks ground chassis (wheeled/limb) but not flight — drones pass
- * over buildings freely, matching the client's
- * buildOccupiedSegmentSet/buildBuildingSegmentSet convention (server, client,
- * and AI must agree — Requirement B5).
+ * Build the movement-occupancy predicate for a specific mover. Every other
+ * unit and every building blocks every chassis: movement is between occupied
+ * surface segments, so even a flight-capable unit may not step onto a segment
+ * that already contains a building (Requirement B2/B5).
  *
- * `excludeUnitId` omits the mover's own occupant record (a unit occupies its
- * own segment but must be allowed to step off it).
+ * `excludeUnitId` omits the mover's own occupant record so it may step away
+ * from its current segment.
  */
 export function buildMovementOccupancy(
   units: ReadonlyArray<{ id: string; tileIndex: number; segment: number }>,
   buildings: ReadonlyArray<{ tileIndex: number; segment: number }>,
-  opts: { excludeUnitId?: string; blockBuildings: boolean },
+  opts: { excludeUnitId?: string } = {},
 ): SegOccupiedFn {
   const occupants: { tileIndex: number; segment: number }[] = [];
   for (const u of units) {
     if (u.id === opts.excludeUnitId) continue;
     occupants.push(u);
   }
-  if (opts.blockBuildings) occupants.push(...buildings);
+  occupants.push(...buildings);
   return buildSegmentOccupancy(occupants);
 }
 
@@ -250,61 +248,74 @@ export function segmentReachability<T extends SegGraphTile>(
 // Tile-level path realization
 // ---------------------------------------------------------------------------
 
-/**
- * Among all segments of `targetTile`, find the cheapest occupancy-gated
- * segment path from `from`. Returns null if every segment on the tile is
- * unreachable (occupied or blocked).
- */
-function cheapestSegmentOnTile<T extends SegGraphTile>(
+/** Find a segment path without leaving one tile. */
+function findPathWithinTile<T extends SegGraphTile>(
   tiles: readonly T[],
   from: SegNode,
-  targetTile: number,
+  to: SegNode,
   costFn: SegCostFn<T>,
   isOccupied: SegOccupiedFn,
   maxCost: number,
-): { segment: number; path: SegNode[]; cost: number } | null {
-  const sides = tiles[targetTile].sides;
-  let best: { segment: number; path: SegNode[]; cost: number } | null = null;
-  for (let seg = 0; seg < sides; seg++) {
-    const r = findSegmentPath(tiles, from, { tileIndex: targetTile, segment: seg }, costFn, isOccupied, maxCost);
-    if (r && (!best || r.cost < best.cost)) {
-      best = { segment: seg, path: r.path, cost: r.cost };
-    }
-  }
-  return best;
+): { path: SegNode[]; cost: number } | null {
+  if (from.tileIndex !== to.tileIndex) return null;
+  const tileIndex = from.tileIndex;
+  return findSegmentPath(
+    tiles,
+    from,
+    to,
+    costFn,
+    (candidateTile, candidateSegment) =>
+      candidateTile !== tileIndex || isOccupied(candidateTile, candidateSegment),
+    maxCost,
+  );
 }
 
 /**
- * Realize a tile-level path (a list of tile indices, as sent over the wire
- * today) as a concrete occupancy-gated segment-level path.
- *
- * For every intermediate hex, the cheapest reachable segment on that tile is
- * used as the waypoint (the unit may pivot through it to reach a legal
- * position, so which exact segment it passes through mid-route doesn't
- * matter). For the final hex, `finalSegment` is used when given (the caller
- * usually knows exactly which segment it wants to end on); otherwise the
- * cheapest segment is used there too.
- *
- * Returns null when `tilePath` doesn't start at `startSegment.tileIndex`, or
- * when any hop (including reaching the requested final segment) has no legal
- * occupancy-gated route.
+ * Resolve exactly one requested tile hop. The route may pivot within the source
+ * tile, crosses the requested shared face once, and stops on the facing segment
+ * of the target tile. It cannot detour through tiles absent from the supplied
+ * tile path.
  */
+function realizeTileHop<T extends SegGraphTile>(
+  tiles: readonly T[],
+  from: SegNode,
+  targetTileIndex: number,
+  costFn: SegCostFn<T>,
+  isOccupied: SegOccupiedFn,
+  maxCost: number,
+): { path: SegNode[]; cost: number } | null {
+  const sourceTile = tiles[from.tileIndex];
+  const targetTile = tiles[targetTileIndex];
+  if (!sourceTile || !targetTile) return null;
+
+  const exitSegment = sourceTile.neighbours.indexOf(targetTileIndex);
+  const arrivalSegment = targetTile.neighbours.indexOf(from.tileIndex);
+  if (exitSegment < 0 || arrivalSegment < 0) return null;
+
+  const toExit = findPathWithinTile(
+    tiles,
+    from,
+    { tileIndex: from.tileIndex, segment: exitSegment },
+    costFn,
+    isOccupied,
+    maxCost,
+  );
+  if (!toExit) return null;
+
+  if (isOccupied(targetTileIndex, arrivalSegment)) return null;
+  const crossCost = costFn(targetTile, arrivalSegment);
+  if (!Number.isFinite(crossCost) || toExit.cost + crossCost > maxCost) return null;
+
+  return {
+    path: [...toExit.path, { tileIndex: targetTileIndex, segment: arrivalSegment }],
+    cost: toExit.cost + crossCost,
+  };
+}
+
 /**
- * Walk `tilePath` hex-by-hex, stopping at the farthest tile the mover can
- * afford within `maxCost` under occupancy-gated segment costs. Used by AI
- * movement planning: "how far along this coarse tile-level route can the
- * unit actually afford to go, given occupied segments and terrain cost".
- *
- * Each hop is resolved independently against the cheapest reachable segment
- * on that hex (mirroring `realizeTilePathOverSegments`'s per-hex behaviour),
- * so a hop that turns out unreachable (occupied/impassable, or would exceed
- * the remaining budget) stops the walk there rather than failing the whole
- * path — this matches the previous tile-level `affordableSteps` semantics of
- * "go as far as you can, then stop".
- *
- * Returns `{ tileCount, path, cost }`: `tileCount` is the number of tiles from
- * `tilePath` actually reached (always ≥ 1 — the start tile costs 0), `path`
- * is the concrete segment path walked, and `cost` is its total.
+ * Walk `tilePath` exactly hex-by-hex, stopping at the farthest requested tile
+ * affordable within `maxCost`. Each hop is occupancy- and terrain-gated at
+ * segment granularity and cannot leave the supplied tile sequence.
  */
 export function farthestAffordablePrefix<T extends SegGraphTile>(
   tiles: readonly T[],
@@ -324,20 +335,33 @@ export function farthestAffordablePrefix<T extends SegGraphTile>(
   let tileCount = 1;
 
   for (let i = 1; i < tilePath.length; i++) {
-    const targetTile = tilePath[i];
-    const remaining = maxCost - totalCost;
-    const step = cheapestSegmentOnTile(tiles, current, targetTile, costFn, isOccupied, remaining);
+    const step = realizeTileHop(
+      tiles,
+      current,
+      tilePath[i],
+      costFn,
+      isOccupied,
+      maxCost - totalCost,
+    );
     if (!step) break;
 
     fullPath.push(...step.path.slice(1));
     totalCost += step.cost;
-    current = { tileIndex: targetTile, segment: step.segment };
+    current = step.path[step.path.length - 1];
     tileCount = i + 1;
   }
 
   return { tileCount, path: fullPath, cost: totalCost };
 }
 
+/**
+ * Realize a client-supplied tile path as an exact segment path. The result's
+ * compressed tile projection is exactly `tilePath`: each requested tile edge
+ * is crossed once in order, with any required pivots confined to the current
+ * tile. When `finalSegment` is supplied, the route then moves within the final
+ * tile to that segment. A one-tile path therefore represents a pure intra-hex
+ * reposition.
+ */
 export function realizeTilePathOverSegments<T extends SegGraphTile>(
   tiles: readonly T[],
   startSegment: SegNode,
@@ -354,22 +378,35 @@ export function realizeTilePathOverSegments<T extends SegGraphTile>(
   let totalCost = 0;
 
   for (let i = 1; i < tilePath.length; i++) {
-    const targetTile = tilePath[i];
-    const isLast = i === tilePath.length - 1;
-    const remaining = maxCost - totalCost;
-
-    let step: { segment: number; path: SegNode[]; cost: number } | null;
-    if (isLast && finalSegment !== undefined) {
-      const r = findSegmentPath(tiles, current, { tileIndex: targetTile, segment: finalSegment }, costFn, isOccupied, remaining);
-      step = r ? { segment: finalSegment, path: r.path, cost: r.cost } : null;
-    } else {
-      step = cheapestSegmentOnTile(tiles, current, targetTile, costFn, isOccupied, remaining);
-    }
+    const step = realizeTileHop(
+      tiles,
+      current,
+      tilePath[i],
+      costFn,
+      isOccupied,
+      maxCost - totalCost,
+    );
     if (!step) return null;
 
     fullPath.push(...step.path.slice(1));
     totalCost += step.cost;
-    current = { tileIndex: targetTile, segment: step.segment };
+    current = step.path[step.path.length - 1];
+  }
+
+  if (finalSegment !== undefined) {
+    const finalTile = tiles[current.tileIndex];
+    if (!finalTile || finalSegment < 0 || finalSegment >= finalTile.sides) return null;
+    const finish = findPathWithinTile(
+      tiles,
+      current,
+      { tileIndex: current.tileIndex, segment: finalSegment },
+      costFn,
+      isOccupied,
+      maxCost - totalCost,
+    );
+    if (!finish) return null;
+    fullPath.push(...finish.path.slice(1));
+    totalCost += finish.cost;
   }
 
   return { path: fullPath, cost: totalCost };

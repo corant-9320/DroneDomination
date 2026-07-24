@@ -575,20 +575,12 @@ for (const c of world.cities) cityCenter.set(c.id, c.tileIndex);
 const ownedByFaction = new Map(); // factionId → ownedHexes[]
 
 // ---------------------------------------------------------------------------
-// Reserve seeded-logistics segments before populating city buildings.
+// Reserve seeded oil-building segments before populating city buildings.
 //
-// The seeded network (carried in world.logistics) is placed by generateWorld
-// BEFORE this script runs. Its in-city Distribution_Hub sits on a segment of the
-// player-capital tile; the well/refinery sit on open-map tiles. Buildings and
-// garrison/army units must never share a segment with these structures (the
-// "a hub can't share a segment with an existing building" rule). Adding each
-// occupied segment to `buildingSet` makes every placement check
-// (validatePlacement, firstFreeSegment) treat it as blocked, so the founding
-// building and every later building/unit avoid it.
+// Every oil structure, including Distribution_Hubs (oil storage), is map-only.
+// It must stay outside city footprints and retain its segment for the logistics
+// network, so city buildings, garrisons, and ownership expansion all exclude it.
 // ---------------------------------------------------------------------------
-// Tiles hosting a seeded Oil_Well or Refinery. These are map-only structures that
-// must NOT sit inside a city, so populateCity excludes them from a city footprint
-// (Distribution_Hubs are intentionally allowed in the city and are NOT excluded).
 const logisticsStructureTiles = new Set();
 function reserveLogisticsSegments() {
   const L = world.logistics;
@@ -605,13 +597,16 @@ function reserveLogisticsSegments() {
     for (const s of r.segments ?? []) reserve(r.tileIndex, s);
     logisticsStructureTiles.add(r.tileIndex);
   }
-  for (const h of L.hubs ?? []) reserve(h.tileIndex, h.segment); // hubs may sit in the city
+  for (const h of L.hubs ?? []) {
+    reserve(h.tileIndex, h.segment);
+    logisticsStructureTiles.add(h.tileIndex);
+  }
   return reserved;
 }
 const reservedSegs = reserveLogisticsSegments();
 console.log(
   `Reserved ${reservedSegs} seeded-logistics segment(s) from building placement; ` +
-    `${logisticsStructureTiles.size} well/refinery tile(s) excluded from city footprints.`,
+    `${logisticsStructureTiles.size} oil-building tile(s) excluded from city footprints.`,
 );
 
 // ── Region A: Player capital + DEFENCE (enemy besieges it) ─────────────────

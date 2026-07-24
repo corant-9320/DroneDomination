@@ -13,7 +13,7 @@
 
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { engineerTaskDuration } from '../logistics.js';
+import { engineerTaskDuration } from '../logistics/tasks.js';
 import { ENGINEER_TASK_BASE } from '../../../shared/logisticsConstants.js';
 
 describe('engineerTaskDuration (Property 4: duration is 6 - engineer)', () => {

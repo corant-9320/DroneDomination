@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { accrueRefinedProduct, accrueOil } from '../logistics.js';
+import { accrueRefinedProduct, accrueOil } from '../logistics/production.js';
 import type { HomeStock } from '../../../shared/logisticsTypes.js';
 import { HOME_CITY_REFINED_PRODUCT_MAX } from '../../../shared/logisticsConstants.js';
 

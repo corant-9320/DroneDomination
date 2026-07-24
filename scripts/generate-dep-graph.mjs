@@ -6,31 +6,40 @@
  *   - dep-summary.md   Module-level summary (quick orientation for agents)
  *   - violations.md    Any rule violations found
  *
- * Usage:  node scripts/generate-dep-graph.mjs
+ * All three outputs are deterministic — no timestamps or other
+ * non-reproducible content — so `--check` can byte-compare them against a
+ * freshly computed copy without false positives.
+ *
+ * Usage:  node scripts/generate-dep-graph.mjs          (write mode)
+ *         node scripts/generate-dep-graph.mjs --check   (check mode, no writes)
  * Or:     npm run deps:graph
+ *         npm run deps:check
  */
 
 import { execSync } from "node:child_process";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
 const outDir = resolve(root, "ai", "generated");
+const checkMode = process.argv.includes("--check");
 
-mkdirSync(outDir, { recursive: true });
+if (!checkMode) mkdirSync(outDir, { recursive: true });
 
 // --- 1. Run depcruise, output JSON ---
-console.log("Running dependency-cruiser...");
+if (!checkMode) console.log("Running dependency-cruiser...");
 const jsonOutput = execSync(
   `npx depcruise src server shared client --config .dependency-cruiser.cjs --output-type json`,
   { cwd: root, encoding: "utf-8", maxBuffer: 20 * 1024 * 1024 }
 );
 
 const graph = JSON.parse(jsonOutput);
-writeFileSync(resolve(outDir, "dep-graph.json"), jsonOutput, "utf-8");
-console.log(`  → ai/generated/dep-graph.json (${graph.modules.length} modules)`);
+if (!checkMode) {
+  writeFileSync(resolve(outDir, "dep-graph.json"), jsonOutput, "utf-8");
+  console.log(`  → ai/generated/dep-graph.json (${graph.modules.length} modules)`);
+}
 
 // --- 2. Build module-level summary ---
 const buckets = { src: [], server: [], shared: [], client: [] };
@@ -62,7 +71,6 @@ for (const entry of byFile.values()) {
 
 // Build markdown
 let md = `# Dependency Graph Summary\n\n`;
-md += `Generated: ${new Date().toISOString().split("T")[0]}\n`;
 md += `Modules: ${graph.modules.length}\n\n`;
 md += `Use \`ai/generated/dep-graph.json\` for full machine-readable graph.\n\n`;
 
@@ -134,13 +142,9 @@ if (crossEdges.size === 0) {
   }
 }
 
-writeFileSync(resolve(outDir, "dep-summary.md"), md, "utf-8");
-console.log(`  → ai/generated/dep-summary.md`);
-
 // --- 4. Violations report ---
 const violations = graph.summary?.violations || [];
 let violationsMd = `# Dependency Rule Violations\n\n`;
-violationsMd += `Generated: ${new Date().toISOString().split("T")[0]}\n\n`;
 
 if (violations.length === 0) {
   violationsMd += `✅ No violations found.\n`;
@@ -151,6 +155,45 @@ if (violations.length === 0) {
   }
 }
 
+// --- 5. Write or compare ---
+const outputs = {
+  "dep-summary.md": md,
+  "violations.md": violationsMd,
+};
+
+if (checkMode) {
+  let stale = false;
+  const staleFiles = [];
+  for (const [name, expected] of Object.entries(outputs)) {
+    const filePath = resolve(outDir, name);
+    const actual = existsSync(filePath) ? readFileSync(filePath, "utf-8") : null;
+    if (actual !== expected) {
+      stale = true;
+      staleFiles.push(name);
+    }
+  }
+  // dep-graph.json was never written in check mode; compare it too.
+  const graphPath = resolve(outDir, "dep-graph.json");
+  const actualGraph = existsSync(graphPath) ? readFileSync(graphPath, "utf-8") : null;
+  if (actualGraph !== jsonOutput) {
+    stale = true;
+    staleFiles.push("dep-graph.json");
+  }
+
+  if (stale) {
+    console.error(
+      `✗ ai/generated/ is stale relative to the current source tree.\n` +
+        `  Stale file(s): ${staleFiles.join(", ")}\n` +
+        `  Run \`npm run deps:graph\` to regenerate, then commit the result.`
+    );
+    process.exit(1);
+  }
+  console.log("✓ ai/generated/ is up to date with the current source tree.");
+  process.exit(0);
+}
+
+writeFileSync(resolve(outDir, "dep-summary.md"), md, "utf-8");
+console.log(`  → ai/generated/dep-summary.md`);
 writeFileSync(resolve(outDir, "violations.md"), violationsMd, "utf-8");
 console.log(`  → ai/generated/violations.md`);
 console.log("Done.");

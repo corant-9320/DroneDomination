@@ -25,7 +25,7 @@
 
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { resolveLogisticsTurn } from '../logistics.js';
+import { resolveLogisticsTurn } from '../logistics/turn.js';
 import type {
   HomeStock,
   LogisticsRoute,

@@ -1,14 +1,14 @@
 {
   "enabled": true,
   "name": "Run Playwright E2E Tests",
-  "description": "Manually trigger Playwright e2e tests. Auto-starts the Vite dev server (or reuses one already running on port 3000).",
+  "description": "Manually trigger Playwright e2e tests via the npm e2e script. Auto-starts the Vite dev server (or reuses one already running on port 3000).",
   "version": "1.0.0",
   "when": {
     "type": "userTriggered"
   },
   "then": {
     "type": "runCommand",
-    "command": "$env:NODE_OPTIONS='--max-old-space-size=4096'; node node_modules/@playwright/test/cli.js test --reporter=./e2e/live-reporter.cjs",
+    "command": "npm run e2e -- --reporter=./e2e/live-reporter.cjs",
     "timeout": 600
   }
 }

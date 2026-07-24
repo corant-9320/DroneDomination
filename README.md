@@ -11,14 +11,43 @@ npm run dev
 
 Open http://localhost:3000 and click **+ New** to generate a world.
 
+## Development God Mode
+
+God Mode is enabled by default whenever the server is not running with
+`NODE_ENV=production`. It waives Refined_Product costs for logistics
+construction/upgrades and lets **B** queue a bridge task or **F** queue a
+forest-clearing task on the selected target tile without an engineer nearby. It
+also allows **🛣 Build Road** on an empty cleared/bridged land segment as a
+standalone visual overlay, rather than as an economic logistics route. When no
+unit is selected, right-clicking an eligible segment exposes these actions in a
+separate **God Mode** section. The same section appears when
+right-clicking a selected unit, or any unit/building segment with no unit
+selected: it can **Edit** its permitted combat attributes (including unit size,
+without inheriting the old refit-point budget) or **Delete** the entity. Entity
+edits/deletions are persisted
+through development-only authoritative match intents; production and
+`DD_GOD_MODE=false` reject them. Terrain changes still use the normal five-turn
+task duration and retain terrain and duplicate-placement validation. The switch
+remains server-owned; clients cannot enable it through a request or URL.
+
+To temporarily use normal rules in development:
+
+```cmd
+set DD_GOD_MODE=false && npm run dev
+```
+
 ## Commands
 
 | Command | What it does |
 |---------|-------------|
 | `npm run dev` | Start dev server (localhost:3000) |
-| `npm test` | Run unit tests |
-| `npm run build` | Compile TypeScript + regenerate world data |
-| `npm run validate` | Check `data/world.json` is valid |
+| `npm test` | Run the <10-second Group 1 unit smoke suite |
+| `npm run test:extended` | Run the remaining Group 2 unit tests |
+| `npm run test:all` | Run both unit-test groups |
+| `npm run typecheck` | Type-check core, client, and server |
+| `npm run build` | Type-check all areas and compile core/server TypeScript to `dist/` |
+| `npm run build:world` | Compile and explicitly regenerate `data/world.json` |
+| `npm run validate` | Check `data/world.json` is valid (requires compiled CLI) |
 | `npm run e2e` | Run Playwright end-to-end tests |
 
 ## Starting a Game
@@ -76,7 +105,7 @@ Quick guide to "I want to change X — where do I go?"
 | Change world size | `src/world/generate.ts` (`FREQUENCY` constant) |
 | Add an API endpoint | `server/devPlugin.ts` (Vite plugin routes) |
 
-After editing `src/world/**`, run `npm run build` to regenerate world data.
+After editing world-generation code, run focused tests/type-checks first. Run `npm run build:world` only when you intend to regenerate the committed `data/world.json` artifact; `npm run build` does not regenerate it.
 
 ## Saving & Loading
 
@@ -88,3 +117,5 @@ After editing `src/world/**`, run `npm run build` to regenerate world data.
 
 - [Architecture wiki](docs/architecture/README.md) — module map, data flow, API contract, debugging (split into focused pages; landing page at [ARCHITECTURE.md](ARCHITECTURE.md))
 - [COMBAT_RULES.md](COMBAT_RULES.md) — full combat formulas, validation, constants
+
+See the source-of-truth hierarchy in [`.kiro/steering/core.md`](.kiro/steering/core.md) for how docs, code, and tests rank against each other when they disagree.

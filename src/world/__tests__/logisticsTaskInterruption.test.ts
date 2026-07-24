@@ -17,7 +17,7 @@
 
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { interruptTask } from '../logistics.js';
+import { interruptTask } from '../logistics/tasks.js';
 import type { EngineerTask } from '../../../shared/logisticsTypes.js';
 
 // A generator constrained to the EngineerTask input space: ids drawn from a small

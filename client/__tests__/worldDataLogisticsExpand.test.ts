@@ -137,6 +137,7 @@ function makeLogistics(): LogisticsState {
 function makeSave(logistics: LogisticsState, extra: Partial<CompactSave> = {}): CompactSave {
   return {
     format: 'compact',
+    formatVersion: 1,
     seed: 1234,
     cities: [],
     units: [],
@@ -274,6 +275,7 @@ describe('client logistics mirror/expand path', () => {
   it('loads a save with no logistics payload without touching overlays', async () => {
     const save: CompactSave = {
       format: 'compact',
+      formatVersion: 1,
       seed: 1234,
       cities: [],
       units: [],

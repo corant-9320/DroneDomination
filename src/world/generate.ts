@@ -22,7 +22,7 @@
 
 import { World, Tile, City, Vec3, TerrainType } from './types.js';
 import * as v from './vec3.js';
-import { graphDistance, tilesWithinRadius } from './pathfinding.js';
+import { graphDistance, tilesWithinRadius } from './tilePathfinding.js';
 import { computeSegmentSteepness } from './segmentSteepness.js';
 import { placeOilDeposits } from './logisticsGen.js';
 import { createEmptyLogisticsState } from './logisticsSeed.js';

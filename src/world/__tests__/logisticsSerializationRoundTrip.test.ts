@@ -31,6 +31,7 @@ import type {
   HomeStock,
   EngineerTask,
 } from '../../../shared/logisticsTypes.js';
+import { encodeSeg } from '../../../shared/segmentGraph.js';
 
 // ---------------------------------------------------------------------------
 // Populated fixture — one of each entity, every array non-empty.
@@ -63,7 +64,7 @@ function buildPopulatedLogisticsState(): LogisticsState {
     ownerId: 'faction-a',
     fromStructureId: 'well-1',
     toStructureId: 'hub-1',
-    segments: [10, 11, 12],
+    segments: [encodeSeg(10, 2), encodeSeg(11, 4), encodeSeg(12, 0)],
     capacity: 100,
     tier: 'road',
     travelTime: 3,
@@ -75,7 +76,7 @@ function buildPopulatedLogisticsState(): LogisticsState {
     ownerId: 'faction-a',
     fromStructureId: 'hub-1',
     toStructureId: 'home-a',
-    segments: [12, 13, 14, 15],
+    segments: [encodeSeg(12, 1), encodeSeg(13, 3), encodeSeg(14, 5), encodeSeg(15, 0)],
     capacity: 300,
     tier: 'highway',
     travelTime: 2,

@@ -105,7 +105,19 @@ describe('handleGenerate — world generation request path', () => {
   });
 });
 
-describe('handleGenerate — input clamping', () => {
+describe('handleGenerate — enemy count options', () => {
+  it('creates a sandbox with only the player city and its initial units', () => {
+    const res = handleGenerate({ enemies: 0, spacing: 999 });
+    expect(res.success).toBe(true);
+    const w = res.world as CompactWorld;
+    const [home] = w.cities;
+
+    expect(w.cities).toHaveLength(1);
+    expect(home.isPlayerHome).toBe(true);
+    expect(w.units).toHaveLength(6);
+    expect(w.units.every((unit) => unit.ownerId === home.ownerId)).toBe(true);
+  }, GEN_TIMEOUT_MS);
+
   it('clamps an over-large enemy count to MAX_CITIES - 1', () => {
     // enemies far above the cap → player + (MAX_CITIES - 1) enemies = MAX_CITIES.
     const res = handleGenerate({ enemies: 999, spacing: 999 });

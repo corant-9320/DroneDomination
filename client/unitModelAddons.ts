@@ -11,7 +11,8 @@
 import * as THREE from 'three';
 import type { BoltOnMaterials } from './unitModelHelpers.js';
 import { hexToColor } from './unitModelHelpers.js';
-import type { ChassisType } from './unitModel.js';
+import type { ChassisType } from './unitModelTypes.js';
+import { buildSplashBomb, splashBombNormalizedSize } from './splashBombModel.js';
 
 // ---------------------------------------------------------------------------
 // Radar dish geometry helper (used by addDefence)
@@ -142,6 +143,77 @@ export function addGunBarrel(
   }
 }
 
+/**
+ * Sling the splash bomb beneath a drone's belly on a short pylon. The bomb's
+ * length grows with splash level (level 1 → ~0.55, level 5 → ~1.15 world
+ * units). Returns false if the GLB model isn't loaded yet, so the caller can
+ * fall back to the procedural launcher.
+ *
+ * Geometry reference (unitModelFlight.ts): the payload hull is centred at
+ * y≈0.75 with height 0.4, so its belly sits at y≈0.55. The bomb hangs below it.
+ *
+ * The bomb's length and diameter are scaled independently (not by one
+ * uniform factor): length always follows splashAttack level, but diameter is
+ * clamped so the bomb's vertical extent can never exceed the belly-to-ground
+ * clearance. Without this, a uniform scale grows the diameter in lockstep
+ * with the length, and at high splash levels the bomb clips through the map
+ * grid even though its top stays flush against the pylon at every level.
+ */
+function addSplashBombBeneathDrone(group: THREE.Group, level: number, bom: BoltOnMaterials): boolean {
+  const bomb = buildSplashBomb();
+  const size = splashBombNormalizedSize();
+  if (!bomb || !size) return false;
+
+  const t = THREE.MathUtils.clamp((level - 1) / 4, 0, 1);
+  // Each splash tier is 50% larger than the former visual scale.
+  const bombLength = (0.55 + t * 0.6) * 1.5; // 0.825 at level 1 → 1.725 at level 5
+
+  const bellyY = 0.55;
+  const pylonLength = 0.1;
+
+  // Vertical room between the pylon's bottom and the ground plane (y=0). The
+  // bomb's diameter (its vertical extent while hanging horizontally) must
+  // never exceed this, or it clips through the map grid — independent of how
+  // long the bomb gets. A uniform scale would grow diameter and length
+  // together, so diameter is scaled separately and clamped to this budget.
+  const clearance = bellyY - pylonLength;
+  const groundMargin = 0.03; // keep a small visible gap above the grid
+  const maxHalfHeight = (clearance - groundMargin) / 2;
+
+  const desiredHalfHeight = (size.y * bombLength) / 2;
+  const bombHalfHeight = Math.min(desiredHalfHeight, maxHalfHeight);
+  const diameterScale = (bombHalfHeight * 2) / size.y;
+
+  // X/Y (diameter) scaled independently from Z (length) — size.x === size.y
+  // for this model (circular cross-section), so this keeps the bomb round.
+  // IMPORTANT: the cloned template already carries a baked-in normalization
+  // scale (1/maxDim, from normalizeTemplate) on bomb.scale — multiply into it
+  // rather than overwriting with .set(), or the bomb renders far too small
+  // while the position math (which uses the correctly-sized bombHalfHeight)
+  // still places it as if it were full size, opening a visible gap.
+  bomb.scale.x *= diameterScale;
+  bomb.scale.y *= diameterScale;
+  bomb.scale.z *= bombLength;
+  // Imported template points +Z, while this model's forward muzzle faces -Z.
+  bomb.rotation.y = Math.PI;
+
+  const pylon = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.022, 0.022, pylonLength, 6),
+    bom.dark,
+  );
+  pylon.position.set(0, bellyY - pylonLength / 2, 0);
+  group.add(pylon);
+
+  // Hang the bomb's centre below the pylon. bombTop == bellyY - pylonLength
+  // always (independent of bombHalfHeight), so the bomb stays flush against
+  // the pylon at every splash level and size.
+  const bombY = bellyY - pylonLength - bombHalfHeight;
+  bomb.position.set(0, bombY, 0);
+  group.add(bomb);
+
+  return true;
+}
+
 export function addSplashAttack(
   group: THREE.Group,
   level: number,
@@ -152,6 +224,14 @@ export function addSplashAttack(
   bom: BoltOnMaterials
 ): void {
   if (level === 0) return;
+
+  // Drones carry a bomb slung beneath the airframe (GLB model) instead of the
+  // procedural rocket-pod used by ground chassis. Size scales with splash level.
+  // If the model hasn't loaded (e.g. headless tests), fall through to the
+  // procedural launcher below.
+  if (chassisType === 'flight' && addSplashBombBeneathDrone(group, level, bom)) {
+    return;
+  }
 
   const visualLevel = Math.max(0, level - 1);
   const tPower = THREE.MathUtils.clamp(visualLevel / 5, 0, 1);

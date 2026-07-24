@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { graphDistance, tilesWithinRadius, findPath } from '../pathfinding.js';
+import { graphDistance, tilesWithinRadius, findPath } from '../tilePathfinding.js';
 import type { Tile } from '../types.js';
 
 /**

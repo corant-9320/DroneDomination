@@ -34,6 +34,19 @@ function gun(id: string, owner: string, tile: number): WireUnit {
   return { id, label: id, ownerId: owner, tileIndex: tile, segment: 0, facing: 0, currentHealth: 50, attributes: attrs({ wheeledMovement: 2, kinetic: 3, rangeAttack: 5 }) };
 }
 
+function mover(id: string, owner: string, tile: number, flight = false): WireUnit {
+  return {
+    id,
+    label: id,
+    ownerId: owner,
+    tileIndex: tile,
+    segment: 0,
+    facing: 0,
+    currentHealth: 50,
+    attributes: attrs(flight ? { flightMovement: 2 } : { wheeledMovement: 2 }),
+  };
+}
+
 describe('handleAiTurn', () => {
   it('produces an attack event when an enemy is in range', () => {
     const req: AiTurnRequest = {
@@ -64,6 +77,36 @@ describe('handleAiTurn', () => {
     const res = handleAiTurn(req);
     expect(res.success).toBe(true);
     expect(res.events).toHaveLength(0);
+  });
+
+  it.each([false, true])('moves a %s AI unit and applies its resolved final segment', (flight) => {
+    const tiles = lineWireTiles(6);
+    const req: AiTurnRequest = {
+      factionId: 'e',
+      tiles,
+      units: [mover('ai', 'e', 0, flight), mover('player', 'p', 5)],
+    };
+    const res = handleAiTurn(req);
+    const move = res.events.find((event) => event.kind === 'move');
+    expect(move).toBeDefined();
+    const ai = res.finalUnits.find((unit) => unit.id === 'ai')!;
+    expect(ai.tileIndex).not.toBe(0);
+    expect(ai.tileIndex).toBe(move!.path![move!.path!.length - 1]);
+    const previousTile = move!.path![move!.path!.length - 2];
+    expect(ai.segment).toBe(tiles[ai.tileIndex].n.indexOf(previousTile));
+  });
+
+  it('does not move through a building-occupied arrival segment', () => {
+    const req: AiTurnRequest = {
+      factionId: 'e',
+      tiles: lineWireTiles(5),
+      units: [mover('ai', 'e', 0), mover('player', 'p', 4)],
+      // Tile 1 faces tile 0 on segment 1 in this line fixture.
+      buildings: [{ id: 'wall', ownerId: 'p', tileIndex: 1, segment: 1, attributes: attrs({}) }],
+    };
+    const res = handleAiTurn(req);
+    expect(res.events.some((event) => event.kind === 'move')).toBe(false);
+    expect(res.finalUnits.find((unit) => unit.id === 'ai')!.tileIndex).toBe(0);
   });
 });
 

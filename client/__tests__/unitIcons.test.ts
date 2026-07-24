@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { segmentAngle, drawUnitIcon } from '../unitIcons.js';
-import * as unitRenderer from '../unitRenderer.js';
+import type { UnitData } from '../worldData.js';
+import type { UnitAttributes } from '../../shared/unitTypes.js';
 
 // Mock getUnitSpriteAtFacing to return a null sprite (placeholder path) so tests don't depend on document/Three.js
 vi.mock('../unitRenderer.js', () => ({
@@ -9,7 +10,7 @@ vi.mock('../unitRenderer.js', () => ({
 }));
 
 /**
- * Minimal mock of UnitData matching the shape imported from worldData.
+ * Minimal mock of UnitData (== WireUnit) matching the shape imported from worldData.
  */
 function makeUnit(overrides: Partial<{
   id: string;
@@ -17,25 +18,30 @@ function makeUnit(overrides: Partial<{
   ownerId: string;
   tileIndex: number;
   segment: number;
-  attributes: Record<string, number>;
+  facing: number;
+  attributes: UnitAttributes;
   currentHealth: number;
-}> = {}) {
+}> = {}): UnitData {
   return {
     id: overrides.id ?? 'unit_0',
     label: overrides.label ?? 'Test',
     ownerId: overrides.ownerId ?? 'city_0',
     tileIndex: overrides.tileIndex ?? 0,
-    segment: overrides.segment ?? 0,
+    segment: (overrides.segment ?? 0) as UnitData['segment'],
+    facing: (overrides.facing ?? 0) as UnitData['facing'],
     attributes: overrides.attributes ?? { size: 3, wheeledMovement: 2 },
     currentHealth: overrides.currentHealth ?? 3,
-  } as any;
+  };
 }
+
+/** A canvas drawing method stubbed with a vitest mock function. */
+type MockCtxMethod = ReturnType<typeof vi.fn>;
 
 /**
  * Creates a mock CanvasRenderingContext2D with all drawing methods stubbed.
  */
 function createMockCtx(): CanvasRenderingContext2D {
-  const ctx: Record<string, any> = {};
+  const ctx: Record<string, MockCtxMethod | string | number> = {};
   const methods = [
     'save', 'restore', 'translate', 'rotate',
     'fillRect', 'strokeRect', 'beginPath', 'moveTo', 'lineTo',

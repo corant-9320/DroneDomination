@@ -3,7 +3,7 @@
 // Validates: Requirements 2.2, 2.3, 2.4, 2.5, 4.8, 4.9, 4.10, 11.2
 //
 // Example/unit tests (not property tests) for the three placement validators in
-// `src/world/logistics.ts`. For every distinct `LogisticsRejectionReason` a
+// `src/world/logistics/placement.ts`. For every distinct `LogisticsRejectionReason` a
 // validator can return, we construct the minimal scenario that triggers exactly
 // that reason (all higher-precedence gates pass), then assert:
 //   - `result.legal === false`
@@ -17,7 +17,7 @@ import {
   validateWellPlacement,
   validateRefineryPlacement,
   validateRefinerySegment,
-} from '../logistics.js';
+} from '../logistics/placement.js';
 import { MAX_STEEP_WHEELED } from '../../../shared/movementConstants.js';
 import type {
   EngineerUnitRef,

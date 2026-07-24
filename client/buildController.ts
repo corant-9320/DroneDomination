@@ -14,7 +14,7 @@
  * not here.
  */
 
-import { WorldData, BuildingData, CityData } from './worldData.js';
+import type { WorldData, BuildingData, CityData } from './worldData.js';
 import {
   PlacementContext,
   PlacementValidation,

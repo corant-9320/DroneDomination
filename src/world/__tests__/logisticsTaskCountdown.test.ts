@@ -4,7 +4,7 @@ import {
   tickTask,
   isTaskComplete,
   completeTask,
-} from '../logistics.js';
+} from '../logistics/tasks.js';
 import type { EngineerTask } from '../../../shared/logisticsTypes.js';
 
 // ---------------------------------------------------------------------------

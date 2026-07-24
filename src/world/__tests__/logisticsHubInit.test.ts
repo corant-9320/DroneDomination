@@ -3,15 +3,15 @@
 // Validates: Requirements 11.1
 //
 // Example/unit test (not a property test) for `createHub` in
-// `src/world/logistics.ts`. A newly-placed Distribution_Hub must start with a
+// `src/world/logistics/hubs.ts`. A newly-placed Distribution_Hub must start with a
 // zero buffer (Req 11.1). We also assert the rest of the initialisation contract
 // documented on `createHub`: full health, the caller's `routeIds` copied (equal
 // by value but not aliased), and ids/owner/location carried through unchanged.
 
 import { describe, it, expect } from 'vitest';
 
-import { createHub } from '../logistics.js';
-import type { HubCreationInit } from '../logistics.js';
+import { createHub } from '../logistics/hubs.js';
+import type { HubCreationInit } from '../logistics/hubs.js';
 
 describe('createHub — hub initialization (Req 11.1)', () => {
   const routeIds = ['route-a', 'route-b'];

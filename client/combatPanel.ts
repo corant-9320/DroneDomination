@@ -21,6 +21,7 @@ import type {
   ExplainedCombat,
   ExplainedRepair,
   CombatResponse as CombatResponseBase,
+  CombatBreakdown,
 } from '../shared/combatTypes.js';
 
 type CombatResponse = CombatResponseBase<UnitData>;
@@ -155,7 +156,7 @@ export class CombatPanel {
     // Show the VS header immediately while fetching combat prediction
     this.render();
     // Fetch prediction from server (fire-and-forget; update on response)
-    this.fetchPreview(attacker.id, target.id);
+    void this.fetchPreview(attacker.id, target.id);
   }
 
   /**
@@ -177,7 +178,7 @@ export class CombatPanel {
     this.selectedUnit = syntheticAttacker;
     this.hoveredEnemy = target;
     this.render();
-    this.fetchPreview(syntheticAttacker.id, target.id, syntheticAttacker);
+    void this.fetchPreview(syntheticAttacker.id, target.id, syntheticAttacker);
   }
 
   private async fetchPreview(attackerId: string, targetId: string, syntheticUnit?: UnitData): Promise<void> {
@@ -201,7 +202,7 @@ export class CombatPanel {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data: CombatResponse = await resp.json();
+      const data = (await resp.json()) as CombatResponse;
 
       // Discard stale response if an attack was initiated while this was in-flight
       if (generation !== this.previewGeneration) return;
@@ -250,7 +251,7 @@ export class CombatPanel {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data: CombatResponse = await resp.json();
+      const data = (await resp.json()) as CombatResponse;
 
       if (!data.success) {
         this.renderError(data.error ?? 'Unknown error');
@@ -324,7 +325,7 @@ export class CombatPanel {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data: CombatResponse = await resp.json();
+      const data = (await resp.json()) as CombatResponse;
 
       if (!data.success) {
         this.renderError(data.error ?? 'Unknown error');
@@ -381,7 +382,7 @@ export class CombatPanel {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data: CombatResponse = await resp.json();
+      const data = (await resp.json()) as CombatResponse;
 
       if (!data.success) {
         this.renderError(data.error ?? 'Unknown error');
@@ -479,7 +480,7 @@ export class CombatPanel {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data: CombatResponse = await resp.json();
+      const data = (await resp.json()) as CombatResponse;
 
       if (!data.success) {
         this.renderError(data.error ?? 'Unknown error');
@@ -896,12 +897,13 @@ function factionColorForUnit(world: WorldData, unitId: string): string {
 }
 
 /** Small emoji/symbol to visually indicate weapon mode at a glance. */
-function weaponModeIcon(mode?: string): string {
+function weaponModeIcon(mode?: CombatBreakdown['weaponMode']): string {
   switch (mode) {
-    case 'kinetic':  return '⚡';
-    case 'splash':   return '💥';
-    case 'antiAir':  return '🎯';
-    default:         return '⚔';
+    case 'kinetic':   return '⚡';
+    case 'splash':    return '💥';
+    case 'antiAir':   return '🎯';
+    case 'none':      return '⚔';
+    case undefined:   return '⚔';
   }
 }
 

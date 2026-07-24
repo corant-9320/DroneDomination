@@ -21,7 +21,7 @@
 
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { canAfford, chargeConstruction } from '../logistics.js';
+import { canAfford, chargeConstruction } from '../logistics/production.js';
 import {
   CONSTRUCTION_COST,
   HOME_CITY_REFINED_PRODUCT_MAX,

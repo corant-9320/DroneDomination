@@ -62,6 +62,17 @@ function ensureRenderer(): void {
 
 const spriteCache = new Map<string, ImageBitmap>();
 const pendingRenders = new Set<string>();
+const spriteCompletionListeners = new Set<() => void>();
+
+/** Subscribe to completed building-sprite renders so canvas consumers can repaint. */
+export function onBuildingSpriteRendered(listener: () => void): () => void {
+  spriteCompletionListeners.add(listener);
+  return () => spriteCompletionListeners.delete(listener);
+}
+
+function notifyBuildingSpriteRendered(): void {
+  for (const listener of spriteCompletionListeners) listener();
+}
 
 /** Bump when camera/model rendering changes to invalidate stale cached sprites. */
 const SPRITE_VERSION = 'bld-v8';
@@ -124,6 +135,7 @@ async function renderBuilding(attrs: BuildingModelAttrs, key: string, factionHex
   const bitmap = await createImageBitmap(renderer!.domElement);
   spriteCache.set(key, bitmap);
   pendingRenders.delete(key);
+  notifyBuildingSpriteRendered();
 
   model.traverse((obj) => {
     const mesh = obj as THREE.Mesh;

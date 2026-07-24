@@ -13,45 +13,32 @@
 //            + Σ transport.cargo
 //            + Σ (home.oil + home.refinedProduct)
 //
-// Across a single resolveLogisticsTurn the tally is conserved EXCEPT at the three
-// explicitly-modelled points, each of which is reported as an event:
+// Across a single resolveLogisticsTurn the tally is conserved except at the two
+// explicitly-modelled points below:
 //
 //   + extraction  — stage 7 adds up to EXTRACTION_RATE per operational well; the
-//                   actual amount added is reported by an 'extracted' event (Req 3.1).
-//                   This is the pipeline's SOURCE.
-//   − refining    — stage 2 converts 2 raw Oil → 1 Refined_Product (ratio 0.5); the
-//                   'refined' event carries produced = floor(consumed/2). When a
-//                   refinery's heldOil is EVEN, consumed = min(N*20, heldOil) is even,
-//                   so produced = consumed/2 exactly and the raw-unit loss from the
-//                   conversion (heldOil drops by consumed, product rises by produced)
-//                   equals exactly `produced` — i.e. Σ(refined) (Req 4.5).
+//                   actual amount added is reported by an 'extracted' event.
+//                   This is the pipeline's only source.
 //   − discard     — every storage/home clamp and hub spill is reported by a
-//                   'storage-full' event carrying the discarded `amount`: the
-//                   Home_City Refined_Product overflow (Req 5.7), well/hub storage
-//                   clamps (Req 8.8), and hub left-upstream spill (Req 11.7).
+//                   'storage-full' event carrying the discarded `amount`.
 //
-// Hence the exact conservation identity every turn:
+// Refining is one-to-one (Oil → Petrol), so it moves quantity between two counted
+// refinery fields and is not a loss. Hence the exact conservation identity:
 //
-//   tally_after === tally_before + Σ(extracted) − Σ(refined) − Σ(storage-full)
+//   tally_after === tally_before + Σ(extracted) − Σ(storage-full)
 //
-// (Algebraically: dispatch/load, in-transit delivery, and hub distribution each net
-// to zero in the tally save for the reported spill/clamp — a delivered unit simply
-// moves from one counted field to another. Only extraction adds, only refining and
-// the reported discards remove.)
+// Dispatch/load, direct adjacent-storage filling, in-transit delivery, hub
+// distribution, and refining merely move counted units between fields. Only
+// extraction adds and reported discards remove.
 //
-// To keep the refining term exact across MANY turns, this fixture never delivers Oil
-// INTO a refinery (no route has a refinery as an Oil destination), so a refinery's
-// heldOil only ever decreases by refining and an even heldOil stays even turn over
-// turn — keeping consumed even and Σ(refined) an exact loss every turn.
-//
-// Destruction (Req 12.7) is a SEPARATE explicit loss point resolved by the combat
+// Destruction (Req 12.7) is a separate explicit loss point resolved by the combat
 // path (which removes a destroyed structure/transport and its stored resources from
 // state before resolveLogisticsTurn runs); it is covered by task 8.2's Property 24.
 // This test asserts conservation on the intact, non-combat pipeline.
 
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { resolveLogisticsTurn } from '../logistics.js';
+import { resolveLogisticsTurn } from '../logistics/turn.js';
 import type {
   DistributionHub,
   HomeStock,
@@ -67,8 +54,8 @@ import type {
 const NUM_RUNS = 200;
 const FACTION = 'faction-a';
 
-// Travel times are precomputed on the routes, so resolveLogisticsTurn ignores the
-// tiles argument (`void tiles`); an empty tile list is a valid minimal fixture.
+// No routes in this fixture touch the supplied tiles, so no automatic adjacency
+// transfer applies; an empty tile list is a valid minimal fixture.
 const NO_TILES: LogisticsTile[] = [];
 
 const HUB_ID = 'hub-1';
@@ -108,7 +95,7 @@ interface TransportSpec {
 interface Config {
   wellStoredOil: number[]; // one entry per well (well-0 is the routed source well)
   refSegments: number;
-  refHeldOilHalf: number; // heldOil = 2 * this (kept EVEN so refining loss is exact)
+  refHeldOilHalf: number; // heldOil = 2 * this, varying refinery input inventory
   refProduct: number;
   hubBuffer: number;
   capWellHub: number; // route capacities are multiples of 100 in [100, 1000]
@@ -165,7 +152,7 @@ function buildState(cfg: Config): LogisticsState {
     ownerId: FACTION,
     tileIndex: 50,
     segments: Array.from({ length: cfg.refSegments }, (_, i) => i),
-    heldOil: 2 * cfg.refHeldOilHalf, // EVEN → refining consumes an even amount
+    heldOil: 2 * cfg.refHeldOilHalf,
     refinedProductAvailable: cfg.refProduct,
     hitPoints: 30,
     maxHitPoints: 30,
@@ -246,18 +233,18 @@ function buildState(cfg: Config): LogisticsState {
 // ─── Arbitraries ────────────────────────────────────────────────────────────────
 
 const transportSpecArb: fc.Arbitrary<TransportSpec> = fc.record({
-  cargoCapacity: fc.integer({ min: 1, max: 500 }),
+  cargoCapacity: fc.integer({ min: 1, max: 5 }),
   inTransit: fc.boolean(),
-  rawCargo: fc.integer({ min: 0, max: 500 }),
+  rawCargo: fc.integer({ min: 0, max: 5 }),
   turnsRemaining: fc.integer({ min: 1, max: 4 }),
 });
 
 const configArb: fc.Arbitrary<Config> = fc.record({
-  wellStoredOil: fc.array(fc.integer({ min: 0, max: 100 }), { minLength: 1, maxLength: 3 }),
+  wellStoredOil: fc.array(fc.integer({ min: 0, max: 5 }), { minLength: 1, maxLength: 3 }),
   refSegments: fc.integer({ min: 1, max: 3 }),
-  refHeldOilHalf: fc.integer({ min: 0, max: 30 }), // heldOil ∈ [0, 60], always even
+  refHeldOilHalf: fc.integer({ min: 0, max: 30 }), // heldOil ∈ [0, 60]
   refProduct: fc.integer({ min: 0, max: 60 }),
-  hubBuffer: fc.integer({ min: 0, max: 200 }),
+  hubBuffer: fc.integer({ min: 0, max: 5 }),
   capWellHub: fc.integer({ min: 1, max: 10 }).map((n) => n * 100),
   capRefHome: fc.integer({ min: 1, max: 10 }).map((n) => n * 100),
   capHubHome: fc.integer({ min: 1, max: 10 }).map((n) => n * 100),
@@ -286,14 +273,15 @@ describe('logistics whole-pipeline conservation (Property 26)', () => {
         const refined = sumEvents(events, 'refined');
         const discarded = sumEvents(events, 'storage-full');
 
-        // Exact whole-system conservation identity (Req 3.1, 4.5, 5.7, 6.6, 8.8, 11.7).
-        expect(after).toBe(before + extracted - refined - discarded);
+        // Refining preserves one-for-one quantity; extraction and reported discards
+        // are the only sources/sinks in the total tally.
+        expect(after).toBe(before + extracted - discarded);
+        expect(refined).toBeGreaterThanOrEqual(0);
 
-        // Bounding sanity: the ONLY source is extraction and the ONLY sinks are the
-        // reported refining conversion + discards, so the tally can only rise by the
-        // extracted amount and fall by at most refined + discarded.
+        // Bounding sanity: the tally can rise by at most the extracted amount and
+        // falls only by reported discarded stock.
         expect(after).toBeLessThanOrEqual(before + extracted);
-        expect(after).toBeGreaterThanOrEqual(before + extracted - refined - discarded);
+        expect(after).toBeGreaterThanOrEqual(before + extracted - discarded);
       }),
       { numRuns: NUM_RUNS },
     );
@@ -314,7 +302,8 @@ describe('logistics whole-pipeline conservation (Property 26)', () => {
           const refined = sumEvents(events, 'refined');
           const discarded = sumEvents(events, 'storage-full');
 
-          expect(after).toBe(before + extracted - refined - discarded);
+          expect(after).toBe(before + extracted - discarded);
+          expect(refined).toBeGreaterThanOrEqual(0);
           state = logistics;
         }
       }),
@@ -325,9 +314,9 @@ describe('logistics whole-pipeline conservation (Property 26)', () => {
   // ── Focused deterministic example: crisp, hand-checkable accounting ──
   it('example: two wells, a 1-segment refinery, and idle transports balance exactly', () => {
     const cfg: Config = {
-      wellStoredOil: [50, 20], // well-0 routed to the hub; well-1 just extracts
-      refSegments: 1, // throughput 20/turn
-      refHeldOilHalf: 5, // heldOil = 10 → consumes 10, produces floor(10*0.5)=5
+      wellStoredOil: [4, 2], // well-0 is routed; well-1 just extracts
+      refSegments: 1, // throughput 5/turn
+      refHeldOilHalf: 5, // heldOil = 10 → consumes 5, produces 5 petrol
       refProduct: 0,
       hubBuffer: 0,
       capWellHub: 1000,
@@ -338,12 +327,12 @@ describe('logistics whole-pipeline conservation (Property 26)', () => {
       homeOil: 0,
       homeProduct: 0,
       // Both transports idle → they dispatch (load) this turn; loading conserves.
-      transportWellHub: { cargoCapacity: 500, inTransit: false, rawCargo: 0, turnsRemaining: 1 },
-      transportRefHome: { cargoCapacity: 500, inTransit: false, rawCargo: 0, turnsRemaining: 1 },
+      transportWellHub: { cargoCapacity: 5, inTransit: false, rawCargo: 0, turnsRemaining: 1 },
+      transportRefHome: { cargoCapacity: 5, inTransit: false, rawCargo: 0, turnsRemaining: 1 },
     };
 
     const state = buildState(cfg);
-    const before = tally(state); // 50 + 20 + (10 + 0) + 0 + 0 + 0 = 80
+    const before = tally(state); // 4 + 2 + (10 + 0) = 16
 
     const { logistics, events } = resolveLogisticsTurn(state, NO_TILES, FACTION);
     const after = tally(logistics);
@@ -352,14 +341,14 @@ describe('logistics whole-pipeline conservation (Property 26)', () => {
     const refined = sumEvents(events, 'refined');
     const discarded = sumEvents(events, 'storage-full');
 
-    // Refining converted 10 raw Oil into 5 Refined_Product → a 5-unit tally loss.
+    // Refining preserves quantity: 5 oil becomes 5 petrol.
     expect(refined).toBe(5);
-    // Two operational wells each extract EXTRACTION_RATE (10) at end of turn → +20.
-    expect(extracted).toBe(20);
-    // Nothing overflowed on this generous-capacity pipeline.
+    // Two operational wells each extract one unit at end of turn.
+    expect(extracted).toBe(2);
+    // Nothing overflowed on this small-capacity but empty pipeline.
     expect(discarded).toBe(0);
 
-    expect(after).toBe(before + extracted - refined - discarded);
-    expect(after).toBe(80 + 20 - 5 - 0); // 95
+    expect(after).toBe(before + extracted - discarded);
+    expect(after).toBe(16 + 2); // 18
   });
 });

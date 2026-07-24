@@ -2,7 +2,7 @@
 //
 // Validates: Requirements 4.1, 4.8, 4.9, 4.10, 4.11, 4.12
 //
-// Property-based test for `validateRefineryPlacement` (src/world/logistics.ts). A
+// Property-based test for `validateRefineryPlacement` (src/world/logistics/placement.ts). A
 // HexTile is eligible to host a NEW Refinery ONLY when every condition holds:
 //   - the tile exists                                                    (Req 4.1)
 //   - it is not owned by another player                                  (Req 4.11, 12.3)
@@ -24,7 +24,7 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 
-import { validateRefineryPlacement, validateRefinerySegment } from '../logistics.js';
+import { validateRefineryPlacement, validateRefinerySegment } from '../logistics/placement.js';
 import { MAX_STEEP_WHEELED } from '../../../shared/movementConstants.js';
 import type {
   LogisticsContext,
@@ -164,8 +164,8 @@ const arbScenario: fc.Arbitrary<Scenario> = fc.record({
 });
 
 // Flat, unoccupied segments — used when isolating non-terrain/steepness rejections.
-const flatSteep = fc.constant<number[]>(new Array(SEGMENT_COUNT).fill(0));
-const noOccupancy = fc.constant<boolean[]>(new Array(SEGMENT_COUNT).fill(false));
+const flatSteep = fc.constant<number[]>(new Array<number>(SEGMENT_COUNT).fill(0));
+const noOccupancy = fc.constant<boolean[]>(new Array<boolean>(SEGMENT_COUNT).fill(false));
 // At least one segment strictly above the threshold.
 const arbSteepWithOffender = fc
   .tuple(arbSegSteep, fc.integer({ min: 0, max: SEGMENT_COUNT - 1 }))
@@ -209,8 +209,8 @@ describe('validateRefineryPlacement — Property 11: refinery eligibility predic
         cleared: false,
         refineryPresent: false,
         owner: 'self',
-        segSteep: new Array(SEGMENT_COUNT).fill(0),
-        occupiedSegs: new Array(SEGMENT_COUNT).fill(false),
+        segSteep: new Array<number>(SEGMENT_COUNT).fill(0),
+        occupiedSegs: new Array<boolean>(SEGMENT_COUNT).fill(false),
       }),
     };
     const result = validateRefineryPlacement(ctx, 5, MY_FACTION);
@@ -383,7 +383,7 @@ describe('validateRefinerySegment — Req 4.8 / 4.9 rejections', () => {
       terrainType: 'plains',
       height: 3,
       forested: false,
-      segSteep: new Array(SEGMENT_COUNT).fill(0),
+      segSteep: new Array<number>(SEGMENT_COUNT).fill(0),
     };
     const state = makeState({
       terrain: 'plains',
@@ -391,8 +391,8 @@ describe('validateRefinerySegment — Req 4.8 / 4.9 rejections', () => {
       cleared: false,
       refineryPresent: false,
       owner: 'self',
-      segSteep: new Array(SEGMENT_COUNT).fill(0),
-      occupiedSegs: new Array(SEGMENT_COUNT).fill(false),
+      segSteep: new Array<number>(SEGMENT_COUNT).fill(0),
+      occupiedSegs: new Array<boolean>(SEGMENT_COUNT).fill(false),
     });
     return { tiles: [tile], state };
   }

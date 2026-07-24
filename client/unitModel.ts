@@ -74,24 +74,11 @@ export function isTextureReady(): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Model base type. The three movement chassis (wheeled/limbed/flight) belong to
- * mobile units; `building` is a static structure base used by buildingModel.ts.
- * Buildings reuse the same attribute add-on builders (gun, splash, anti-air,
- * armour, defence, repair) but never carry movement or engineering equipment.
+ * Re-exported from unitModelTypes.ts (moved there to break an import cycle:
+ * unitModel.ts imports the per-chassis builders, which need these types).
  */
-export type ChassisType = 'wheeled' | 'limbed' | 'flight' | 'building';
-
-export interface UnitModelAttrs {
-  kinetic: number;
-  rangeAttack: number;
-  splashAttack: number;
-  antiAir: number;
-  armour: number;
-  defence: number;
-  repair: number;
-  movement: number;
-  chassis: ChassisType;
-}
+import type { ChassisType, UnitChassisType, UnitModelAttrs } from './unitModelTypes.js';
+export type { ChassisType, UnitChassisType, UnitModelAttrs };
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -134,6 +121,11 @@ export function buildUnitModel(attrs: UnitModelAttrs, factionHex?: string): THRE
       turretInfo = result.turretInfo;
       break;
     }
+    case 'building':
+      // buildUnitModel only builds mobile-chassis units. Buildings use their
+      // own standalone builder (buildingModel.ts), which calls the shared
+      // attribute add-on builders directly rather than going through here.
+      throw new Error('buildUnitModel does not support the "building" chassis; use buildBuildingModel in buildingModel.ts');
   }
 
   const { turretY, turretZ, turretFrontZ } = turretInfo!;

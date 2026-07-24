@@ -2,7 +2,7 @@
 //
 // Validates: Requirements 6.2, 6.3, 9.2, 10.4, 10.5
 //
-// Property-based test for `validateRoutePath` (src/world/logistics.ts). A route is
+// Property-based test for `validateRoutePath` (src/world/logistics/routes.ts). A route is
 // admitted ONLY when both endpoints are valid and the path is physically traversable:
 //   - each endpoint kind is a well / refinery / home-city                (Req 6.2)
 //   - the two endpoints are distinct structures                          (Req 6.2)
@@ -19,13 +19,14 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 
-import { validateRoutePath } from '../logistics.js';
-import type { RouteEndpoint, RouteEndpointKind, RouteEndpoints } from '../logistics.js';
+import { validateRoutePath } from '../logistics/routes.js';
+import type { RouteEndpoint, RouteEndpointKind, RouteEndpoints } from '../logistics/routes.js';
 import type {
   LogisticsContext,
   LogisticsState,
   LogisticsTile,
 } from '../../../shared/logisticsTypes.js';
+import { encodeSeg } from '../../../shared/segmentGraph.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -33,7 +34,7 @@ import type {
 
 const OWNER = 'p1';
 const OTHER = 'p2';
-const VALID_KINDS: readonly RouteEndpointKind[] = ['well', 'refinery', 'home-city'];
+const VALID_KINDS: readonly RouteEndpointKind[] = ['well', 'refinery', 'hub', 'home-city'];
 const SEGMENT_COUNT = 6; // a hex
 
 interface TileSpec {
@@ -109,7 +110,27 @@ function endpointsFor(
   };
 }
 
-const linearPath = (n: number): number[] => Array.from({ length: n }, (_, i) => i);
+const linearPath = (n: number): number[] => {
+  if (n === 0) return [];
+  const tiles = Array.from({ length: n }, (_, i) => ({
+    sides: SEGMENT_COUNT,
+    neighbours: [i - 1, i + 1].filter((x) => x >= 0 && x < n),
+  }));
+  if (n === 1) return [encodeSeg(0, 0)];
+
+  // Cross each requested tile edge, adding the one intra-tile pivot needed on
+  // intermediate chain tiles (arrival face -> departure face).
+  const path: number[] = [encodeSeg(0, tiles[0].neighbours.indexOf(1))];
+  for (let tileIndex = 1; tileIndex < n; tileIndex++) {
+    const arrival = tiles[tileIndex].neighbours.indexOf(tileIndex - 1);
+    path.push(encodeSeg(tileIndex, arrival));
+    if (tileIndex < n - 1) {
+      const departure = tiles[tileIndex].neighbours.indexOf(tileIndex + 1);
+      if (departure !== arrival) path.push(encodeSeg(tileIndex, departure));
+    }
+  }
+  return path;
+};
 const allPlains = (n: number): TileSpec[] =>
   Array.from({ length: n }, () => ({ terrainType: 'plains', forested: false }));
 
@@ -151,9 +172,9 @@ describe('validateRoutePath — Property 15: untraversable paths and invalid end
     );
   });
 
-  it('rejects an endpoint whose kind is not well/refinery/home-city → "invalid-endpoints" (Req 6.2)', () => {
+  it('rejects an endpoint whose kind is not well/refinery/hub/home-city → "invalid-endpoints" (Req 6.2)', () => {
     const arbBadKind = fc
-      .constantFrom('city', 'depot', 'hub', 'oil-well', 'homecity', '')
+      .constantFrom('city', 'depot', 'oil-well', 'homecity', '')
       .map((k) => k as RouteEndpointKind);
     fc.assert(
       fc.property(arbLen, arbBadKind, arbKind, fc.boolean(), (n, badKind, goodKind, badIsFrom) => {

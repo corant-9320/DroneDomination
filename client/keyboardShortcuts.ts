@@ -5,12 +5,13 @@
 
 import { saveGame, showLoadModal } from './saveLoad.js';
 import { constructBuilding } from './buildController.js';
+import { buildBridge, buildRoadSegment, clearForest } from './logisticsController.js';
 import { syncPlannedToWorld } from './cityPlan.js';
 import { dbg } from './debug.js';
 import { emitDebugEvent } from './gameDebug.js';
 import { advanceTurn } from './turnController.js';
 import { toggleEwGlobal } from './ewOverlay.js';
-import { toggleEntityNumbers } from './localMapUnits.js';
+import { cycleEntityOverlayMode } from './localMapUnits.js';
 import type { GameContext } from './gameContext.js';
 
 export function setupKeyboardShortcuts(ctx: GameContext): void {
@@ -67,7 +68,8 @@ export function setupKeyboardShortcuts(ctx: GameContext): void {
     firstPerson.open(unit);
   });
 
-  // B — engineer builds a bridge over an adjacent river hex
+  // B — queue an authoritative bridge task. A selected engineer targets an
+  // adjacent impassable tile; God Mode may instead target the selected tile.
   window.addEventListener('keydown', (e) => {
     if (e.key !== 'b' && e.key !== 'B') return;
     if ((e.target as HTMLElement).tagName === 'INPUT') return;
@@ -77,7 +79,100 @@ export function setupKeyboardShortcuts(ctx: GameContext): void {
       return;
     }
 
-    const selected      = localMap.getSelectedUnits();
+    const selected = localMap.getSelectedUnits();
+    const playerFaction = turnManager.getPlayerFaction();
+    const engineer = world.units.find(
+      (u) =>
+        selected.has(u.id) &&
+        u.ownerId === playerFaction &&
+        (u.attributes.engineer ?? 0) >= 1 &&
+        turnManager.canAct(u.id),
+    );
+    const isBridgeable = (idx: number | undefined): idx is number => {
+      if (idx === undefined) return false;
+      const tile = world.tiles[idx];
+      return !!tile && tile.terrain === 'ocean' && !tile.bridge;
+    };
+
+    let target = localMap.selectedTile;
+    let unitId: string | undefined;
+    if (engineer) {
+      const tile = world.tiles[engineer.tileIndex];
+      const faced = tile?.n[engineer.facing];
+      const adjacent = isBridgeable(faced) ? faced : tile?.n.find(isBridgeable);
+      if (adjacent === undefined) {
+        dbg.input.log('Build bridge: no adjacent impassable tile for the selected engineer');
+        return;
+      }
+      target = adjacent;
+      unitId = engineer.id;
+    }
+    if (!isBridgeable(target)) {
+      dbg.input.log('Build bridge: select an impassable target tile, or select an engineer beside one');
+      return;
+    }
+
+    void (async () => {
+      const response = await buildBridge(ctx, target, unitId);
+      if (!response?.success) return;
+      emitDebugEvent('build-bridge', { unitId: unitId ?? 'god-mode', tile: target }, turnManager.turnNumber);
+      dbg.input.log('Bridge task queued on tile', target, 'by', unitId ?? 'God Mode');
+      localMap.computeMovementRange();
+      localMap.render();
+      detailPanel.showTile(localMap.selectedTile, localMap.selectedSegment >= 0 ? localMap.selectedSegment : undefined);
+    })();
+  });
+
+  // F — queue an authoritative forest-clearing task. A selected engineer clears
+  // its own tile; God Mode may instead clear the selected forest tile remotely.
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'f' && e.key !== 'F') return;
+    if ((e.target as HTMLElement).tagName === 'INPUT') return;
+    e.preventDefault();
+    if (!isPlayerTurn()) {
+      dbg.input.log('Clear forest blocked — not player turn');
+      return;
+    }
+
+    const selected = localMap.getSelectedUnits();
+    const playerFaction = turnManager.getPlayerFaction();
+    const engineer = world.units.find(
+      (u) =>
+        selected.has(u.id) &&
+        u.ownerId === playerFaction &&
+        (u.attributes.engineer ?? 0) >= 1 &&
+        turnManager.canAct(u.id),
+    );
+    const target = engineer?.tileIndex ?? localMap.selectedTile;
+    const tile = world.tiles[target];
+    if (!tile || !tile.f || tile.clearedForest) {
+      dbg.input.log('Clear forest: select an uncleared forest tile, or select an engineer on one');
+      return;
+    }
+
+    void (async () => {
+      const response = await clearForest(ctx, target, engineer?.id);
+      if (!response?.success) return;
+      emitDebugEvent('clear-forest', { unitId: engineer?.id ?? 'god-mode', tile: target }, turnManager.turnNumber);
+      dbg.input.log('Forest-clearing task queued on tile', target, 'by', engineer?.label ?? 'God Mode');
+      localMap.render();
+      detailPanel.showTile(localMap.selectedTile, localMap.selectedSegment >= 0 ? localMap.selectedSegment : undefined);
+    })();
+  });
+
+  // R — a selected engineer paves the road segment it is standing on. Queue one
+  // per segment along a path to build a connecting road (Phase 1 of engineer
+  // road building; auto-build over a whole path comes later).
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'r' && e.key !== 'R') return;
+    if ((e.target as HTMLElement).tagName === 'INPUT') return;
+    e.preventDefault();
+    if (!isPlayerTurn()) {
+      dbg.input.log('Build road blocked — not player turn');
+      return;
+    }
+
+    const selected = localMap.getSelectedUnits();
     const playerFaction = turnManager.getPlayerFaction();
     const engineer = world.units.find(
       (u) =>
@@ -87,37 +182,25 @@ export function setupKeyboardShortcuts(ctx: GameContext): void {
         turnManager.canAct(u.id),
     );
     if (!engineer) {
-      dbg.input.log('Build bridge: no selected engineer with an action available');
+      dbg.input.log('Build road: select an engineer unit that can still act this turn');
       return;
     }
 
-    const tile = world.tiles[engineer.tileIndex];
-    const isBridgeable = (idx: number | undefined): boolean => {
-      if (idx === undefined) return false;
-      const t = world.tiles[idx];
-      return !!t && t.rv !== undefined && !t.bridge;
-    };
-
-    let target = -1;
-    const faced = tile.n[engineer.facing];
-    if (isBridgeable(faced)) target = faced;
-    if (target < 0) {
-      const found = tile.n.find(isBridgeable);
-      if (found !== undefined) target = found;
-    }
-    if (target < 0) {
-      dbg.input.log('Build bridge: no adjacent river hex to bridge');
-      return;
-    }
-
-    world.tiles[target].bridge = true;
-    turnManager.recordBuildBridge(engineer.id);
-    emitDebugEvent('build-bridge', { unitId: engineer.id, tile: target }, turnManager.turnNumber);
-    dbg.input.log('Bridge built by', engineer.label, 'on tile', target);
-
-    localMap.computeMovementRange();
-    localMap.render();
-    detailPanel.showTile(localMap.selectedTile, localMap.selectedSegment >= 0 ? localMap.selectedSegment : undefined);
+    void (async () => {
+      const response = await buildRoadSegment(ctx, engineer.id);
+      if (!response?.success) {
+        if (response?.error) dbg.input.log('Build road rejected:', response.error);
+        return;
+      }
+      emitDebugEvent(
+        'build-road',
+        { unitId: engineer.id, tile: engineer.tileIndex, segment: engineer.segment },
+        turnManager.turnNumber,
+      );
+      dbg.input.log('Road task queued at tile', engineer.tileIndex, 'segment', engineer.segment);
+      localMap.render();
+      detailPanel.showTile(localMap.selectedTile, localMap.selectedSegment >= 0 ? localMap.selectedSegment : undefined);
+    })();
   });
 
   // C — construct a building on the selected tile + segment
@@ -173,7 +256,7 @@ export function setupKeyboardShortcuts(ctx: GameContext): void {
     if (e.key !== 'n' && e.key !== 'N') return;
     if ((e.target as HTMLElement).tagName === 'INPUT') return;
     e.preventDefault();
-    toggleEntityNumbers();
+    cycleEntityOverlayMode();
     localMap.render();
     if (ctx.firstPerson.isActive) ctx.firstPerson.refresh();
   });

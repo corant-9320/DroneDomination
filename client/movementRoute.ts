@@ -19,6 +19,12 @@ import {
   segmentCost as sharedSegmentCost,
 } from '../shared/movementConstants.js';
 import {
+  buildMovementOccupancy,
+  encodeSeg,
+  findSegmentPath,
+  type SegGraphTile,
+} from '../shared/segmentGraph.js';
+import {
   isTargetInRange,
   hasWeapon,
   segmentDistance as sharedSegmentDistance,
@@ -26,8 +32,6 @@ import {
 } from '../shared/rangeCheck.js';
 import { facingFromTravel } from './facing.js';
 import {
-  buildOccupiedSegmentSet,
-  buildBuildingSegmentSet,
   getRangeTiles,
   MovementRangeResult,
   weaponRangeInTileHops,
@@ -182,118 +186,40 @@ export function computeMovementCostRoute(
   destTile?: number,
 ): MovementCostRoute | null {
   const targetTile = destTile ?? (_path && _path.length >= 2 ? _path[_path.length - 1] : -1);
-  if (targetTile < 0) return null;
+  const target = world.tiles[targetTile];
+  if (!target || destSegment < 0 || destSegment >= target.s) return null;
   if (unit.tileIndex === targetTile && unit.segment === destSegment) return null;
 
   const mode = getMovementMode(unit.attributes);
-  const tiles = world.tiles;
-  // A segment holds at most one occupant regardless of faction (B2) — block
-  // on ANY other unit's segment, not just enemies. Excludes the mover itself.
-  const occupiedByUnit = buildOccupiedSegmentSet(world, unit.id);
-  // Ground units cannot pass through building-occupied segments.
-  const buildingSegments = mode !== 'flight' ? buildBuildingSegmentSet(world) : null;
-
-  const encode = (tile: number, seg: number) => tile * 6 + seg;
-  const startKey = encode(unit.tileIndex, unit.segment);
-  const goalKey = encode(targetTile, destSegment);
-
-  const dist = new Map<number, number>();
-  const prev = new Map<number, number>();
-  dist.set(startKey, 0);
-
-  const pq: { key: number; cost: number }[] = [{ key: startKey, cost: 0 }];
-
-  while (pq.length > 0) {
-    let minI = 0;
-    for (let i = 1; i < pq.length; i++) {
-      if (pq[i].cost < pq[minI].cost) minI = i;
-    }
-    const { key: currentKey, cost: currentCost } = pq[minI];
-    pq.splice(minI, 1);
-
-    if (currentCost > (dist.get(currentKey) ?? Infinity)) continue;
-    if (currentKey === goalKey) break;
-
-    const currentTile = Math.floor(currentKey / 6);
-    const currentSeg = currentKey % 6;
-    const tile = tiles[currentTile];
-
-    const intraStepCost = sharedSegmentCost(tile, 0, mode);
-    if (intraStepCost !== Infinity) {
-      for (let delta = -1; delta <= 1; delta += 2) {
-        const adjSeg = ((currentSeg + delta) % 6 + 6) % 6;
-        const adjKey = encode(currentTile, adjSeg);
-        if (occupiedByUnit.has(adjKey)) continue;
-        if (buildingSegments?.has(adjKey)) continue;
-        const newCost = currentCost + sharedSegmentCost(tile, adjSeg, mode);
-        if (newCost > remainingMP) continue;
-        const existing = dist.get(adjKey);
-        if (existing === undefined || newCost < existing) {
-          dist.set(adjKey, newCost);
-          prev.set(adjKey, currentKey);
-          pq.push({ key: adjKey, cost: newCost });
-        }
-      }
-    }
-
-    if (currentSeg < tile.n.length) {
-      const neighbour = tile.n[currentSeg];
-      const nTile = tiles[neighbour];
-      const arrivalSeg = nTile.n.indexOf(currentTile);
-      const arrival = arrivalSeg >= 0 ? arrivalSeg : 0;
-      const crossCost = sharedSegmentCost(nTile, arrival, mode);
-      if (crossCost !== Infinity) {
-        const newCost = currentCost + crossCost;
-        if (newCost <= remainingMP) {
-          const candidateSegs = [arrival, (arrival + 1) % 6, (arrival + 5) % 6];
-          for (const cSeg of candidateSegs) {
-            const nKey = encode(neighbour, cSeg);
-            if (occupiedByUnit.has(nKey)) continue;
-            if (buildingSegments?.has(nKey)) continue;
-            const existing = dist.get(nKey);
-            if (existing === undefined || newCost < existing) {
-              dist.set(nKey, newCost);
-              prev.set(nKey, currentKey);
-              pq.push({ key: nKey, cost: newCost });
-            }
-          }
-        }
-      }
-    }
-  }
-
-  if (!dist.has(goalKey)) return null;
-
-  const segPath: number[] = [];
-  let step = goalKey;
-  while (step !== startKey) {
-    segPath.unshift(step);
-    const p = prev.get(step);
-    if (p === undefined) return null;
-    step = p;
-  }
-  if (segPath.length === 0) return null;
+  interface ClientSegTile extends SegGraphTile { original: (typeof world.tiles)[number] }
+  const graphTiles: ClientSegTile[] = world.tiles.map((tile) => ({
+    sides: tile.s,
+    neighbours: tile.n,
+    original: tile,
+  }));
+  const isOccupied = buildMovementOccupancy(world.units, world.buildings, {
+    excludeUnitId: unit.id,
+  });
+  const result = findSegmentPath(
+    graphTiles,
+    { tileIndex: unit.tileIndex, segment: unit.segment },
+    { tileIndex: targetTile, segment: destSegment },
+    (tile, segment) => sharedSegmentCost(tile.original, segment, mode),
+    isOccupied,
+    remainingMP,
+  );
+  if (!result || result.path.length < 2) return null;
 
   const hops: MovementRouteHop[] = [];
   let cumulative = 0;
-
-  for (const key of segPath) {
-    const tileIdx = Math.floor(key / 6);
-    const seg = key % 6;
-    const hopCost = sharedSegmentCost(tiles[tileIdx], seg, mode);
+  for (const node of result.path.slice(1)) {
+    const hopCost = sharedSegmentCost(world.tiles[node.tileIndex], node.segment, mode);
     cumulative += hopCost;
     const mpAfter = remainingMP - cumulative;
-    let zone: RouteHopZone;
-    if (mpAfter >= 1) {
-      zone = 'attackReady';
-    } else if (cumulative <= remainingMP) {
-      zone = 'moveOnly';
-    } else {
-      zone = 'weaponRange';
-    }
+    const zone: RouteHopZone = mpAfter >= 1 ? 'attackReady' : 'moveOnly';
     hops.push({
-      tileIndex: tileIdx,
-      segment: key % 6,
+      tileIndex: node.tileIndex,
+      segment: node.segment,
       hopCost: Math.round(hopCost * 100) / 100,
       cumulativeCost: Math.round(cumulative * 100) / 100,
       zone,
@@ -305,6 +231,37 @@ export function computeMovementCostRoute(
     startSegment: unit.segment,
     hops,
   };
+}
+
+/** Choose the cheapest actually reachable segment on a target tile. */
+function computeCheapestRouteToTile(
+  world: WorldData,
+  unit: UnitData,
+  targetTile: number,
+  remainingMP: number,
+): MovementCostRoute | null {
+  const tile = world.tiles[targetTile];
+  if (!tile) return null;
+
+  let best: MovementCostRoute | null = null;
+  let bestCost = Infinity;
+  for (let segment = 0; segment < tile.s; segment++) {
+    const route = computeMovementCostRoute(
+      world,
+      unit,
+      null,
+      segment,
+      remainingMP,
+      targetTile,
+    );
+    if (!route) continue;
+    const cost = route.hops[route.hops.length - 1]?.cumulativeCost ?? 0;
+    if (cost < bestCost) {
+      best = route;
+      bestCost = cost;
+    }
+  }
+  return best;
 }
 
 /**
@@ -360,6 +317,7 @@ export function computeContextualAttackRoute(
     if (arTile === unit.tileIndex) continue;
 
     for (let seg = 0; seg < tiles[arTile].s; seg++) {
+      if (!rangeResult.reachableSegments.has(encodeSeg(arTile, seg))) continue;
       const dist = sharedSegmentDistance(rangeTiles, arTile, seg, destTile, destSegment);
       if (dist > threshold) continue;
 
@@ -396,8 +354,8 @@ export function computeContextualAttackRoute(
 
   if (bestMoveTile < 0) return null;
 
-  const movementRoute = computeMovementCostRoute(
-    world, unit, null, 0, remainingMP, bestMoveTile,
+  const movementRoute = computeCheapestRouteToTile(
+    world, unit, bestMoveTile, remainingMP,
   );
   if (!movementRoute) return null;
 
@@ -445,7 +403,7 @@ export function computeMovementTowardTile(
 
   if (bestMoveTile < 0 || bestMoveTile === unit.tileIndex) return null;
 
-  return computeMovementCostRoute(world, unit, null, 0, remainingMP, bestMoveTile);
+  return computeCheapestRouteToTile(world, unit, bestMoveTile, remainingMP);
 }
 
 /**

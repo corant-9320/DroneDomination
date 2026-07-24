@@ -4,9 +4,23 @@
  */
 
 import { getCompactSave, applyNewWorld } from './worldData.js';
+import { decodeWorldInput, ValidationError } from './world/codec.js';
 import { dbg } from './debug.js';
 
 const SAVE_PREFIX = 'drone-domination-save-';
+
+/**
+ * Narrow, unvalidated view of a persisted save's top-level shape — used only
+ * to peek at list-view metadata (seed/city/unit counts) without doing a full
+ * `CompactSave` parse. Genuinely dynamic JSON from localStorage: the fields
+ * are read defensively with `??` fallbacks below, so a malformed/older save
+ * still lists (just with 0 counts) rather than throwing.
+ */
+interface PersistedSaveMeta {
+  seed?: number;
+  cities?: unknown[];
+  units?: unknown[];
+}
 
 interface SaveEntry {
   key: string;
@@ -73,12 +87,12 @@ function listSaves(): SaveEntry[] {
     try {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
-      const data = JSON.parse(raw);
+      const data = JSON.parse(raw) as PersistedSaveMeta;
       entries.push({
         key,
         timestamp,
         label: formatTimestamp(timestamp),
-        seed: data.seed,
+        seed: data.seed ?? 0,
         cities: data.cities?.length ?? 0,
         units: data.units?.length ?? 0,
       });
@@ -98,8 +112,22 @@ function loadSave(key: string): void {
     return;
   }
   dbg.world.log('Loading save:', key);
-  const data = JSON.parse(raw);
-  applyNewWorld(data);
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch (e) {
+    dbg.world.error('loadSave: corrupt save JSON:', key, e);
+    showToast('This save is corrupted and could not be loaded.');
+    return;
+  }
+  try {
+    const decoded = decodeWorldInput(data);
+    applyNewWorld(decoded);
+  } catch (e) {
+    const message = e instanceof ValidationError ? e.message : String(e);
+    dbg.world.error('loadSave: invalid save data:', key, message);
+    showToast('This save is corrupted and could not be loaded.');
+  }
 }
 
 /** Delete a save by key. */
@@ -114,8 +142,9 @@ async function loadBundledSave(filename: string): Promise<void> {
   try {
     const response = await fetch(`/${filename}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    applyNewWorld(data);
+    const data: unknown = await response.json();
+    const decoded = decodeWorldInput(data);
+    applyNewWorld(decoded);
   } catch (e) {
     dbg.world.error('Failed to load bundled save:', e);
     showToast('Failed to load scenario');

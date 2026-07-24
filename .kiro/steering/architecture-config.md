@@ -1,11 +1,13 @@
 ---
 inclusion: fileMatch
-fileMatchPattern: "{vite.config.ts,tsconfig.json,tsconfig.client.json}"
+fileMatchPattern: "{index.html,package.json,.dependency-cruiser.cjs,eslint.config.js,playwright.config.ts,vite.config.ts,tsconfig*.json}"
 ---
 
 # Architecture — Configuration detail
 
-Loaded because you're editing build/TS config. Covers what each config file
-controls and the import rule `tsconfig.client.json` enforces.
+Loads for the browser entry document and root package, TypeScript, Vite, ESLint,
+Playwright, and dependency-cruiser configuration. Consult the canonical config
+files themselves for exact scripts/options; this page records responsibilities
+and enforced boundaries.
 
 #[[file:../../docs/architecture/configuration.md]]

@@ -25,8 +25,8 @@
 
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { loadTransport, deliver } from '../logistics.js';
-import type { StorageLike } from '../logistics.js';
+import { loadTransport, deliver } from '../logistics/transport.js';
+import type { StorageLike } from '../logistics/transport.js';
 import {
   TRANSPORT_CARGO_MIN,
   TRANSPORT_CARGO_MAX,

@@ -5,8 +5,8 @@
  * All functions are stateless; they take all required data as parameters.
  */
 
-import { WorldData } from './worldData.js';
-import { FlatTileRef } from './mapInput.js';
+import type { WorldData } from './worldData.js';
+import type { FlatTileRef } from './mapInput.js';
 
 /** Local alias — shape matches FlatTileRef from mapInput.ts */
 export type FlatTile = FlatTileRef;

@@ -174,7 +174,7 @@ export class GlobeView {
 
     // Pre-compute elevation scale and color for every tile
     const elevScales = new Float32Array(tileCount);
-    const tileRGB: Array<[number, number, number]> = new Array(tileCount);
+    const tileRGB: Array<[number, number, number]> = new Array<[number, number, number]>(tileCount);
     for (let ti = 0; ti < tileCount; ti++) {
       const tile = tiles[ti];
       // Real ocean stays at sea level; river hexes (rv set) keep their carved
@@ -638,6 +638,28 @@ export class GlobeView {
     return { sx, sy };
   }
 
+  /** Project an encoded route node at its triangular segment centroid. */
+  private projectRouteSegment(key: number, w: number, h: number): { sx: number; sy: number } | null {
+    const tileIndex = Math.floor(key / 6);
+    const segment = key % 6;
+    const tile = this.world.tiles[tileIndex];
+    if (!tile || tile.b.length === 0 || segment >= tile.s) return null;
+    const v0 = tile.b[segment];
+    const v1 = tile.b[(segment + 1) % tile.s];
+    const vec = new THREE.Vector3(
+      (tile.pos[0] + v0[0] + v1[0]) / 3,
+      (tile.pos[1] + v0[1] + v1[1]) / 3,
+      (tile.pos[2] + v0[2] + v1[2]) / 3,
+    ).normalize().multiplyScalar(1.04);
+    const normal = vec.clone().normalize();
+    vec.project(this.camera);
+    if (normal.dot(this.camera.position.clone().normalize()) < 0.1) return null;
+    const sx = (vec.x * 0.5 + 0.5) * w;
+    const sy = (-vec.y * 0.5 + 0.5) * h;
+    if (sx < -20 || sx > w + 20 || sy < -20 || sy > h + 20) return null;
+    return { sx, sy };
+  }
+
   /**
    * Draw the Oil Logistics network onto the 2D overlay so the player can SPOT it
    * on the globe (detailed 3D models appear in the zoomed-in first-person view).
@@ -670,8 +692,8 @@ export class GlobeView {
     // ── Route polylines (draw under the structure badges) ──
     const drawRoute = (segments: number[], color: string, width: number): void => {
       const pts: Array<{ sx: number; sy: number }> = [];
-      for (const idx of segments) {
-        const p = this.projectTile(idx, w, h);
+      for (const key of segments) {
+        const p = this.projectRouteSegment(key, w, h);
         // A route wrapping the limb will have gaps; that's acceptable at globe scale.
         if (p) pts.push(p);
       }

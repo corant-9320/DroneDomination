@@ -426,14 +426,15 @@ function affordableSteps(
   const totalMP = getMovement(unit);
   const mode = getMovementMode(unit.attributes);
   const reserve = wantAttack ? 1 : 0;
-  const isDroneMover = mode === 'flight';
-
-  const occupants = world.units
-    .filter((u) => u.id !== unit.id)
-    .map((u) => ({ tileIndex: u.tileIndex, segment: u.segment }));
-  if (!isDroneMover) {
-    occupants.push(...world.buildings.map((b) => ({ tileIndex: b.tileIndex, segment: b.segment })));
-  }
+  const occupants = [
+    ...world.units
+      .filter((candidate) => candidate.id !== unit.id)
+      .map((candidate) => ({ tileIndex: candidate.tileIndex, segment: candidate.segment })),
+    ...world.buildings.map((building) => ({
+      tileIndex: building.tileIndex,
+      segment: building.segment,
+    })),
+  ];
   const isOccupied = buildSegmentOccupancy(occupants);
   const segGraphTiles = toSegGraphTiles(world.tiles);
 

@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { refine, refineryThroughput } from '../logistics.js';
+import { refine, refineryThroughput } from '../logistics/production.js';
 import type { Refinery } from '../../../shared/logisticsTypes.js';
 import { CONVERSION_RATIO } from '../../../shared/logisticsConstants.js';
 
 // ---------------------------------------------------------------------------
 // Feature: oil-logistics-system, Property 10: Refining consumes the correct oil
-// and conserves mass at ratio 0.5
+// and converts it one-for-one to petrol.
 // Validates: Requirements 4.5, 4.6, 4.7
 //
 // refine(refinery) : Refinery
@@ -15,8 +15,7 @@ import { CONVERSION_RATIO } from '../../../shared/logisticsConstants.js';
 //   - result.heldOil === heldOil - consumed                              (Req 4.6)
 //   - result.refinedProductAvailable ===
 //       original + floor(consumed * CONVERSION_RATIO)                    (Req 4.5)
-//   - mass conservation modulo rounding: 2 * product <= consumed oil, and
-//     consumed - 2*product < 2 (at most one leftover unit lost to flooring).
+//   - every processed oil unit produces one petrol unit (CONVERSION_RATIO = 1).
 //   - heldOil === 0 is a no-op: heldOil and refinedProductAvailable unchanged (Req 4.7)
 //   - refine never mutates its input.
 // ---------------------------------------------------------------------------
@@ -53,7 +52,7 @@ const arbHeldOil = fc.integer({ min: 0, max: 100_000 });
 const arbProductAvailable = fc.integer({ min: 0, max: 100_000 });
 
 describe('logistics refining conservation (Property 10)', () => {
-  it('consumes min(throughput, heldOil), conserves mass at ratio 0.5, and does not mutate input', () => {
+  it('consumes min(throughput, heldOil), converts one-for-one, and does not mutate input', () => {
     fc.assert(
       fc.property(
         arbSegmentCount,
@@ -75,11 +74,9 @@ describe('logistics refining conservation (Property 10)', () => {
           expect(result.refinedProductAvailable).toBe(productAvailable + expectedProduct);
 
           const producedThisTurn = result.refinedProductAvailable - productAvailable;
-          // Mass conservation modulo rounding: two oil per product, never over-producing.
-          expect(2 * producedThisTurn).toBeLessThanOrEqual(consumed);
-          // At most one oil unit is lost to flooring (ratio 0.5).
-          expect(consumed - 2 * producedThisTurn).toBeLessThan(2);
-          expect(consumed - 2 * producedThisTurn).toBeGreaterThanOrEqual(0);
+          // The oil economy uses a one-to-one conversion: every processed oil unit
+          // becomes one unit of petrol, with no rounding loss.
+          expect(producedThisTurn).toBe(consumed);
 
           // Product is always a whole number of units.
           expect(Number.isInteger(result.refinedProductAvailable)).toBe(true);

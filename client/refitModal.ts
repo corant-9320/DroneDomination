@@ -14,7 +14,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { buildUnitModel, initMaterials } from './unitModel.js';
-import type { ChassisType } from './unitModel.js';
+import type { ChassisType, UnitChassisType } from './unitModel.js';
 import type { UnitAttributes } from '../shared/unitTypes.js';
 
 // ---------------------------------------------------------------------------
@@ -22,7 +22,7 @@ import type { UnitAttributes } from '../shared/unitTypes.js';
 // ---------------------------------------------------------------------------
 
 /** Determine the chassis type from a unit's movement attributes. */
-function chassisOf(attrs: UnitAttributes): ChassisType {
+function chassisOf(attrs: UnitAttributes): UnitChassisType {
   if ((attrs.flightMovement ?? 0) > 0) return 'flight';
   if ((attrs.limbMovement ?? 0) > 0) return 'limbed';
   return 'wheeled';
@@ -73,21 +73,34 @@ export interface RefitResult {
   attributes: UnitAttributes;
 }
 
+export interface RefitOptions {
+  /** Development-only: allow the caller to change a unit's size. */
+  allowSizeEdit?: boolean;
+  /** Development-only: allow every editable attribute to use its full 0–5 range. */
+  allowUnrestrictedBudget?: boolean;
+}
+
 /**
  * Show the refit modal for a unit. Resolves with new attributes or null if
- * the player cancels.
+ * the player cancels. Normal refits keep the chassis and size locked; God Mode
+ * may opt into size editing.
  */
-export function showRefitModal(unit: { label: string; attributes: UnitAttributes }): Promise<RefitResult | null> {
+export function showRefitModal(
+  unit: { label: string; attributes: UnitAttributes },
+  options: RefitOptions = {},
+): Promise<RefitResult | null> {
   return new Promise((resolve) => {
     const chassis = chassisOf(unit.attributes);
     const movKey = movementKey(chassis);
     const movValue = (unit.attributes[movKey] as number) ?? 1;
-    const sizeVal = (unit.attributes.size as number) ?? 1;
-    const budget = computeBudget(unit.attributes);
+    let sizeVal = (unit.attributes.size as number) ?? 1;
+    const budget = options.allowUnrestrictedBudget
+      ? UPGRADE_ATTRS.length * 5
+      : computeBudget(unit.attributes);
 
     // ── Working state (mirrors the designer's currentAttrs) ──────────────
     const current: Record<keyof UnitAttributes, number> = {
-      size:            unit.attributes.size            ?? 0,
+      size:            sizeVal,
       kinetic:         unit.attributes.kinetic         ?? 0,
       rangeAttack:     unit.attributes.rangeAttack     ?? 0,
       splashAttack:    unit.attributes.splashAttack    ?? 0,
@@ -186,7 +199,7 @@ export function showRefitModal(unit: { label: string; attributes: UnitAttributes
     });
 
     // Chassis display (locked — no buttons)
-    const chassisLabel: Record<ChassisType, string> = { wheeled: '🛞 Wheeled', limbed: '🕷️ Limbed', flight: '🚁 Flight' };
+    const chassisLabel: Record<UnitChassisType, string> = { wheeled: '🛞 Wheeled', limbed: '🕷️ Limbed', flight: '🚁 Flight' };
     const chassisRow = document.createElement('div');
     chassisRow.innerHTML = `
       <div style="font-size:11px;color:#888;margin-bottom:4px;">Chassis (locked)</div>
@@ -196,14 +209,54 @@ export function showRefitModal(unit: { label: string; attributes: UnitAttributes
     `;
     controlsEl.appendChild(chassisRow);
 
-    // Size display (locked — chosen at creation, not refittable)
+    // Size is normally fixed at creation. God Mode can change it without
+    // consuming the ordinary refit equipment budget.
     const sizeRow = document.createElement('div');
-    sizeRow.innerHTML = `
-      <div style="font-size:11px;color:#888;margin-bottom:4px;">Size (locked)</div>
-      <div style="padding:6px 10px;background:#333;border-radius:4px;font-size:13px;color:#aaa;">
-        Size ${sizeVal} · ${sizeVal * 10} HP · caps weapons/armour/EW/repair at ${sizeVal}
-      </div>
-    `;
+    const sizeSummary = document.createElement('div');
+    Object.assign(sizeSummary.style, {
+      padding: '6px 10px',
+      background: '#333',
+      borderRadius: '4px',
+      fontSize: '13px',
+      color: options.allowSizeEdit ? '#eee' : '#aaa',
+    });
+    const updateSizeSummary = () => {
+      sizeSummary.textContent = `Size ${sizeVal} · ${sizeVal * 10} HP · caps weapons/armour/EW/repair at ${sizeVal}`;
+    };
+    updateSizeSummary();
+
+    if (options.allowSizeEdit) {
+      sizeRow.innerHTML = '<div style="font-size:11px;color:#c9a84c;margin-bottom:4px;">Size (God Mode)</div>';
+      const sizeSlider = document.createElement('input');
+      sizeSlider.type = 'range';
+      sizeSlider.min = '1';
+      sizeSlider.max = '5';
+      sizeSlider.value = String(sizeVal);
+      Object.assign(sizeSlider.style, { width: '100%', accentColor: '#c9a84c' });
+      sizeSlider.addEventListener('input', () => {
+        sizeVal = parseInt(sizeSlider.value);
+        current.size = sizeVal;
+        updateSizeSummary();
+        for (const attr of CAPPED_BY_SIZE) {
+          const slider = sliderEls.get(attr);
+          const value = valEls.get(attr);
+          if (!slider || !value) continue;
+          const cap = Math.min(5, sizeVal);
+          slider.max = String(cap);
+          if (current[attr] > cap) {
+            current[attr] = cap;
+            slider.value = String(cap);
+            value.textContent = String(cap);
+          }
+        }
+        updatePointsRemaining();
+        rebuildUnit3d();
+      });
+      sizeRow.appendChild(sizeSlider);
+    } else {
+      sizeRow.innerHTML = '<div style="font-size:11px;color:#888;margin-bottom:4px;">Size (locked)</div>';
+    }
+    sizeRow.appendChild(sizeSummary);
     controlsEl.appendChild(sizeRow);
 
     // Sliders for each upgrade attribute

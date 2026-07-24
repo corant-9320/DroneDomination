@@ -31,7 +31,7 @@
 import { Tile, Vec3 } from './types.js';
 import { HexSegment } from './units.js';
 import * as v3 from './vec3.js';
-import { graphDistance } from './pathfinding.js';
+import { graphDistance } from './tilePathfinding.js';
 
 // ---------------------------------------------------------------------------
 // Constants

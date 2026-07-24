@@ -16,7 +16,7 @@
 
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { retainAtSource } from '../logistics.js';
+import { retainAtSource } from '../logistics/transport.js';
 
 const NUM_RUNS = 200;
 

@@ -124,7 +124,7 @@ export function confirmEndTurn(ctx: GameContext): Promise<boolean> {
 export async function advanceTurn(ctx: GameContext): Promise<void> {
   const {
     world, localMap, globe: _globe, combatPanel, detailPanel,
-    firstPerson, aiPlayback, turnManager, switchRpTab: _switchRpTab,
+    firstPerson, aiPlayback, turnManager, matchClient, switchRpTab: _switchRpTab,
     isPlayerTurn, updateTurnIndicator,
   } = ctx;
 
@@ -135,6 +135,16 @@ export async function advanceTurn(ctx: GameContext): Promise<void> {
 
   dbg.input.log('Player ending turn — processing AI factions');
   emitDebugEvent('turn-end', { turn: turnManager.turnNumber }, turnManager.turnNumber);
+
+  // Resolve the outgoing player's authoritative logistics turn before the
+  // stateless AI sequence. This advances bridge/forest tasks and projects any
+  // completed terrain overlays back onto the live client world.
+  const endTurnResponse = await matchClient.submit({ kind: 'endTurn' });
+  if (!endTurnResponse?.success) {
+    dbg.input.error('Authoritative end-turn resolution failed:', endTurnResponse?.error);
+    return;
+  }
+  matchClient.reconcile(endTurnResponse, world, turnManager);
 
   const renderMap = () => {
     if (aiPlayback.isSkipping()) return;

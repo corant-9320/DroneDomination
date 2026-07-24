@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { canAssignTransport } from '../logistics.js';
+import { canAssignTransport } from '../logistics/transport.js';
 import { MAX_TRANSPORTS_PER_ROUTE } from '../../../shared/logisticsConstants.js';
 import type { LogisticsRoute, Transport } from '../../../shared/logisticsTypes.js';
 

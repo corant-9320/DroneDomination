@@ -15,7 +15,7 @@ import {
 /** Linear chain of hexes: 0 — 1 — 2 — 3 — 4. Segment 0 always faces "next". */
 function linearTiles(n: number): SegGraphTile[] {
   return Array.from({ length: n }, (_, i) => {
-    const neighbours: number[] = new Array(6).fill(-1);
+    const neighbours: number[] = new Array<number>(6).fill(-1);
     if (i + 1 < n) neighbours[0] = i + 1;
     if (i - 1 >= 0) neighbours[3] = i - 1;
     return { sides: 6, neighbours };
@@ -173,6 +173,40 @@ describe('segmentGraph — realizeTilePathOverSegments', () => {
     const isOccupied = (t: number) => t === 1;
     const r = realizeTilePathOverSegments(tiles, { tileIndex: 0, segment: 0 }, [0, 1, 2], flatCost, isOccupied);
     expect(r).toBeNull();
+  });
+
+  it('supports a pure intra-hex move represented by a one-tile path', () => {
+    const tiles = linearTiles(2);
+    const r = realizeTilePathOverSegments(
+      tiles,
+      { tileIndex: 0, segment: 0 },
+      [0],
+      flatCost,
+      NO_OCCUPANCY,
+      2,
+    );
+    expect(r).not.toBeNull();
+    expect(r!.path.map((node) => node.tileIndex)).toEqual([0, 0, 0]);
+    expect(r!.path[r!.path.length - 1]).toEqual({ tileIndex: 0, segment: 2 });
+  });
+
+  it('keeps the compressed segment-path projection on the requested tile path', () => {
+    const tiles = linearTiles(3);
+    const requested = [0, 1, 2];
+    const r = realizeTilePathOverSegments(
+      tiles,
+      { tileIndex: 0, segment: 0 },
+      requested,
+      flatCost,
+      NO_OCCUPANCY,
+      4,
+    );
+    expect(r).not.toBeNull();
+    const projected: number[] = [];
+    for (const node of r!.path) {
+      if (projected[projected.length - 1] !== node.tileIndex) projected.push(node.tileIndex);
+    }
+    expect(projected).toEqual(requested);
   });
 });
 

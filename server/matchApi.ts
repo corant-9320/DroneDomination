@@ -37,9 +37,14 @@ import {
   type CombatRequest,
 } from './combatApi.js';
 import { getMaxMovement } from '../shared/movementConstants.js';
-import { resolveLogisticsTurn } from '../src/world/logistics.js';
+import { sanitizeCityDistributionHubs } from '../shared/logisticsSanitization.js';
+import { resolveLogisticsTurn } from '../src/world/logistics/turn.js';
 import { createEmptyLogisticsState } from '../src/world/logisticsSeed.js';
-import { applyLogisticsIntent, isLogisticsIntent } from './logisticsApi.js';
+import { applyLogisticsIntent, isLogisticsIntent } from './logistics/dispatch.js';
+import {
+  getDevelopmentLogisticsPolicy,
+  getDevelopmentMatchCapabilities,
+} from './developmentMode.js';
 import { getSessionStore, VersionConflictError } from './sessionStore.js';
 import type {
   MatchState,
@@ -52,6 +57,7 @@ import type {
 } from '../shared/matchTypes.js';
 import type { ExplainedCombat, ExplainedRepair } from '../shared/combatTypes.js';
 import type { LogisticsEvent } from '../shared/logisticsTypes.js';
+import type { UnitAttributes } from '../shared/unitTypes.js';
 
 // ---------------------------------------------------------------------------
 // Authoritative tiles (regenerated from the trusted seed, cached per process)
@@ -92,6 +98,8 @@ export async function handleCreateMatch(req: CreateMatchRequest): Promise<Create
     return { success: false, error: 'at least one faction is required' };
   }
 
+  const tiles = getAuthoritativeTiles(req.seed);
+  const cityTileIndices = new Set(tiles.filter((tile) => tile.cityId).map((tile) => tile.index));
   const unitTurn: Record<string, UnitTurnState> = {};
   for (const u of req.units) {
     unitTurn[u.id] = { mp: getMaxMovement(u.attributes), acted: false, rotated: false };
@@ -105,20 +113,23 @@ export async function handleCreateMatch(req: CreateMatchRequest): Promise<Create
     turn: 1,
     units: req.units,
     buildings: req.buildings ?? [],
-    // Adopt the caller-supplied network (e.g. the compact save's seeded Oil
-    // Logistics System example for DEFAULT_SEED) so the server is the single
-    // authoritative source; non-default seeds omit it and start empty.
-    logistics: req.logistics ?? createEmptyLogisticsState(),
+    // The caller may supply a compact-save network, but legacy storage hubs
+    // inside regenerated city footprints are removed before state is persisted.
+    logistics: sanitizeCityDistributionHubs(
+      req.logistics ?? createEmptyLogisticsState(),
+      cityTileIndices,
+    ),
     unitTurn,
     version: 0,
   };
 
   const created = await getSessionStore().create(state);
-  // Warm the authoritative tile cache now (regenerating from seed is ~seconds)
-  // so the first gameplay intent isn't stalled by world generation.
-  getAuthoritativeTiles(created.seed);
   console.log('[DD][match] created %s (%d units, %d factions)', created.matchId, created.units.length, created.factions.length);
-  return { success: true, state: created };
+  return {
+    success: true,
+    state: created,
+    capabilities: getDevelopmentMatchCapabilities(),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +147,10 @@ export async function handleMatchIntent(req: MatchIntentRequest): Promise<MatchI
 
   const activeFaction = state.factions[state.activeFactionIndex];
   const tiles = getAuthoritativeTiles(state.seed);
+  state.logistics = sanitizeCityDistributionHubs(
+    state.logistics,
+    new Set(tiles.filter((tile) => tile.cityId).map((tile) => tile.index)),
+  );
   const ctx: CombatContext = {
     units: rebuildUnits(state.units),
     tiles,
@@ -182,11 +197,37 @@ export async function handleMatchIntent(req: MatchIntentRequest): Promise<MatchI
       repair = r.repair;
       break;
     }
+    case 'godModeEditUnit': {
+      const r = applyGodModeEditUnit(ctx, intent);
+      if (r.error) return { success: false, error: r.error };
+      break;
+    }
+    case 'godModeDeleteUnit': {
+      const r = applyGodModeDeleteUnit(state, ctx, intent);
+      if (r.error) return { success: false, error: r.error };
+      break;
+    }
+    case 'godModeEditBuilding': {
+      const r = applyGodModeEditBuilding(ctx, intent);
+      if (r.error) return { success: false, error: r.error };
+      break;
+    }
+    case 'godModeDeleteBuilding': {
+      const r = applyGodModeDeleteBuilding(state, ctx, intent);
+      if (r.error) return { success: false, error: r.error };
+      break;
+    }
     default: {
       // Logistics intents mutate state.logistics in place (they don't use ctx),
       // so the ctx.units/ctx.buildings sync-back below does not touch them.
       if (isLogisticsIntent(intent)) {
-        const r = applyLogisticsIntent(state, tiles, activeFaction, intent);
+        const r = applyLogisticsIntent(
+          state,
+          tiles,
+          activeFaction,
+          intent,
+          getDevelopmentLogisticsPolicy(),
+        );
         if (r.error) return { success: false, error: r.error };
         break;
       }
@@ -225,6 +266,7 @@ export async function handleMatchIntent(req: MatchIntentRequest): Promise<MatchI
     reactions,
     repair,
     logistics: saved.logistics,
+    capabilities: getDevelopmentMatchCapabilities(),
     events,
   };
 }
@@ -240,7 +282,7 @@ function applyMoveIntent(
   activeFaction: string,
   intent: Extract<Intent, { kind: 'move' }>,
 ): { error?: string; reactions?: ExplainedCombat[] } {
-  if (!intent.path || intent.path.length < 2) return { error: 'Move path (2+ tiles) required' };
+  if (!intent.path || intent.path.length < 1) return { error: 'Move path required' };
 
   const mover = ctx.units.find((u) => u.id === intent.unitId);
   if (!mover) return { error: 'Moving unit not found' };
@@ -249,19 +291,30 @@ function applyMoveIntent(
   const ts = state.unitTurn[mover.id];
   if (!ts) return { error: 'No turn state for unit' };
 
-  // Occupancy-gated (B2-B4): every other unit's segment blocks the path;
-  // buildings additionally block ground chassis (drones fly over them).
+  // Occupancy-gated (B2-B5): every other unit and every building blocks every
+  // chassis. The mover's own segment is excluded so it may step away.
   const isDroneMover = isDrone(mover);
-  const occupants = ctx.units
-    .filter((u) => u.id !== mover.id)
-    .map((u) => ({ tileIndex: u.tileIndex, segment: u.segment }));
-  if (!isDroneMover) {
-    occupants.push(...ctx.buildings.map((b) => ({ tileIndex: b.tileIndex, segment: b.segment })));
-  }
+  const occupants = [
+    ...ctx.units
+      .filter((u) => u.id !== mover.id)
+      .map((u) => ({ tileIndex: u.tileIndex, segment: u.segment })),
+    ...ctx.buildings.map((b) => ({ tileIndex: b.tileIndex, segment: b.segment })),
+  ];
 
-  const finalSegment = typeof intent.segment === 'number' && intent.segment >= 0 && intent.segment <= 5
+  const finalTile = tiles[intent.path[intent.path.length - 1]];
+  const finalSegment = typeof intent.segment === 'number'
+    && Number.isInteger(intent.segment)
+    && finalTile
+    && intent.segment >= 0
+    && intent.segment < finalTile.sides
     ? intent.segment
     : undefined;
+  if (intent.segment !== undefined && finalSegment === undefined) {
+    return { error: 'Move destination segment is invalid' };
+  }
+  if (intent.path.length === 1 && finalSegment === undefined) {
+    return { error: 'Destination segment required for an intra-hex move' };
+  }
   const r = computeMovePath(mover, intent.path, tiles, occupants, finalSegment);
   if ('error' in r) return { error: r.error };
   if (r.cost > ts.mp + 1e-9) return { error: 'Insufficient movement points for this move' };
@@ -462,6 +515,133 @@ function applyRepairIntent(
   ts.acted = true;
   ts.mp -= 1;
   return { repair: explained };
+}
+
+const GOD_MODE_UNIT_ATTRIBUTES: readonly (keyof UnitAttributes)[] = [
+  'size',
+  'kinetic',
+  'armour',
+  'defence',
+  'splashAttack',
+  'rangeAttack',
+  'wheeledMovement',
+  'limbMovement',
+  'flightMovement',
+  'repair',
+  'antiAir',
+  'engineer',
+];
+
+const GOD_MODE_BUILDING_ATTRIBUTES: readonly (keyof UnitAttributes)[] = [
+  'kinetic',
+  'armour',
+  'defence',
+  'splashAttack',
+  'rangeAttack',
+  'repair',
+  'antiAir',
+];
+
+function canEditEntitiesInGodMode(): boolean {
+  return getDevelopmentMatchCapabilities().entityEditing;
+}
+
+function validateGodModeAttributes(
+  attributes: UnitAttributes,
+  allowed: readonly (keyof UnitAttributes)[],
+  requireUnitMobility: boolean,
+): UnitAttributes | { error: string } {
+  if (!attributes || typeof attributes !== 'object' || Array.isArray(attributes)) {
+    return { error: 'Attributes must be an object.' };
+  }
+
+  const normalized: UnitAttributes = {};
+  for (const [key, value] of Object.entries(attributes)) {
+    if (!allowed.includes(key as keyof UnitAttributes)) {
+      return { error: `Attribute ${key} cannot be edited in God Mode.` };
+    }
+    if (typeof value !== 'number'
+      || !Number.isInteger(value)
+      || value < 0
+      || value > 5
+      || (key === 'size' && value < 1)) {
+      return { error: `Attribute ${key} must be an integer in its allowed range.` };
+    }
+    normalized[key as keyof UnitAttributes] = value;
+  }
+
+  if (requireUnitMobility) {
+    if (normalized.size === undefined) {
+      return { error: 'A unit edit must include size.' };
+    }
+    const movement = (normalized.wheeledMovement ?? 0)
+      + (normalized.limbMovement ?? 0)
+      + (normalized.flightMovement ?? 0);
+    if (movement < 1) {
+      return { error: 'A unit must retain at least one movement attribute.' };
+    }
+  }
+
+  return normalized;
+}
+
+function applyGodModeEditUnit(
+  ctx: CombatContext,
+  intent: Extract<Intent, { kind: 'godModeEditUnit' }>,
+): { error?: string } {
+  if (!canEditEntitiesInGodMode()) return { error: 'God Mode entity editing is disabled.' };
+  const unit = ctx.units.find((candidate) => candidate.id === intent.unitId);
+  if (!unit) return { error: 'Unit not found.' };
+
+  const attributes = validateGodModeAttributes(intent.attributes, GOD_MODE_UNIT_ATTRIBUTES, true);
+  if ('error' in attributes) return attributes;
+  unit.attributes = attributes;
+  unit.currentHealth = attributes.size! * 10;
+  return {};
+}
+
+function applyGodModeDeleteUnit(
+  state: MatchState,
+  ctx: CombatContext,
+  intent: Extract<Intent, { kind: 'godModeDeleteUnit' }>,
+): { error?: string } {
+  if (!canEditEntitiesInGodMode()) return { error: 'God Mode entity editing is disabled.' };
+  if (!ctx.units.some((candidate) => candidate.id === intent.unitId)) {
+    return { error: 'Unit not found.' };
+  }
+
+  ctx.units = ctx.units.filter((candidate) => candidate.id !== intent.unitId);
+  delete state.unitTurn[intent.unitId];
+  return {};
+}
+
+function applyGodModeEditBuilding(
+  ctx: CombatContext,
+  intent: Extract<Intent, { kind: 'godModeEditBuilding' }>,
+): { error?: string } {
+  if (!canEditEntitiesInGodMode()) return { error: 'God Mode entity editing is disabled.' };
+  const building = ctx.buildings.find((candidate) => candidate.id === intent.buildingId);
+  if (!building) return { error: 'Building not found.' };
+
+  const attributes = validateGodModeAttributes(intent.attributes, GOD_MODE_BUILDING_ATTRIBUTES, false);
+  if ('error' in attributes) return attributes;
+  building.attributes = attributes;
+  return {};
+}
+
+function applyGodModeDeleteBuilding(
+  state: MatchState,
+  ctx: CombatContext,
+  intent: Extract<Intent, { kind: 'godModeDeleteBuilding' }>,
+): { error?: string } {
+  if (!canEditEntitiesInGodMode()) return { error: 'God Mode entity editing is disabled.' };
+  if (!ctx.buildings.some((candidate) => candidate.id === intent.buildingId)) {
+    return { error: 'Building not found.' };
+  }
+
+  ctx.buildings = ctx.buildings.filter((candidate) => candidate.id !== intent.buildingId);
+  delete state.unitTurn[intent.buildingId];
+  return {};
 }
 
 // ---------------------------------------------------------------------------

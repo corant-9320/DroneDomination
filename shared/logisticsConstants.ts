@@ -7,8 +7,8 @@
  * and may be asserted exactly.
  *
  * Imported directly by both sides of the wire (no duplication):
- *   - src/world/logistics.ts, logisticsGen.ts, logisticsSeed.ts (server-side rules)
- *   - server/logisticsApi.ts (intent appliers)
+ *   - src/world/logistics/**, logisticsGen.ts, logisticsSeed.ts (server-side rules)
+ *   - server/logistics/** (intent appliers)
  *   - client/logisticsController.ts, logisticsPanel.ts, worldData.ts (UI + mirror)
  *
  * Named exports only — no default export.
@@ -28,6 +28,14 @@ export const TRANSPORT_CARGO_MIN = 1;           // Req 8.3
 export const TRANSPORT_CARGO_MAX = 5;           // one transport carries at most five units
 export const MAX_TRANSPORTS_PER_ROUTE = 3;      // Req 8.11–8.12
 export const ENGINEER_TASK_BASE = 6;            // duration = 6 - engineer (Req 2.6, 9.3, 10.1)
+
+/**
+ * How many Route_Segments a player-created shuttle transport (RMB "Create
+ * Transport" between two owned oil-structure hexes) advances per turn. A
+ * shuttle bounces between its route's two endpoints indefinitely (no cargo,
+ * no travelTime countdown) until explicitly stopped.
+ */
+export const SHUTTLE_SEGMENTS_PER_TURN = 5;
 
 /**
  * The fixed development/test/default seed, used to produce a reproducible

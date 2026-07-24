@@ -50,8 +50,10 @@ import {
 import { graphDistance, findPath as sharedFindPath, type PathTile } from '../shared/pathfinding.js';
 import { getMovementMode, segmentCost } from '../shared/movementConstants.js';
 import {
+  buildMovementOccupancy,
   farthestAffordablePrefix,
   type SegGraphTile,
+  type SegNode,
 } from '../shared/segmentGraph.js';
 
 // ---------------------------------------------------------------------------
@@ -117,26 +119,13 @@ function bfsDistance(pathTiles: PathTile[], from: number, to: number): number {
   return graphDistance(pathTiles, from, to);
 }
 
-/**
- * BFS shortest path avoiding occupied tiles (except the destination).
- * Mirrors client/aiTurn.ts findPath.
- */
+/** Coarse tile route; segment occupancy is resolved by affordableMove. */
 function findPath(
   pathTiles: PathTile[],
   from: number,
   to: number,
-  occupiedTiles: Set<number>,
 ): number[] | null {
-  const idxMap = new Map<object, number>();
-  for (let i = 0; i < pathTiles.length; i++) idxMap.set(pathTiles[i], i);
-
-  return sharedFindPath(pathTiles, from, to, (tile) => {
-    const idx = idxMap.get(tile);
-    if (idx === undefined) return 1;
-    if (idx === to) return 1;
-    if (occupiedTiles.has(idx)) return Infinity;
-    return 1;
-  });
+  return sharedFindPath(pathTiles, from, to);
 }
 
 /**
@@ -152,26 +141,34 @@ function toServerSegGraphTiles(tiles: Tile[]): ServerSegGraphTile[] {
 }
 
 /**
- * How many steps along a path the unit can afford, reserving 1 MP for an
- * attack when wantAttack is true. Segment-based, occupancy-gated (B5).
- * Uses farthestAffordablePrefix from shared/segmentGraph.ts to mirror the
- * client/aiTurn.ts logic on the same shared primitive.
+ * Resolve the farthest segment-legal prefix of a coarse route, optionally
+ * reserving 1 MP for an attack. Every living unit and every building blocks
+ * its segment for every chassis (Requirements B2/B5).
  */
-function affordableSteps(tiles: Tile[], path: number[], unit: Unit, wantAttack: boolean): number {
+function affordableMove(
+  ctx: CombatContext,
+  path: number[],
+  unit: Unit,
+  wantAttack: boolean,
+): { tileCount: number; path: SegNode[]; cost: number } {
   const totalMP = getMovement(unit);
   const mode = getMovementMode(unit.attributes);
   const reserve = wantAttack ? 1 : 0;
-  const segGraphTiles = toServerSegGraphTiles(tiles);
+  const segGraphTiles = toServerSegGraphTiles(ctx.tiles);
+  const isOccupied = buildMovementOccupancy(
+    ctx.units.filter((candidate) => candidate.currentHealth > 0),
+    ctx.buildings,
+    { excludeUnitId: unit.id },
+  );
 
-  const r = farthestAffordablePrefix(
+  return farthestAffordablePrefix(
     segGraphTiles,
     { tileIndex: unit.tileIndex, segment: unit.segment },
     path,
     (tile, segment) => segmentCost(tile.original, segment, mode),
-    (_t, _s) => false, // tile-level occupied set handles gross avoidance; segment-level here
-    totalMP - reserve,
+    isOccupied,
+    Math.max(0, totalMP - reserve),
   );
-  return r.tileCount - 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,22 +235,21 @@ function resolveAttackEvent(
 // Move resolution → event
 // ---------------------------------------------------------------------------
 
-/**
- * Walk a unit along a path. Ground units update position/facing with no
- * reaction fire; drones trigger Anti-Air reaction fire along the path (§16),
- * exactly as server/combatApi.ts handleMove does.
- */
+/** Apply an occupancy-gated segment path and emit its compressed tile path. */
 function resolveMoveEvent(
   mover: Unit,
-  path: number[],
+  segmentPath: SegNode[],
   ctx: CombatContext,
 ): AiActionEvent<WireUnit> {
   const fromTile = mover.tileIndex;
   const fromSegment = mover.segment as number;
   const { tiles } = ctx;
+  const path: number[] = [fromTile];
+  for (const node of segmentPath.slice(1)) {
+    if (path[path.length - 1] !== node.tileIndex) path.push(node.tileIndex);
+  }
 
   const reactions: AiActionEvent<WireUnit>['reactions'] = [];
-
   if (isDrone(mover)) {
     const reactionResults = resolveReactionFire(mover.id, path, ctx);
     for (const r of reactionResults) {
@@ -262,15 +258,19 @@ function resolveMoveEvent(
       const drone = ctx.units.find((u) => u.id === r.targetId);
       reactions.push(buildReactionExplanation(r, reactor, drone));
     }
-  } else {
-    for (let i = 1; i < path.length; i++) {
-      const prevHex = path[i - 1];
-      const currentHex = path[i];
-      mover.tileIndex = currentHex;
-      const dir = tiles[prevHex].neighbours.indexOf(currentHex);
-      if (dir !== -1) mover.facing = dir as HexSegment;
+  }
+
+  let lastTile = mover.tileIndex;
+  for (const node of segmentPath.slice(1)) {
+    if (node.tileIndex !== lastTile) {
+      const direction = tiles[lastTile].neighbours.indexOf(node.tileIndex);
+      if (direction >= 0) mover.facing = direction as HexSegment;
+      lastTile = node.tileIndex;
     }
   }
+  const final = segmentPath[segmentPath.length - 1];
+  mover.tileIndex = final.tileIndex;
+  mover.segment = final.segment as HexSegment;
 
   return {
     kind: 'move',
@@ -315,12 +315,6 @@ export function handleAiTurn(req: AiTurnRequest): AiTurnResponse<WireUnit> {
     return { success: true, events: [], finalUnits: aliveWireUnits(ctx), finalBuildings: ctx.buildings.map(toWireBuilding) };
   }
 
-  // Occupied-tile set for pathfinding avoidance.
-  const occupiedTiles = new Set<number>();
-  for (const u of ctx.units) {
-    if (u.currentHealth > 0) occupiedTiles.add(u.tileIndex);
-  }
-
   for (const unit of aliveUnits) {
     if (unit.currentHealth <= 0) continue;
 
@@ -359,27 +353,26 @@ export function handleAiTurn(req: AiTurnRequest): AiTurnResponse<WireUnit> {
 
     // Otherwise move toward the nearest enemy.
     if (movement > 0 && nearestDist > 1) {
-      occupiedTiles.delete(unit.tileIndex);
+      const path = findPath(pathTiles, unit.tileIndex, nearestEnemy.tileIndex);
 
-      const path = findPath(pathTiles, unit.tileIndex, nearestEnemy.tileIndex, occupiedTiles);
+      if (path && path.length > 2) {
+        // Never enter the enemy's tile. Resolve the remaining coarse route at
+        // segment granularity, first reserving attack MP and then (if that
+        // cannot move at all) using the full movement budget.
+        const candidatePath = path.slice(0, -1);
+        const withAttack = affordableMove(ctx, candidatePath, unit, true);
+        const canReserveAttack = withAttack.path.length > 1;
+        const move = canReserveAttack
+          ? withAttack
+          : affordableMove(ctx, candidatePath, unit, false);
 
-      if (path && path.length > 1) {
-        const stepsWithAttack = affordableSteps(ctx.tiles, path, unit, true);
-        const maxSteps = Math.min(
-          path.length - 2,
-          stepsWithAttack > 0 ? stepsWithAttack : affordableSteps(ctx.tiles, path, unit, false),
-        );
-        const movePath = path.slice(0, maxSteps + 1);
+        if (move.path.length >= 2) {
+          events.push(resolveMoveEvent(unit, move.path, ctx));
 
-        if (movePath.length >= 2) {
-          events.push(resolveMoveEvent(unit, movePath, ctx));
-          occupiedTiles.add(movePath[movePath.length - 1]);
-
-          // After moving, attack if now in range and an attack step was reserved.
-          const newDist = bfsDistance(pathTiles, movePath[movePath.length - 1], nearestEnemy.tileIndex);
-          const canStillAttack = movePath.length - 1 <= stepsWithAttack;
+          // After moving, attack if the reserved-MP route reached a firing position.
+          const newDist = bfsDistance(pathTiles, unit.tileIndex, nearestEnemy.tileIndex);
           const inRangeAfterMove =
-            canStillAttack &&
+            canReserveAttack &&
             newDist > 0 &&
             newDist <= attackRange &&
             unit.currentHealth > 0 &&
@@ -390,16 +383,12 @@ export function handleAiTurn(req: AiTurnRequest): AiTurnResponse<WireUnit> {
             );
 
           if (inRangeAfterMove) {
-            const target = ctx.units.find((u) => u.id === nearestEnemy!.id && u.currentHealth > 0);
-            if (target) {
-              events.push(resolveAttackEvent(unit, target, ctx));
-            }
+            const target = ctx.units.find((candidate) =>
+              candidate.id === nearestEnemy!.id && candidate.currentHealth > 0,
+            );
+            if (target) events.push(resolveAttackEvent(unit, target, ctx));
           }
-        } else {
-          occupiedTiles.add(unit.tileIndex);
         }
-      } else {
-        occupiedTiles.add(unit.tileIndex);
       }
     }
   }
@@ -514,7 +503,7 @@ export function handleBuildingTurn(req: BuildingTurnRequest): AiTurnResponse<Wir
 }
 
 /** Returns true if the building's attributes include at least one offensive stat. */
-function hasWeaponAttributes(attrs: import('../../shared/unitTypes.js').UnitAttributes | undefined): boolean {
+function hasWeaponAttributes(attrs: import('../shared/unitTypes.js').UnitAttributes | undefined): boolean {
   if (!attrs) return false;
   return (attrs.kinetic ?? 0) > 0 || (attrs.splashAttack ?? 0) > 0 || (attrs.antiAir ?? 0) > 0;
 }

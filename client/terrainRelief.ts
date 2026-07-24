@@ -558,19 +558,18 @@ export class TerrainRelief {
     let litAlpha: number;
     let shadowAlpha: number;
 
-    switch (true) {
-      case (tile.h ?? 0) >= 9:
-        peakPull = 0.62; litAlpha = 0.93; shadowAlpha = 0.63;
-        break;
-      case (tile.h ?? 0) >= 6:
-        peakPull = 0.38; litAlpha = 0.57; shadowAlpha = 0.36;
-        break;
-      case (tile.h ?? 0) >= 3:
-        peakPull = 0.18; litAlpha = 0.27; shadowAlpha = 0.18;
-        break;
-      default:
-        peakPull = 0.62; litAlpha = 0.93; shadowAlpha = 0.63;
-        break;
+    // Note: a `switch (true)` here would trip switch-exhaustiveness-check
+    // (case expressions aren't literal `true`/`false`), so this is an
+    // if/else chain instead — behaviourally identical to the original switch.
+    const h = tile.h ?? 0;
+    if (h >= 9) {
+      peakPull = 0.62; litAlpha = 0.93; shadowAlpha = 0.63;
+    } else if (h >= 6) {
+      peakPull = 0.38; litAlpha = 0.57; shadowAlpha = 0.36;
+    } else if (h >= 3) {
+      peakPull = 0.18; litAlpha = 0.27; shadowAlpha = 0.18;
+    } else {
+      peakPull = 0.62; litAlpha = 0.93; shadowAlpha = 0.63;
     }
 
     const ctx = this.c.ctx;

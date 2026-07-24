@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "name": "Run extended unit tests",
+  "description": "Manually runs Group 2, the unit tests excluded from the fast smoke suite.",
+  "version": "1",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "npm run test:extended",
+    "timeout": 180
+  }
+}
